@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validation:
+    name: Swift validation
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run automated quality gates
+        run: scripts/validate.sh
+
+      - name: Capture non-destructive power snapshot
+        if: always()
+        run: scripts/pmset-snapshot.sh "$RUNNER_TEMP/clawshell-power-snapshot"
+
+      - name: Upload power snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: power-snapshot
+          path: ${{ runner.temp }}/clawshell-power-snapshot

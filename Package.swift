@@ -37,6 +37,13 @@ let package = Package(
         .testTarget(
             name: "ClawShellCoreTests",
             dependencies: ["ClawShellCore"]
+        ),
+        .testTarget(
+            name: "ClawShellContractTests",
+            dependencies: ["ClawShellCore"],
+            resources: [
+                .copy("Fixtures")
+            ]
         )
     ]
 )
