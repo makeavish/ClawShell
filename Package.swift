@@ -19,6 +19,10 @@ let package = Package(
         .executable(
             name: "ClawShellCoreChecks",
             targets: ["ClawShellCoreChecks"]
+        ),
+        .executable(
+            name: "ClawShellCLI",
+            targets: ["ClawShellCLI"]
         )
     ],
     targets: [
@@ -33,6 +37,10 @@ let package = Package(
             name: "ClawShellCoreChecks",
             dependencies: ["ClawShellCore"],
             path: "Checks/ClawShellCoreChecks"
+        ),
+        .executableTarget(
+            name: "ClawShellCLI",
+            dependencies: ["ClawShellCore"]
         ),
         .testTarget(
             name: "ClawShellCoreTests",

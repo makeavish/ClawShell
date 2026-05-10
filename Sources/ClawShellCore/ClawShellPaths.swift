@@ -29,4 +29,16 @@ public struct ClawShellPaths: Equatable, Sendable {
     public var auditLogURL: URL {
         logsDirectory.appendingPathComponent("audit.jsonl", isDirectory: false)
     }
+
+    public var runtimeDirectory: URL {
+        applicationSupportDirectory.appendingPathComponent("run", isDirectory: true)
+    }
+
+    public var controlSocketURL: URL {
+        runtimeDirectory.appendingPathComponent("clawshell.sock", isDirectory: false)
+    }
+
+    public var hookTokenURL: URL {
+        runtimeDirectory.appendingPathComponent("hook-token", isDirectory: false)
+    }
 }
