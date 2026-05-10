@@ -23,7 +23,7 @@ scripts/validate.sh
 
 The first checks cover the state/menu model, lifecycle component boundaries, persistence/privacy contracts, and a short AppKit launch smoke. AppKit behavior is intentionally thin until the detection, assertion, and integration issues add real behavior.
 
-The local Command Line Tools environment may lack `Testing` and `XCTest`, so `ClawShellCoreChecks` remains the portable assertion gate until the dedicated test-harness issue installs CI. On toolchains with `Testing` or `XCTest`, `swift test` runs the standard SwiftPM test target.
+The local Command Line Tools environment may lack `Testing` and `XCTest`, so `ClawShellCoreChecks` remains the portable assertion gate for those machines. On CI and full toolchains with `Testing` or `XCTest`, `swift test` runs the standard SwiftPM test targets.
 
 See [testing.md](testing.md) for the full validation matrix, contract-test structure, power snapshot harness, and manual hardware checklist.
 

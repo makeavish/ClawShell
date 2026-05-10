@@ -16,13 +16,13 @@ The script runs:
 - `swift build`
 - `swift run ClawShellCoreChecks`
 - `swift run ClawShell --smoke-test`
-- `swift test` only when the active toolchain can discover real ClawShell tests
+- `swift test` only when the active toolchain can discover both required ClawShell test targets
 
-If the local toolchain cannot import `Testing` or `XCTest`, `swift test` fails loudly instead of passing with zero discovered tests.
+If the local toolchain cannot import `Testing` or `XCTest`, the script skips SwiftPM tests with an explicit message. If test discovery succeeds but either required target is missing, the script fails instead of passing with partial coverage.
 
 ## Unit Test Matrix
 
-`Tests/ClawShellCoreTests` is the home for unit tests. As the implementation lands, it should cover:
+`Tests/ClawShellCoreTests` is the home for unit tests. The issue #9 coverage plan is registered in `IssueNineCoveragePlanTests`; as the implementation lands, rows marked as pending implementation should gain behavior-level assertions:
 
 - Session transition matrix
 - PID reuse and process restart dedupe
@@ -35,9 +35,9 @@ If the local toolchain cannot import `Testing` or `XCTest`, `swift test` fails l
 
 ## Contract Test Matrix
 
-`Tests/ClawShellContractTests` is the home for integration and contract tests. Fixture slots already exist under `Tests/ClawShellContractTests/Fixtures/`.
+`Tests/ClawShellContractTests` is the home for integration and contract tests. Fixture slots already exist under `Tests/ClawShellContractTests/Fixtures/`, and the harness asserts that each slot is present as a directory.
 
-Future contract coverage should include:
+The registered contract coverage rows are:
 
 - Adapter redaction: fail if payloads or logs contain prompts, tool args, cwd, transcript paths, or environment values
 - Adapter no-op behavior when ClawShell is not running
@@ -45,6 +45,13 @@ Future contract coverage should include:
 - Config patcher fixtures for Claude Code and Codex CLI
 - Config merge/removal preserving unrelated user config
 - CLI command behavior
+
+## Coverage Status
+
+- `automated`: covered by the current portable checks or SwiftPM tests.
+- `fixtureSlot`: the contract-test slot exists now; behavior-level fixtures land with the feature.
+- `pendingImplementation`: the required row is registered and should become executable as the owning implementation issue lands.
+- `manualChecklist`: the row is intentionally gated on hardware validation.
 
 ## Power Snapshot Harness
 
@@ -71,6 +78,12 @@ Hardware validation is gated and must be run intentionally on supported machines
 For each manual case, attach:
 
 - Exact command or build used
+- macOS version
+- CPU architecture
+- Power source
+- Display topology
+- Lid state and reopen recovery result
+- Lifecycle condition under test
 - `pmset -g custom`
 - `pmset -g assertions`
 - Relevant IORegistry state if available

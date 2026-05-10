@@ -32,8 +32,13 @@ private func assertFixtureSlotsExist() throws {
         "power"
     ] {
         let url = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures")
-        guard url != nil else {
+        guard let url else {
             throw ContractHarnessFailure("Missing contract fixture slot: \(name)")
+        }
+
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+        guard values.isDirectory == true else {
+            throw ContractHarnessFailure("Contract fixture slot is not a directory: \(name)")
         }
     }
 }
