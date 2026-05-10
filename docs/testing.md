@@ -71,7 +71,13 @@ Use the normal assertion validation harness to capture `before`, `during`, and `
 scripts/normal-assertion-validation.sh
 ```
 
-See [power-validation.md](power-validation.md) for the current normal assertion policy, disk/display assertion status, and hardware result matrix.
+Use the timed idle harness for AC/battery idle behavior runs under the current machine power profile:
+
+```sh
+bash scripts/timed-idle-validation.sh
+```
+
+See [power-validation.md](power-validation.md) for the current normal assertion policy, disk/display assertion status, timed-idle caveats, and hardware result matrix.
 
 ## Manual Hardware Checklist
 
