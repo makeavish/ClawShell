@@ -196,13 +196,10 @@ struct ClawShellCoreChecks {
         )
 
         monitor.start()
-        Thread.sleep(forTimeInterval: 0.05)
+        try check(monitor.scheduledPollInterval == 0.01, "Expected start() to schedule the configured poll cadence")
+        try check(provider.callCount == 1, "Expected start() to perform an immediate poll")
         monitor.stop()
-
-        try check(
-            provider.callCount >= 2,
-            "Expected start() to perform an immediate poll and continue on the configured cadence"
-        )
+        try check(monitor.scheduledPollInterval == nil, "Expected stop() to cancel the scheduled poll")
     }
 
     private static func sessionStateMachineCoversProcessIdentityTransitionsAndAggregateHold() throws {

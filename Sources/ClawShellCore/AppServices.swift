@@ -17,6 +17,7 @@ public final class AgentMonitor: AppLifecycleComponent {
     private let queue: DispatchQueue
     private var timer: DispatchSourceTimer?
     private var storedRunState: ComponentRunState = .stopped
+    private var storedScheduledPollInterval: TimeInterval?
 
     public init(
         snapshotProvider: ProcessSnapshotProviding = LibprocProcessSnapshotProvider(),
@@ -46,6 +47,12 @@ public final class AgentMonitor: AppLifecycleComponent {
         }
     }
 
+    public var scheduledPollInterval: TimeInterval? {
+        queue.sync {
+            storedScheduledPollInterval
+        }
+    }
+
     public func start() {
         queue.sync {
             guard storedRunState == .stopped else {
@@ -57,6 +64,7 @@ public final class AgentMonitor: AppLifecycleComponent {
 
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
+            storedScheduledPollInterval = pollInterval
             timer.setEventHandler { [weak self] in
                 self?.pollOnQueue()
             }
@@ -69,6 +77,7 @@ public final class AgentMonitor: AppLifecycleComponent {
         queue.sync {
             timer?.cancel()
             timer = nil
+            storedScheduledPollInterval = nil
             storedRunState = .stopped
         }
     }
