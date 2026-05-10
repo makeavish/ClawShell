@@ -7,6 +7,10 @@ struct ClawShellCoreChecks {
         try snapshotIncludesAllPlaceholderStates()
         try snapshotNamesTheCurrentState()
         try lifecycleComponentsCanStartAndStopTogether()
+        try processDetectorMatchesBuiltInAgents()
+        try agentMonitorPollsSnapshotsEveryTwoSecondsByDefault()
+        try sessionStateMachineCoversProcessIdentityTransitionsAndAggregateHold()
+        try cpuDiagnosticsDoNotDriveTransitions()
         try settingsPersistWithExpectedSchema()
         try corruptSettingsRecoverToDefaults()
         try unsupportedSchemaDoesNotRecoverAsCorrupt()
@@ -81,6 +85,156 @@ struct ClawShellCoreChecks {
         )
     }
 
+    private static func processDetectorMatchesBuiltInAgents() throws {
+        let detector = AgentProcessDetector(settings: ClawShellSettings())
+        let observations = detector.observations(
+            in: [
+                ProcessSnapshot(
+                    pid: 11,
+                    processName: "claude",
+                    executablePath: "/opt/homebrew/bin/claude",
+                    processStartTime: Date(timeIntervalSince1970: 1)
+                ),
+                ProcessSnapshot(
+                    pid: 12,
+                    processName: "claude-code",
+                    executablePath: "/usr/local/bin/claude-code",
+                    processStartTime: Date(timeIntervalSince1970: 1)
+                ),
+                ProcessSnapshot(
+                    pid: 13,
+                    processName: "codex",
+                    executablePath: "/opt/homebrew/bin/codex",
+                    processStartTime: Date(timeIntervalSince1970: 1)
+                ),
+                ProcessSnapshot(
+                    pid: 15,
+                    processName: "codex",
+                    executablePath: nil,
+                    processStartTime: Date(timeIntervalSince1970: 1)
+                ),
+                ProcessSnapshot(
+                    pid: 14,
+                    processName: "codex",
+                    executablePath: "/usr/bin/not-codex",
+                    processStartTime: Date(timeIntervalSince1970: 1)
+                )
+            ]
+        )
+
+        try check(
+            observations.map(\.agent) == [.claudeCode, .claudeCode, .codexCLI, .codexCLI],
+            "Expected built-in process detection for claude, claude-code, and codex"
+        )
+        try check(
+            observations.allSatisfy { $0.key.executablePathHash != nil },
+            "Expected executable path hashes when paths are available"
+        )
+        try check(
+            observations[0].key.executablePathHash != "/opt/homebrew/bin/claude",
+            "Expected raw executable paths not to be retained in session keys"
+        )
+    }
+
+    private static func agentMonitorPollsSnapshotsEveryTwoSecondsByDefault() throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let monitor = AgentMonitor(
+            snapshotProvider: StaticSnapshotProvider(
+                snapshotsToReturn: [
+                    ProcessSnapshot(
+                        pid: 24,
+                        processName: "codex",
+                        executablePath: "/opt/homebrew/bin/codex",
+                        processStartTime: now
+                    )
+                ]
+            ),
+            settingsProvider: { ClawShellSettings() },
+            now: { now }
+        )
+
+        try check(monitor.pollInterval == 2, "Expected default process polling interval to be two seconds")
+        monitor.poll()
+        try check(monitor.sessions.count == 1, "Expected monitor poll to normalize snapshots into sessions")
+        try check(monitor.sessions.first?.agent == .codexCLI, "Expected monitor to detect Codex CLI")
+    }
+
+    private static func sessionStateMachineCoversProcessIdentityTransitionsAndAggregateHold() throws {
+        let baseline = Date(timeIntervalSince1970: 1_000)
+        let machine = AgentSessionStateMachine(graceInterval: 900)
+
+        machine.applyProcessObservations([observation(pid: 42, start: baseline)], at: baseline)
+        let firstSessionID = try checkNotNil(machine.sessions.first?.id, "Expected initial process session")
+        try check(machine.sessions.first?.state == .active, "Expected matching process start to create an active session")
+        try check(machine.aggregateHoldState(at: baseline).shouldHold, "Expected active session to hold")
+
+        machine.applyProcessObservations(
+            [observation(pid: 42, start: baseline, cpuPercent: 80)],
+            at: baseline.addingTimeInterval(30)
+        )
+        try check(machine.sessions.count == 1, "Expected pid/start/path identity to dedupe")
+        try check(machine.sessions[0].id == firstSessionID, "Expected deduped observation to keep session id")
+        try check(machine.sessions[0].lastActivityAt == baseline, "Expected process polling not to reset activity")
+
+        let turnFinishedAt = baseline.addingTimeInterval(60)
+        machine.applyTrustedEvent(.turnFinished, to: firstSessionID, at: turnFinishedAt)
+        try check(machine.sessions[0].state == .standingBy, "Expected turn finish to enter standing by")
+        try check(
+            machine.sessions[0].standingByExpiresAt == turnFinishedAt.addingTimeInterval(900),
+            "Expected default 15-minute standing-by grace"
+        )
+
+        machine.applyTrustedEvent(.toolStarted, to: firstSessionID, at: baseline.addingTimeInterval(90))
+        try check(machine.sessions[0].state == .active, "Expected trusted activity to reactivate")
+        try check(machine.sessions[0].standingByExpiresAt == nil, "Expected trusted activity to clear grace expiry")
+
+        let restartedAt = baseline.addingTimeInterval(120)
+        machine.applyProcessObservations([observation(pid: 42, start: restartedAt)], at: restartedAt)
+        try check(machine.sessions.count == 2, "Expected PID reuse to create a new session")
+        try check(
+            machine.sessions.contains { $0.id == firstSessionID && $0.state == .finished },
+            "Expected old reused-PID session to finish"
+        )
+        try check(
+            machine.sessions.contains { $0.id != firstSessionID && $0.state == .active },
+            "Expected new reused-PID session to become active"
+        )
+
+        let activeSessionID = try checkNotNil(
+            machine.sessions.first(where: { $0.id != firstSessionID })?.id,
+            "Expected restarted session id"
+        )
+        machine.applyTrustedEvent(.turnFinished, to: activeSessionID, at: restartedAt.addingTimeInterval(10))
+        machine.applyTrustedEvent(.keepHolding, to: activeSessionID, at: restartedAt.addingTimeInterval(20))
+        try check(
+            machine.sessions.first(where: { $0.id == activeSessionID })?.standingByExpiresAt == restartedAt.addingTimeInterval(10 + 1_800),
+            "Expected keep holding to extend by one grace window"
+        )
+        try check(machine.aggregateHoldState(at: restartedAt.addingTimeInterval(30)).shouldHold, "Expected standing-by session to hold before expiry")
+
+        machine.refreshExpirations(at: restartedAt.addingTimeInterval(1_811))
+        try check(!machine.aggregateHoldState(at: restartedAt.addingTimeInterval(1_811)).shouldHold, "Expected aggregate hold to release after all sessions finish or expire")
+    }
+
+    private static func cpuDiagnosticsDoNotDriveTransitions() throws {
+        let baseline = Date(timeIntervalSince1970: 2_000)
+        let machine = AgentSessionStateMachine(graceInterval: 900)
+
+        machine.applyProcessObservations([observation(pid: 60, start: baseline, cpuPercent: 5)], at: baseline)
+        let sessionID = try checkNotNil(machine.sessions.first?.id, "Expected active CPU diagnostic session")
+        machine.applyTrustedEvent(.turnFinished, to: sessionID, at: baseline.addingTimeInterval(10))
+        let originalExpiry = try checkNotNil(machine.sessions[0].standingByExpiresAt, "Expected standing-by expiry")
+
+        machine.applyProcessObservations(
+            [observation(pid: 60, start: baseline, cpuPercent: 95)],
+            at: baseline.addingTimeInterval(20)
+        )
+
+        try check(machine.sessions[0].state == .standingBy, "Expected CPU load not to reactivate standing-by session")
+        try check(machine.sessions[0].standingByExpiresAt == originalExpiry, "Expected CPU load not to extend grace")
+        try check(machine.sessions[0].diagnosticCPUPercent == 95, "Expected CPU load to be diagnostic only")
+    }
+
     private static func settingsPersistWithExpectedSchema() throws {
         let paths = try makeTemporaryPaths()
         defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
@@ -96,6 +250,10 @@ struct ClawShellCoreChecks {
         try check(store.settings.launchAtLogin, "Expected launch at login to default on")
         try check(store.settings.defaultGraceSeconds == 900, "Expected default grace to be 900 seconds")
         try check(store.settings.agents.map(\.id) == ["claude-code", "codex-cli"], "Expected Claude and Codex agent defaults")
+        try check(
+            store.settings.agents.first?.executableNames == ["claude", "claude-code"],
+            "Expected Claude executable aliases to include claude and claude-code"
+        )
         try check(store.settings.safety.batteryFloorPercent == 15, "Expected default battery floor")
 
         let settingsJSON = try String(contentsOf: paths.settingsURL, encoding: .utf8)
@@ -330,6 +488,32 @@ struct ClawShellCoreChecks {
         return ClawShellPaths(applicationSupportDirectory: url)
     }
 
+    private static func observation(
+        pid: Int32,
+        start: Date,
+        path: String = "/opt/homebrew/bin/codex",
+        agent: AgentKind = .codexCLI,
+        cpuPercent: Double? = nil
+    ) -> AgentProcessObservation {
+        let snapshot = ProcessSnapshot(
+            pid: pid,
+            processName: URL(fileURLWithPath: path).lastPathComponent,
+            executablePath: path,
+            processStartTime: start,
+            cpuPercent: cpuPercent
+        )
+
+        return AgentProcessObservation(
+            agent: agent,
+            snapshot: snapshot,
+            key: SessionKey(
+                pid: pid,
+                processStartTime: start,
+                executablePathHash: StablePathHash.sha256(path)
+            )
+        )
+    }
+
     private static func checkNotNil<T>(_ value: T?, _ message: String) throws -> T {
         guard let value else {
             throw CheckFailure(message)
@@ -360,5 +544,13 @@ struct CheckFailure: Error, CustomStringConvertible {
 
     init(_ description: String) {
         self.description = description
+    }
+}
+
+struct StaticSnapshotProvider: ProcessSnapshotProviding {
+    var snapshotsToReturn: [ProcessSnapshot]
+
+    func snapshots() throws -> [ProcessSnapshot] {
+        snapshotsToReturn
     }
 }
