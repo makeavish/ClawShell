@@ -74,7 +74,7 @@ The planned primary distribution path is a Homebrew cask. Direct downloads may c
 
 ## Development
 
-This repo is currently in product and technical design. Implementation will start after the technical design for detection, integrations, sleep assertions, and the privileged helper is settled.
+This repo now contains the first SwiftPM menu bar app skeleton. See [docs/development.md](docs/development.md) for local run and check commands.
 
 ## License
 
