@@ -22,6 +22,7 @@ scripts/validate.sh
 ```
 
 The first checks cover the state/menu model, lifecycle component boundaries, persistence/privacy contracts, and a short AppKit launch smoke. AppKit behavior is intentionally thin until the detection, assertion, and integration issues add real behavior.
+The portable checks now also cover the V1 integration primitives: adapter redaction/no-op behavior, Claude Code and Codex config patching, owned-block removal, and integration removal suppression.
 
 The local Command Line Tools environment may lack `Testing` and `XCTest`, so `ClawShellCoreChecks` remains the portable assertion gate for those machines. On CI and full toolchains with `Testing` or `XCTest`, `swift test` runs the standard SwiftPM test targets.
 
@@ -33,5 +34,7 @@ ClawShell stores local state under `~/Library/Application Support/ClawShell/`:
 
 - `settings.json` contains versioned settings.
 - `logs/audit.jsonl` contains bounded local audit events.
+- `run/hook-token` is a per-launch adapter token and is removed when the control server stops.
+- `cwd-hash-salt` is an app-local salt used to HMAC agent cwd values before they reach the state machine.
 
-Config exports exclude logs, runtime tokens, helper ownership state, cwd hashes, and hook payloads. Custom executable paths can still reveal local machine details, so exported config should be shared carefully.
+Config exports exclude logs, runtime tokens, helper ownership state, integration status paths, cwd hashes, and hook payloads. Custom executable paths can still reveal local machine details, so exported config should be shared carefully.

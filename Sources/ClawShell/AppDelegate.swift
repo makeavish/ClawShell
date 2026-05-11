@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarApp: MenuBarApp?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let app = MenuBarApp(services: ClawShellServices())
+        let app = MenuBarApp(services: ClawShellServices(autoInstallIntegrations: true))
         menuBarApp = app
         app.start()
     }

@@ -44,9 +44,19 @@ The registered contract coverage rows are:
 - Adapter no-op behavior when ClawShell is not running
 - Control endpoint auth failure, replay rejection, and rate limiting: covered through the Unix socket by `ControlServerTests`
 - Control endpoint peer PID identity: covered by socket tests that reject client-supplied PID rotation
-- Config patcher fixtures for Claude Code and Codex CLI
-- Config merge/removal preserving unrelated user config
+- Config patcher fixtures for Claude Code and Codex CLI: covered by `IntegrationContractTests`
+- Config merge/removal preserving unrelated user config: covered by `IntegrationContractTests`
 - CLI command behavior: covered by parser, local client, and socket transport tests in `ControlServerTests`
+
+## Integration Checks
+
+The V1 integration layer has both portable checks and contract fixtures:
+
+- `HookAdapterMapper` reduces Claude Code hook stdin and Codex `notify` payloads to ClawShell's minimal event schema.
+- Adapter output is host-safe and empty on success/no-op, including when ClawShell is not running.
+- Claude Code patching preserves existing hook groups, adds only owned command handlers, and removes only handlers containing ClawShell's owner marker.
+- Codex patching owns the top-level `notify` command, forwards a previous notify command through the adapter, preserves unrelated TOML, and restores the previous notify line on removal.
+- Integration removal persists per-agent `doNotAutoInstall` suppression and writes a local audit event.
 
 ## Coverage Status
 
@@ -83,7 +93,7 @@ Use the timed idle preflight helper before a clean run to avoid spending a full 
 scripts/timed-idle-preflight.sh
 ```
 
-Preflight is only a readiness check. It does not create validation evidence; #5 still needs a timed-idle artifact with `conclusive=true` or explicit owner sign-off.
+Preflight is only a readiness check. It does not create validation evidence. #5 closed by explicit owner sign-off on the documented non-conclusive lifecycle evidence.
 
 See [power-validation.md](power-validation.md) for the current normal assertion policy, disk/display assertion status, timed-idle caveats, and hardware result matrix.
 

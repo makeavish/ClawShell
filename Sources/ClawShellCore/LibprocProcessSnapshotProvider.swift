@@ -58,6 +58,7 @@ public struct LibprocProcessSnapshotProvider: ProcessSnapshotProviding {
 
         return ProcessSnapshot(
             pid: Int32(pid),
+            parentPID: Int32(info.pbi_ppid),
             processName: processName,
             executablePath: path,
             processStartTime: startTime,

@@ -60,7 +60,7 @@ public enum AuditEventKind: String, Codable, Equatable, Sendable {
         case .configMutation:
             ["operation", "settingsFile", "agentID", "integrationID"]
         case .integrationSetup, .integrationRemoval:
-            ["agentID", "integrationID", "settingsFile", "status"]
+            ["agentID", "integrationID", "settingsFile", "status", "failureReason"]
         case .helperChange:
             ["operation", "status"]
         case .safetyCutoff:
@@ -68,7 +68,7 @@ public enum AuditEventKind: String, Codable, Equatable, Sendable {
         case .crashRecovery, .endpointAuthFailure:
             ["status", "errorCode"]
         case .degradedConfidence:
-            ["agentID", "status"]
+            ["agentID", "failureReason", "status"]
         }
     }
 }

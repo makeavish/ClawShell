@@ -10,6 +10,7 @@ public struct ClawShellSettings: Codable, Equatable, Sendable {
         case agents
         case customAgents
         case integrationSuppressions
+        case integrationStates
         case safety
         case manualOverrides
         case helperOwnership
@@ -21,6 +22,7 @@ public struct ClawShellSettings: Codable, Equatable, Sendable {
     public var agents: [AgentConfiguration]
     public var customAgents: [CustomAgentConfiguration]
     public var integrationSuppressions: [String: IntegrationSuppression]
+    public var integrationStates: [String: IntegrationState]
     public var safety: SafetySettings
     public var manualOverrides: [ManualOverride]
     public var helperOwnership: HelperOwnership?
@@ -32,6 +34,7 @@ public struct ClawShellSettings: Codable, Equatable, Sendable {
         agents: [AgentConfiguration] = AgentConfiguration.v1Defaults,
         customAgents: [CustomAgentConfiguration] = [],
         integrationSuppressions: [String: IntegrationSuppression] = [:],
+        integrationStates: [String: IntegrationState] = [:],
         safety: SafetySettings = SafetySettings(),
         manualOverrides: [ManualOverride] = [],
         helperOwnership: HelperOwnership? = nil
@@ -42,6 +45,7 @@ public struct ClawShellSettings: Codable, Equatable, Sendable {
         self.agents = agents
         self.customAgents = customAgents
         self.integrationSuppressions = integrationSuppressions
+        self.integrationStates = integrationStates
         self.safety = safety
         self.manualOverrides = manualOverrides
         self.helperOwnership = helperOwnership
@@ -55,6 +59,7 @@ public struct ClawShellSettings: Codable, Equatable, Sendable {
         agents = try container.decode([AgentConfiguration].self, forKey: .agents)
         customAgents = try container.decode([CustomAgentConfiguration].self, forKey: .customAgents)
         integrationSuppressions = try container.decode([String: IntegrationSuppression].self, forKey: .integrationSuppressions)
+        integrationStates = try container.decodeIfPresent([String: IntegrationState].self, forKey: .integrationStates) ?? [:]
         safety = try container.decode(SafetySettings.self, forKey: .safety)
         manualOverrides = try container.decode([ManualOverride].self, forKey: .manualOverrides)
         helperOwnership = try container.decodeIfPresent(HelperOwnership.self, forKey: .helperOwnership)
@@ -68,6 +73,7 @@ public struct ClawShellSettings: Codable, Equatable, Sendable {
         try container.encode(agents, forKey: .agents)
         try container.encode(customAgents, forKey: .customAgents)
         try container.encode(integrationSuppressions, forKey: .integrationSuppressions)
+        try container.encode(integrationStates, forKey: .integrationStates)
         try container.encode(safety, forKey: .safety)
         try container.encode(manualOverrides, forKey: .manualOverrides)
         try container.encode(helperOwnership, forKey: .helperOwnership)
@@ -138,6 +144,42 @@ public struct IntegrationSuppression: Codable, Equatable, Sendable {
     }
 }
 
+public enum IntegrationInstallStatus: String, Codable, Equatable, Sendable {
+    case notInstalled
+    case installed
+    case failed
+    case degraded
+    case removed
+}
+
+public struct IntegrationState: Codable, Equatable, Sendable {
+    public var agentID: String
+    public var status: IntegrationInstallStatus
+    public var integrationID: String
+    public var settingsFile: String?
+    public var patcherVersion: Int
+    public var updatedAt: Date
+    public var failureReason: String?
+
+    public init(
+        agentID: String,
+        status: IntegrationInstallStatus,
+        integrationID: String,
+        settingsFile: String? = nil,
+        patcherVersion: Int = 1,
+        updatedAt: Date = Date(),
+        failureReason: String? = nil
+    ) {
+        self.agentID = agentID
+        self.status = status
+        self.integrationID = integrationID
+        self.settingsFile = settingsFile
+        self.patcherVersion = patcherVersion
+        self.updatedAt = updatedAt
+        self.failureReason = failureReason
+    }
+}
+
 public struct SafetySettings: Codable, Equatable, Sendable {
     public var temperatureWarningCelsius: Int
     public var temperatureCutoffCelsius: Int
@@ -203,6 +245,7 @@ public struct SettingsExport: Codable, Equatable, Sendable {
             agents: agents,
             customAgents: customAgents,
             integrationSuppressions: integrationSuppressions,
+            integrationStates: settings.integrationStates,
             safety: safety,
             manualOverrides: settings.manualOverrides,
             helperOwnership: settings.helperOwnership

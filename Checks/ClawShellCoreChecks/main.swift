@@ -21,6 +21,7 @@ struct ClawShellCoreChecks {
         try assertionManagerPartialCreateFailureKeepsAcquiredAssertionsAndRetriesMissingOnes()
         try assertionManagerFailedReleaseRemainsTrackedAndRetriesWithoutHidingError()
         try controlRouterPauseAndReleaseReconcileAssertions()
+        try controlRouterPropagatesIntegrationMutationFailures()
         try assertionManagerStopReleasesHeldAssertions()
         try assertionManagerStopWithFailedReleaseDoesNotReportStoppedUntilRetryCompletes()
         try stoppedAssertionManagerDoesNotReacquireAssertions()
@@ -37,6 +38,19 @@ struct ClawShellCoreChecks {
         try localControlClientSendsThroughUnixSocket()
         try socketEndpointRejectsAuthReplayAndClientPIDRotation()
         try controlServerComponentRotatesTokenAndClearsRuntime()
+        try hookAdapterMapsAndRedactsClaudePayload()
+        try hookAdapterUsesStableReplayIDForNativeToolEventsOnly()
+        try hookAdapterResolvesAgentAncestorThroughShellShim()
+        try hookAdapterNoOpsWhenClawShellIsUnavailable()
+        try hookAdapterRoutesIntegrationEventsThroughControlServer()
+        try integrationEventCanMoveProcessDetectedSessionToStandingBy()
+        try claudePatcherPreservesExistingHooksAndRemovesOwnedHandlers()
+        try codexPatcherPreservesExistingNotifyAndRestoresItOnRemoval()
+        try codexPatcherHandlesMultilineAndSingleQuotedNotify()
+        try configPatchersRejectInvalidEncodingAndPreserveMarkerLookalikes()
+        try integrationManagerRecordsRemovalSuppressionAndStatus()
+        try integrationManagerAppliesConfigPatchesAndRemovesThem()
+        try integrationManagerSurfacesFailedInstallReasons()
         try settingsPersistWithExpectedSchema()
         try corruptSettingsRecoverToDefaults()
         try unsupportedSchemaDoesNotRecoverAsCorrupt()
@@ -561,6 +575,30 @@ struct ClawShellCoreChecks {
         monitor.stop()
     }
 
+    private static func controlRouterPropagatesIntegrationMutationFailures() throws {
+        let router = DefaultControlCommandRouter(
+            integrationRemoveHandler: { _, _ in
+                throw CheckFailure("remove failed")
+            },
+            integrationEnableAutoHandler: { _, _ in
+                throw CheckFailure("enable failed")
+            },
+            uninstallHandler: { _, _, _ in
+                throw CheckFailure("uninstall failed")
+            }
+        )
+
+        try expectThrows("Expected integration removal failure to propagate") {
+            _ = try router.route(.integrationsRemove(agentID: "codex-cli"), receivedAt: Date())
+        }
+        try expectThrows("Expected integration enable-auto failure to propagate") {
+            _ = try router.route(.integrationsEnableAuto(agentID: "codex-cli"), receivedAt: Date())
+        }
+        try expectThrows("Expected uninstall integration failure to propagate") {
+            _ = try router.route(.uninstall(removeHelper: false, removeIntegrations: true), receivedAt: Date())
+        }
+    }
+
     private static func assertionManagerStopReleasesHeldAssertions() throws {
         let controller = RecordingPowerAssertionController()
         let manager = AssertionManager(
@@ -897,6 +935,521 @@ struct ClawShellCoreChecks {
         try check(!FileManager.default.fileExists(atPath: paths.controlSocketURL.path), "Expected component stop to clear socket")
     }
 
+    private static func hookAdapterMapsAndRedactsClaudePayload() throws {
+        let payload = """
+        {
+          "session_id": "session-1",
+          "transcript_path": "/Users/tester/.claude/transcript.jsonl",
+          "cwd": "/Users/tester/private-project",
+          "hook_event_name": "PreToolUse",
+          "tool_name": "Bash",
+          "tool_input": { "command": "cat .env" },
+          "prompt": "secret prompt"
+        }
+        """
+
+        let event = try checkNotNil(
+            HookAdapterMapper.claudeCodeEvent(
+                from: Data(payload.utf8),
+                context: HookAdapterContext(
+                    agent: .claudeCode,
+                    host: "claude-code",
+                    processID: 42,
+                    cwdHashSalt: "local-salt",
+                    eventIDProvider: { "fallback" }
+                )
+            ),
+            "Expected Claude hook payload to map to a ClawShell event"
+        )
+
+        let encoded = try String(data: JSONEncoder().encode(event), encoding: .utf8) ?? ""
+        try check(event.event == .toolStarted, "Expected PreToolUse to map to tool_started")
+        try check(event.integrationSessionId == "session-1", "Expected session id to be retained")
+        try check(event.pid == 42, "Expected adapter process id to be included")
+        try check(event.cwdHash == CWDHash.hmacSHA256("/Users/tester/private-project", salt: "local-salt"), "Expected cwd to be HMAC hashed")
+        try check(!encoded.contains("secret prompt"), "Expected prompt text to be discarded")
+        try check(!encoded.contains("cat .env"), "Expected tool arguments to be discarded")
+        try check(!encoded.contains("private-project"), "Expected raw cwd to be discarded")
+        try check(!encoded.contains("transcript"), "Expected transcript path to be discarded")
+    }
+
+    private static func hookAdapterUsesStableReplayIDForNativeToolEventsOnly() throws {
+        let payload = #"{"hook_event_name":"PreToolUse","session_id":"session-1","tool_use_id":"tool-1","prompt":"do work"}"#
+        let context = HookAdapterContext(
+            agent: .claudeCode,
+            host: "claude-code",
+            processID: 42,
+            cwdHashSalt: "local-salt",
+            eventIDProvider: { "fallback-\(UUID().uuidString)" }
+        )
+
+        let first = try checkNotNil(
+            HookAdapterMapper.claudeCodeEvent(from: Data(payload.utf8), context: context),
+            "Expected first Claude event to map"
+        )
+        let second = try checkNotNil(
+            HookAdapterMapper.claudeCodeEvent(from: Data(payload.utf8), context: context),
+            "Expected replayed Claude event to map"
+        )
+        let fallback = try checkNotNil(
+            HookAdapterMapper.claudeCodeEvent(
+                from: Data(payload.utf8),
+                context: HookAdapterContext(
+                    agent: .claudeCode,
+                    host: "claude-code",
+                    processID: 42,
+                    eventIDProvider: { "fallback" }
+                )
+            ),
+            "Expected unsalted Claude event to map"
+        )
+
+        try check(first.eventID == second.eventID, "Expected salted Claude tool payloads with native tool IDs to get stable replay IDs")
+        try check(first.eventID.hasPrefix("claude-"), "Expected synthesized Claude replay ID to be namespaced")
+        try check(first.eventID != "fallback", "Expected salted Claude replay ID not to use random fallback")
+        try check(fallback.eventID == "fallback", "Expected unsalted Claude payloads to keep fallback IDs")
+
+        let promptPayload = #"{"hook_event_name":"UserPromptSubmit","session_id":"session-1","prompt":"do work"}"#
+        let promptEvent = try checkNotNil(
+            HookAdapterMapper.claudeCodeEvent(
+                from: Data(promptPayload.utf8),
+                context: HookAdapterContext(
+                    agent: .claudeCode,
+                    host: "claude-code",
+                    processID: 42,
+                    cwdHashSalt: "local-salt",
+                    eventIDProvider: { "prompt-fallback" }
+                )
+            ),
+            "Expected Claude prompt event to map"
+        )
+        try check(promptEvent.eventID == "prompt-fallback", "Expected Claude events without occurrence IDs to avoid payload-digest replay IDs")
+    }
+
+    private static func hookAdapterResolvesAgentAncestorThroughShellShim() throws {
+        let codexStart = Date(timeIntervalSince1970: 9_010)
+        let shellStart = Date(timeIntervalSince1970: 9_020)
+        let resolved = HookAdapterProcessResolver.nearestAgentProcess(
+            startingAt: 44,
+            agent: .codexCLI,
+            snapshots: [
+                ProcessSnapshot(
+                    pid: 43,
+                    parentPID: 1,
+                    processName: "codex",
+                    executablePath: "/opt/homebrew/bin/codex",
+                    processStartTime: codexStart
+                ),
+                ProcessSnapshot(
+                    pid: 44,
+                    parentPID: 43,
+                    processName: "sh",
+                    executablePath: "/bin/sh",
+                    processStartTime: shellStart
+                )
+            ]
+        )
+
+        try check(
+            resolved == HookAdapterProcessIdentity(pid: 43, processStartTime: codexStart),
+            "Expected adapter to resolve through shell shim to nearest agent ancestor"
+        )
+    }
+
+    private static func hookAdapterNoOpsWhenClawShellIsUnavailable() throws {
+        let paths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
+
+        let payload = #"{"hook_event_name":"UserPromptSubmit","session_id":"session-2","prompt":"do work"}"#
+        let startedAt = Date()
+        let result = HookAdapterRunner(runtimeStore: ControlRuntimeStore(paths: paths))
+            .runClaudeCodeHook(
+                stdin: Data(payload.utf8),
+                context: HookAdapterContext(agent: .claudeCode, host: "claude-code", processID: 43)
+            )
+        let elapsed = Date().timeIntervalSince(startedAt)
+
+        try check(result == HookAdapterRunResult(), "Expected unavailable ClawShell adapter run to no-op")
+        try check(elapsed < 0.25, "Expected no-op adapter path to complete within 250ms")
+
+        let codexStartedAt = Date()
+        let codexResult = HookAdapterRunner(runtimeStore: ControlRuntimeStore(paths: paths))
+            .runCodexNotify(
+                payload: #"{"type":"agent-turn-complete","turn-id":"turn-fast"}"#,
+                context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", processID: 44),
+                forwardNotifyCommand: ["/bin/sh", "-c", "sleep 1"]
+            )
+        let codexElapsed = Date().timeIntervalSince(codexStartedAt)
+        try check(codexResult == HookAdapterRunResult(), "Expected Codex unavailable adapter run to no-op")
+        try check(codexElapsed < 0.25, "Expected forwarded Codex notify to avoid blocking the no-op path")
+    }
+
+    private static func hookAdapterRoutesIntegrationEventsThroughControlServer() throws {
+        let router = RecordingControlRouter()
+        let server = ControlServer(token: "secret", router: router, now: { Date(timeIntervalSince1970: 9_000) })
+        let event = HookAdapterEvent(
+            agent: .codexCLI,
+            host: "codex-cli",
+            event: .turnFinished,
+            pid: 44,
+            integrationSessionId: "turn-1",
+            eventID: "event-1"
+        )
+
+        _ = try server.handle(ControlRequest(token: "secret", eventID: "event-1", processID: 44, command: .integrationEvent(event)))
+
+        try check(router.commands == [.integrationEvent(event)], "Expected integration events to route through the control server")
+    }
+
+    private static func integrationEventCanMoveProcessDetectedSessionToStandingBy() throws {
+        let baseline = Date(timeIntervalSince1970: 9_100)
+        let machine = AgentSessionStateMachine(graceInterval: 900)
+
+        machine.applyProcessObservations(
+            [observation(pid: 44, start: baseline, path: "/opt/homebrew/bin/codex", agent: .codexCLI)],
+            at: baseline
+        )
+        machine.applyIntegrationEvent(
+            HookAdapterEvent(
+                agent: .codexCLI,
+                host: "codex-cli",
+                event: .turnFinished,
+                pid: 44,
+                processStartTime: baseline,
+                integrationSessionId: "turn-2",
+                eventID: "codex-turn-2"
+            ),
+            at: baseline.addingTimeInterval(10)
+        )
+
+        try check(machine.sessions.first?.state == .standingBy, "Expected Codex notify completion to move matching process session to standing by")
+        try check(machine.sessions.first?.standingByExpiresAt == baseline.addingTimeInterval(910), "Expected Codex notify completion to start grace timer")
+
+        let staleMachine = AgentSessionStateMachine(graceInterval: 900)
+        staleMachine.applyProcessObservations(
+            [observation(pid: 44, start: baseline, path: "/opt/homebrew/bin/codex", agent: .codexCLI)],
+            at: baseline
+        )
+        staleMachine.applyIntegrationEvent(
+            HookAdapterEvent(
+                agent: .codexCLI,
+                host: "codex-cli",
+                event: .turnFinished,
+                pid: 44,
+                processStartTime: baseline.addingTimeInterval(100),
+                eventID: "codex-stale-pid"
+            ),
+            at: baseline.addingTimeInterval(10)
+        )
+        try check(staleMachine.sessions.first?.state == .active, "Expected stale pid reuse event not to mutate a process-scanned session")
+
+        let integrationMachine = AgentSessionStateMachine(graceInterval: 900)
+        integrationMachine.applyIntegrationEvent(
+            HookAdapterEvent(
+                agent: .codexCLI,
+                host: "codex-cli",
+                event: .turnStarted,
+                pid: 44,
+                processStartTime: baseline,
+                integrationSessionId: "turn-3",
+                eventID: "codex-turn-3-start"
+            ),
+            at: baseline
+        )
+        integrationMachine.applyIntegrationEvent(
+            HookAdapterEvent(
+                agent: .codexCLI,
+                host: "codex-cli",
+                event: .turnFinished,
+                pid: 44,
+                processStartTime: baseline.addingTimeInterval(100),
+                integrationSessionId: "turn-3",
+                eventID: "codex-turn-3-finish-stale"
+            ),
+            at: baseline.addingTimeInterval(10)
+        )
+        try check(integrationMachine.sessions.first?.state == .active, "Expected reused session IDs with mismatched process starts not to mutate sessions")
+
+        integrationMachine.applyProcessObservations(
+            [observation(pid: 44, start: baseline.addingTimeInterval(100), path: "/opt/homebrew/bin/codex", agent: .codexCLI)],
+            at: baseline.addingTimeInterval(20)
+        )
+        try check(
+            integrationMachine.sessions.contains { $0.source == .integrationEvent && $0.state == .finished },
+            "Expected integration-created sessions to finish when the same pid reappears with a new start time"
+        )
+    }
+
+    private static func claudePatcherPreservesExistingHooksAndRemovesOwnedHandlers() throws {
+        let current = """
+        {
+          "hooks": {
+            "PreToolUse": [
+              {
+                "matcher": "Bash",
+                "hooks": [
+                  { "type": "command", "command": "/usr/local/bin/user-hook" }
+                ]
+              }
+            ]
+          }
+        }
+        """
+
+        let patcher = ClaudeCodeConfigPatcher()
+        let noOpRemoval = try patcher.removalPlan(currentData: Data(current.utf8))
+        try check(noOpRemoval.patchedData == Data(current.utf8), "Expected Claude removal without owned hooks to be byte-stable")
+        try check(!noOpRemoval.backupRequired, "Expected Claude no-op removal not to request backup")
+
+        let install = try patcher.installPlan(currentData: Data(current.utf8), adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter")
+        let installed = String(data: install.patchedData, encoding: .utf8) ?? ""
+
+        try patcher.validate(install.patchedData)
+        try check(installed.contains("user-hook"), "Expected Claude patcher to preserve existing hooks")
+        try check(installed.contains(ClaudeCodeConfigPatcher.manifest.ownerMarker), "Expected Claude patcher to add owned hook marker")
+        try check(installed.contains("UserPromptSubmit"), "Expected Claude patcher to add turn-start hook")
+        try check(installed.contains("PostToolUse"), "Expected Claude patcher to add tool-continuing hook")
+
+        let removal = try patcher.removalPlan(currentData: install.patchedData)
+        let removed = String(data: removal.patchedData, encoding: .utf8) ?? ""
+        try check(removed.contains("user-hook"), "Expected Claude removal to keep user hooks")
+        try check(!removed.contains(ClaudeCodeConfigPatcher.manifest.ownerMarker), "Expected Claude removal to remove owned handlers")
+    }
+
+    private static func codexPatcherPreservesExistingNotifyAndRestoresItOnRemoval() throws {
+        let current = """
+        # user config
+        model = "gpt-5.5"
+        notify = ["/usr/local/bin/notify-user", "Codex"]
+
+        [profiles.work]
+        model = "gpt-5.4"
+        """
+
+        let patcher = CodexConfigPatcher()
+        let install = try patcher.installPlan(currentData: Data(current.utf8), adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter")
+        let installed = String(data: install.patchedData, encoding: .utf8) ?? ""
+
+        try patcher.validate(install.patchedData)
+        try check(installed.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex patcher to add owned block")
+        try check(installed.contains("--forward-notify"), "Expected Codex patcher to forward previous notify command")
+        try check(installed.contains("[profiles.work]"), "Expected Codex patcher to preserve unrelated tables")
+
+        let removal = try patcher.removalPlan(currentData: install.patchedData)
+        let removed = String(data: removal.patchedData, encoding: .utf8) ?? ""
+        try check(removed.contains(#"notify = ["/usr/local/bin/notify-user", "Codex"]"#), "Expected Codex removal to restore previous notify line")
+        try check(!removed.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex removal to remove owned block")
+    }
+
+    private static func codexPatcherHandlesMultilineAndSingleQuotedNotify() throws {
+        let current = """
+        model = "gpt-5.5"
+        notify = [
+          '/usr/local/bin/notify-user', # comment with ] should not close the array
+          'Codex',
+        ]
+
+        [profiles.work]
+        model = "gpt-5.4"
+        """
+
+        let patcher = CodexConfigPatcher()
+        let install = try patcher.installPlan(
+            currentData: Data(current.utf8),
+            adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter"
+        )
+        let installed = String(data: install.patchedData, encoding: .utf8) ?? ""
+
+        try patcher.validate(install.patchedData)
+        try check(installed.contains("--forward-notify"), "Expected multiline single-quoted notify to be forwarded")
+        try check(installed.contains("[profiles.work]"), "Expected multiline notify install to preserve tables")
+
+        let removal = try patcher.removalPlan(currentData: install.patchedData)
+        let removed = String(data: removal.patchedData, encoding: .utf8) ?? ""
+        try check(removed.contains("notify = ["), "Expected removal to restore multiline notify assignment")
+        try check(removed.contains("'/usr/local/bin/notify-user'"), "Expected removal to restore single-quoted command")
+        try check(removed.contains("'Codex'"), "Expected removal to restore single-quoted argument")
+        try check(!removed.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected removal to delete owned block")
+
+        let malformedOwnedBlock = """
+        # BEGIN \(CodexConfigPatcher.manifest.ownerMarker)
+        # BEGIN \(CodexConfigPatcher.manifest.ownerMarker)
+        notify = ["/usr/local/bin/notify-user"]
+        # END \(CodexConfigPatcher.manifest.ownerMarker)
+        # END \(CodexConfigPatcher.manifest.ownerMarker)
+        """
+        try expectThrows("Expected nested owned Codex markers to be rejected") {
+            try patcher.validate(Data(malformedOwnedBlock.utf8))
+        }
+    }
+
+    private static func configPatchersRejectInvalidEncodingAndPreserveMarkerLookalikes() throws {
+        let codexPatcher = CodexConfigPatcher()
+        try expectThrows("Expected non-UTF-8 Codex config to be rejected") {
+            _ = try codexPatcher.installPlan(
+                currentData: Data([0xff, 0xfe, 0xfd]),
+                adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter"
+            )
+        }
+
+        let markerLookalike = """
+        # BEGIN \(CodexConfigPatcher.manifest.ownerMarker) but user-owned
+        notify = ["/usr/local/bin/notify-user"]
+        # END \(CodexConfigPatcher.manifest.ownerMarker) but user-owned
+        """
+        let removal = try codexPatcher.removalPlan(currentData: Data(markerLookalike.utf8))
+        let removed = String(data: removal.patchedData, encoding: .utf8) ?? ""
+        try check(removed.contains("but user-owned"), "Expected marker lookalikes not to be treated as owned blocks")
+        try check(removed.contains(#"notify = ["/usr/local/bin/notify-user"]"#), "Expected marker lookalike notify to remain")
+
+        let claudeLookalike = """
+        {
+          "hooks": {
+            "Stop": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "/usr/local/bin/user-hook --note \(ClaudeCodeConfigPatcher.manifest.ownerMarker)"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """
+        let claudeRemoval = try ClaudeCodeConfigPatcher().removalPlan(currentData: Data(claudeLookalike.utf8))
+        let claudeRemoved = String(data: claudeRemoval.patchedData, encoding: .utf8) ?? ""
+        try check(claudeRemoved.contains("user-hook"), "Expected Claude marker lookalike command to remain")
+        try check(claudeRemoved.contains(ClaudeCodeConfigPatcher.manifest.ownerMarker), "Expected user-owned marker text to remain")
+    }
+
+    private static func integrationManagerRecordsRemovalSuppressionAndStatus() throws {
+        let paths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
+
+        let logStore = LogStore(paths: paths, now: { Date(timeIntervalSince1970: 9_500) })
+        let settingsStore = SettingsStore(paths: paths, logStore: logStore)
+        logStore.start()
+        settingsStore.start()
+
+        let manager = IntegrationManager(
+            settingsStore: settingsStore,
+            logStore: logStore,
+            now: { Date(timeIntervalSince1970: 9_500) }
+        )
+        let message = try manager.removeIntegration(agentID: "codex-cli")
+
+        try check(message.contains("suppressed"), "Expected removal message to mention suppression")
+        try check(settingsStore.settings.integrationSuppressions["codex-cli"]?.doNotAutoInstall == true, "Expected removal to suppress auto-install")
+        try check(settingsStore.settings.integrationStates["codex-cli"]?.status == .removed, "Expected removal state to be persisted")
+        try check(logStore.events.contains { $0.kind == .integrationRemoval }, "Expected integration removal to be audited")
+    }
+
+    private static func integrationManagerAppliesConfigPatchesAndRemovesThem() throws {
+        let paths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
+
+        let configDirectory = paths.applicationSupportDirectory.appendingPathComponent("configs", isDirectory: true)
+        let claudeURL = configDirectory.appendingPathComponent("claude-settings.json")
+        let codexURL = configDirectory.appendingPathComponent("codex-config.toml")
+        let locations = IntegrationInstallLocations(
+            claudeSettingsURL: claudeURL,
+            codexConfigURL: codexURL,
+            adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter"
+        )
+
+        let logStore = LogStore(paths: paths, now: { Date(timeIntervalSince1970: 9_600) })
+        let settingsStore = SettingsStore(paths: paths, logStore: logStore)
+        logStore.start()
+        settingsStore.start()
+
+        let manager = IntegrationManager(
+            settingsStore: settingsStore,
+            logStore: logStore,
+            autoInstallOnStart: true,
+            installLocations: locations,
+            homeDirectory: paths.applicationSupportDirectory.path,
+            now: { Date(timeIntervalSince1970: 9_600) }
+        )
+        manager.start()
+
+        let claudeInstalled = try String(contentsOf: claudeURL, encoding: .utf8)
+        let codexInstalled = try String(contentsOf: codexURL, encoding: .utf8)
+        try check(claudeInstalled.contains(ClaudeCodeConfigPatcher.manifest.ownerMarker), "Expected manager start to install Claude hooks")
+        try check(codexInstalled.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected manager start to install Codex notify")
+        try check(settingsStore.settings.integrationStates["claude-code"]?.status == .installed, "Expected Claude install state")
+        try check(settingsStore.settings.integrationStates["codex-cli"]?.status == .installed, "Expected Codex install state")
+        try check(!manager.statusMessage().contains(paths.applicationSupportDirectory.path), "Expected integration status to redact local home paths")
+        try check(manager.statusMessage().contains("~/configs"), "Expected integration status to show redacted settings path")
+
+        manager.start()
+        let backupFilesAfterSecondStart = try FileManager.default.contentsOfDirectory(atPath: configDirectory.path)
+            .filter { $0.contains(".clawshell-backup.") }
+        try check(backupFilesAfterSecondStart.isEmpty, "Expected repeated auto-install to avoid backup churn when configs are unchanged")
+
+        let removeMessage = try manager.removeAllIntegrations(at: Date(timeIntervalSince1970: 9_700))
+        let claudeRemoved = try String(contentsOf: claudeURL, encoding: .utf8)
+        let codexRemoved = try String(contentsOf: codexURL, encoding: .utf8)
+        try check(removeMessage.contains("claude-code"), "Expected remove-all message to include Claude")
+        try check(removeMessage.contains("codex-cli"), "Expected remove-all message to include Codex")
+        try check(!claudeRemoved.contains(ClaudeCodeConfigPatcher.manifest.ownerMarker), "Expected Claude owned hook to be removed")
+        try check(!codexRemoved.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex owned block to be removed")
+        try check(settingsStore.settings.integrationSuppressions["claude-code"]?.doNotAutoInstall == true, "Expected Claude suppression after removal")
+        try check(settingsStore.settings.integrationSuppressions["codex-cli"]?.doNotAutoInstall == true, "Expected Codex suppression after removal")
+
+        let enableMessage = try manager.enableAutoInstall(agentID: "codex-cli")
+        let codexReinstalled = try String(contentsOf: codexURL, encoding: .utf8)
+        try check(enableMessage.contains("installed"), "Expected enable-auto to reinstall when locations are configured")
+        try check(codexReinstalled.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex integration to reinstall")
+        try check(settingsStore.settings.integrationSuppressions["codex-cli"] == nil, "Expected enable-auto to clear Codex suppression")
+    }
+
+    private static func integrationManagerSurfacesFailedInstallReasons() throws {
+        let paths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
+
+        let configDirectory = paths.applicationSupportDirectory.appendingPathComponent("configs", isDirectory: true)
+        let claudeURL = configDirectory.appendingPathComponent("claude-settings.json")
+        let codexURL = configDirectory.appendingPathComponent("codex-config.toml")
+        try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
+        try Data([0xff, 0xfe, 0xfd]).write(to: codexURL)
+
+        let logStore = LogStore(paths: paths, now: { Date(timeIntervalSince1970: 9_800) })
+        let settingsStore = SettingsStore(paths: paths, logStore: logStore)
+        logStore.start()
+        settingsStore.start()
+
+        let manager = IntegrationManager(
+            settingsStore: settingsStore,
+            logStore: logStore,
+            autoInstallOnStart: true,
+            installLocations: IntegrationInstallLocations(
+                claudeSettingsURL: claudeURL,
+                codexConfigURL: codexURL,
+                adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter"
+            ),
+            now: { Date(timeIntervalSince1970: 9_800) }
+        )
+        manager.start()
+
+        let failedState = settingsStore.settings.integrationStates["codex-cli"]
+        try check(failedState?.status == .failed, "Expected failed Codex install state")
+        try check(failedState?.failureReason?.contains("UTF-8") == true, "Expected failed install reason to be persisted")
+        try check(manager.statusMessage().contains("reason="), "Expected integration status to surface failure reason")
+        try check(
+            logStore.events.contains {
+                $0.kind == .integrationSetup && $0.metadata["failureReason"]?.contains("UTF-8") == true
+            },
+            "Expected failed install reason to be audited"
+        )
+
+        try expectThrows("Expected removal cleanup to fail on invalid Codex config") {
+            _ = try manager.removeIntegration(agentID: "codex-cli")
+        }
+        try check(settingsStore.settings.integrationSuppressions["codex-cli"]?.doNotAutoInstall == true, "Expected failed removal cleanup to still suppress auto-install")
+    }
+
     private static func settingsPersistWithExpectedSchema() throws {
         let paths = try makeTemporaryPaths()
         defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
@@ -1029,6 +1582,12 @@ struct ClawShellCoreChecks {
         var settings = ClawShellSettings()
         settings.defaultGraceSeconds = 1200
         settings.integrationSuppressions["codex-cli"] = IntegrationSuppression(reason: "user removed integration")
+        settings.integrationStates["codex-cli"] = IntegrationState(
+            agentID: "codex-cli",
+            status: .installed,
+            integrationID: "com.clawshell.integration.codex-cli.v1",
+            settingsFile: "/Users/tester/.codex/config.toml"
+        )
         settings.helperOwnership = HelperOwnership(owner: "root", installedAt: Date(timeIntervalSince1970: 1))
         try store.save(settings)
 
@@ -1037,6 +1596,8 @@ struct ClawShellCoreChecks {
 
         try check(exportJSON.contains("defaultGraceSeconds"), "Expected grace settings in export")
         try check(exportJSON.contains("integrationSuppressions"), "Expected integration suppressions in export")
+        try check(!exportJSON.contains("integrationStates"), "Expected local integration states to be excluded from export")
+        try check(!exportJSON.contains(".codex/config.toml"), "Expected integration status paths to be excluded from export")
         try check(!exportJSON.contains("helperOwnership"), "Expected helper ownership to be excluded from export")
         try check(!exportJSON.contains("manualOverrides"), "Expected manual overrides to be excluded from export")
         try check(!exportJSON.contains("runtime"), "Expected runtime tokens to be absent from export")
@@ -1066,6 +1627,7 @@ struct ClawShellCoreChecks {
         try store.importData(Data(importJSON.utf8))
         try check(store.settings.defaultGraceSeconds == 600, "Expected import to apply normal settings")
         try check(store.settings.helperOwnership == settings.helperOwnership, "Expected import to preserve local helper ownership")
+        try check(store.settings.integrationStates == settings.integrationStates, "Expected import to preserve local integration states")
     }
 
     private static func logsRedactSensitiveFields() throws {

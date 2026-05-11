@@ -27,6 +27,10 @@ let package = Package(
         .executable(
             name: "ClawShellCLI",
             targets: ["ClawShellCLI"]
+        ),
+        .executable(
+            name: "ClawShellHookAdapter",
+            targets: ["ClawShellHookAdapter"]
         )
     ],
     targets: [
@@ -49,6 +53,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "ClawShellCLI",
+            dependencies: ["ClawShellCore"]
+        ),
+        .executableTarget(
+            name: "ClawShellHookAdapter",
             dependencies: ["ClawShellCore"]
         ),
         .testTarget(

@@ -1,0 +1,6 @@
+# user config
+model = "gpt-5.5"
+notify = ["/usr/local/bin/notify-user", "Codex"]
+
+[profiles.work]
+model = "gpt-5.4"

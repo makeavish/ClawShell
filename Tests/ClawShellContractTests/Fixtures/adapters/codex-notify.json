@@ -1,0 +1,4 @@
+{
+  "type": "agent-turn-complete",
+  "turn-id": "contract-turn"
+}

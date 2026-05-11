@@ -36,6 +36,7 @@ public enum ControlCommand: Equatable, Sendable, Codable {
     case integrationsStatus
     case integrationsRemove(agentID: String)
     case integrationsEnableAuto(agentID: String)
+    case integrationEvent(HookAdapterEvent)
     case helperStatus
     case helperRepair
     case uninstall(removeHelper: Bool, removeIntegrations: Bool)
@@ -45,6 +46,7 @@ public enum ControlCommand: Equatable, Sendable, Codable {
         case duration
         case binary
         case agentID
+        case event
         case removeHelper
         case removeIntegrations
     }
@@ -72,6 +74,8 @@ public enum ControlCommand: Equatable, Sendable, Codable {
             self = .integrationsRemove(agentID: try container.decode(String.self, forKey: .agentID))
         case "integrationsEnableAuto":
             self = .integrationsEnableAuto(agentID: try container.decode(String.self, forKey: .agentID))
+        case "integrationEvent":
+            self = .integrationEvent(try container.decode(HookAdapterEvent.self, forKey: .event))
         case "helperStatus":
             self = .helperStatus
         case "helperRepair":
@@ -116,6 +120,9 @@ public enum ControlCommand: Equatable, Sendable, Codable {
         case .integrationsEnableAuto(let agentID):
             try container.encode("integrationsEnableAuto", forKey: .name)
             try container.encode(agentID, forKey: .agentID)
+        case .integrationEvent(let event):
+            try container.encode("integrationEvent", forKey: .name)
+            try container.encode(event, forKey: .event)
         case .helperStatus:
             try container.encode("helperStatus", forKey: .name)
         case .helperRepair:
@@ -297,15 +304,35 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
     public var statusProvider: () -> String
     public var pauseHandler: (TimeInterval, Date) -> Void
     public var releaseNowHandler: (Date) -> Void
+    public var integrationsListProvider: () -> String
+    public var integrationsStatusProvider: () -> String
+    public var integrationRemoveHandler: (String, Date) throws -> String
+    public var integrationEnableAutoHandler: (String, Date) throws -> String
+    public var integrationEventHandler: (HookAdapterEvent, Date) -> String
+    public var uninstallHandler: (Bool, Bool, Date) throws -> String
 
     public init(
         statusProvider: @escaping () -> String = { "ClawShell status unavailable" },
         pauseHandler: @escaping (TimeInterval, Date) -> Void = { _, _ in },
-        releaseNowHandler: @escaping (Date) -> Void = { _ in }
+        releaseNowHandler: @escaping (Date) -> Void = { _ in },
+        integrationsListProvider: @escaping () -> String = { "Integrations: claude-code, codex-cli" },
+        integrationsStatusProvider: @escaping () -> String = { "Integration setup pending" },
+        integrationRemoveHandler: @escaping (String, Date) throws -> String = { agentID, _ in "Remove integration requested: \(agentID)" },
+        integrationEnableAutoHandler: @escaping (String, Date) throws -> String = { agentID, _ in "Auto-integration enabled: \(agentID)" },
+        integrationEventHandler: @escaping (HookAdapterEvent, Date) -> String = { event, _ in "Integration event accepted: \(event.agent.rawValue) \(event.event.rawValue)" },
+        uninstallHandler: @escaping (Bool, Bool, Date) throws -> String = { removeHelper, removeIntegrations, _ in
+            "Uninstall requested removeHelper=\(removeHelper) removeIntegrations=\(removeIntegrations)"
+        }
     ) {
         self.statusProvider = statusProvider
         self.pauseHandler = pauseHandler
         self.releaseNowHandler = releaseNowHandler
+        self.integrationsListProvider = integrationsListProvider
+        self.integrationsStatusProvider = integrationsStatusProvider
+        self.integrationRemoveHandler = integrationRemoveHandler
+        self.integrationEnableAutoHandler = integrationEnableAutoHandler
+        self.integrationEventHandler = integrationEventHandler
+        self.uninstallHandler = uninstallHandler
     }
 
     public func route(_ command: ControlCommand, receivedAt: Date) throws -> ControlResponse {
@@ -323,13 +350,15 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
         case .add(let binary):
             return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: "Custom binary support is post-v1: \(binary)")
         case .integrationsList:
-            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: "Integrations: claude-code, codex-cli")
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: integrationsListProvider())
         case .integrationsStatus:
-            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: "Integration setup pending")
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: integrationsStatusProvider())
         case .integrationsRemove(let agentID):
-            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: "Remove integration requested: \(agentID)")
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: try integrationRemoveHandler(agentID, receivedAt))
         case .integrationsEnableAuto(let agentID):
-            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: "Auto-integration enabled: \(agentID)")
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: try integrationEnableAutoHandler(agentID, receivedAt))
+        case .integrationEvent(let event):
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: integrationEventHandler(event, receivedAt))
         case .helperStatus:
             return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: "Helper not installed")
         case .helperRepair:
@@ -338,7 +367,7 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
             return ControlResponse(
                 accepted: true,
                 receiptTimestamp: receivedAt,
-                message: "Uninstall requested removeHelper=\(removeHelper) removeIntegrations=\(removeIntegrations)"
+                message: try uninstallHandler(removeHelper, removeIntegrations, receivedAt)
             )
         }
     }
