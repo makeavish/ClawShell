@@ -39,6 +39,7 @@ struct ClawShellCoreChecks {
         try socketEndpointRejectsAuthReplayAndClientPIDRotation()
         try controlServerComponentRotatesTokenAndClearsRuntime()
         try hookAdapterMapsAndRedactsClaudePayload()
+        try hookAdapterMapsAndRedactsCodexNativeHookPayloads()
         try hookAdapterUsesStableReplayIDForNativeToolEventsOnly()
         try hookAdapterResolvesAgentAncestorThroughShellShim()
         try hookAdapterNoOpsWhenClawShellIsUnavailable()
@@ -973,6 +974,114 @@ struct ClawShellCoreChecks {
         try check(!encoded.contains("transcript"), "Expected transcript path to be discarded")
     }
 
+    private static func hookAdapterMapsAndRedactsCodexNativeHookPayloads() throws {
+        let payloads: [(payload: String, event: HookAdapterEventKind, sessionID: String)] = [
+            (
+                """
+                {
+                  "hook_event_name": "SessionStart",
+                  "session_id": "codex-session-1",
+                  "cwd": "/Users/tester/private-codex-project",
+                  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+                  "model": "gpt-5.5",
+                  "permission_mode": "default",
+                  "source": "startup"
+                }
+                """,
+                .sessionStarted,
+                "codex-session-1"
+            ),
+            (
+                """
+                {
+                  "hook_event_name": "UserPromptSubmit",
+                  "session_id": "codex-session-1",
+                  "turn_id": "codex-turn-1",
+                  "cwd": "/Users/tester/private-codex-project",
+                  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+                  "prompt": "secret prompt text"
+                }
+                """,
+                .turnStarted,
+                "codex-turn-1"
+            ),
+            (
+                """
+                {
+                  "hook_event_name": "PreToolUse",
+                  "session_id": "codex-session-1",
+                  "turn_id": "codex-turn-1",
+                  "cwd": "/Users/tester/private-codex-project",
+                  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+                  "tool_name": "shell",
+                  "tool_input": { "command": "cat .env" },
+                  "tool_use_id": "codex-tool-1"
+                }
+                """,
+                .toolStarted,
+                "codex-turn-1"
+            ),
+            (
+                """
+                {
+                  "hook_event_name": "PostToolUse",
+                  "session_id": "codex-session-1",
+                  "turn_id": "codex-turn-1",
+                  "cwd": "/Users/tester/private-codex-project",
+                  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+                  "tool_input": { "command": "cat .env" },
+                  "tool_response": "SECRET_TOKEN=abc123",
+                  "tool_use_id": "codex-tool-1"
+                }
+                """,
+                .toolFinishedContinuing,
+                "codex-turn-1"
+            ),
+            (
+                """
+                {
+                  "hook_event_name": "Stop",
+                  "session_id": "codex-session-1",
+                  "turn_id": "codex-turn-1",
+                  "cwd": "/Users/tester/private-codex-project",
+                  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+                  "last_assistant_message": "assistant message that must stay local",
+                  "stop_hook_active": true
+                }
+                """,
+                .turnFinished,
+                "codex-turn-1"
+            )
+        ]
+
+        for item in payloads {
+            let event = try checkNotNil(
+                HookAdapterMapper.codexHookEvent(
+                    from: Data(item.payload.utf8),
+                    context: HookAdapterContext(
+                        agent: .codexCLI,
+                        host: "codex-cli",
+                        processID: 44,
+                        cwdHashSalt: "local-salt",
+                        eventIDProvider: { "fallback" }
+                    )
+                ),
+                "Expected Codex native hook payload to map"
+            )
+
+            let encoded = try String(data: JSONEncoder().encode(event), encoding: .utf8) ?? ""
+            try check(event.event == item.event, "Expected Codex native hook to map to \(item.event.rawValue)")
+            try check(event.integrationSessionId == item.sessionID, "Expected Codex native hook to prefer turn id when present")
+            try check(event.pid == 44, "Expected Codex native hook to include process id")
+            try check(event.cwdHash == CWDHash.hmacSHA256("/Users/tester/private-codex-project", salt: "local-salt"), "Expected Codex cwd to be HMAC hashed")
+            try check(event.eventID.hasPrefix("codex-"), "Expected Codex native hook replay ID to be namespaced")
+
+            for sensitive in ["secret prompt text", "cat .env", "SECRET_TOKEN", "private-codex-project", "transcript", "assistant message"] {
+                try check(!encoded.contains(sensitive), "Expected Codex native hook event to discard \(sensitive)")
+            }
+        }
+    }
+
     private static func hookAdapterUsesStableReplayIDForNativeToolEventsOnly() throws {
         let payload = #"{"hook_event_name":"PreToolUse","session_id":"session-1","tool_use_id":"tool-1","prompt":"do work"}"#
         let context = HookAdapterContext(
@@ -1008,6 +1117,57 @@ struct ClawShellCoreChecks {
         try check(first.eventID.hasPrefix("claude-"), "Expected synthesized Claude replay ID to be namespaced")
         try check(first.eventID != "fallback", "Expected salted Claude replay ID not to use random fallback")
         try check(fallback.eventID == "fallback", "Expected unsalted Claude payloads to keep fallback IDs")
+
+        let codexPayload = #"{"hook_event_name":"PreToolUse","session_id":"session-1","turn_id":"turn-1","tool_use_id":"tool-1","prompt":"do work"}"#
+        let codexContext = HookAdapterContext(
+            agent: .codexCLI,
+            host: "codex-cli",
+            processID: 43,
+            cwdHashSalt: "local-salt",
+            eventIDProvider: { "fallback-\(UUID().uuidString)" }
+        )
+        let codexFirst = try checkNotNil(
+            HookAdapterMapper.codexHookEvent(from: Data(codexPayload.utf8), context: codexContext),
+            "Expected first Codex native hook event to map"
+        )
+        let codexSecond = try checkNotNil(
+            HookAdapterMapper.codexHookEvent(from: Data(codexPayload.utf8), context: codexContext),
+            "Expected replayed Codex native hook event to map"
+        )
+        try check(codexFirst.eventID == codexSecond.eventID, "Expected Codex native hook occurrence IDs to get stable replay IDs")
+        try check(codexFirst.eventID.hasPrefix("codex-"), "Expected synthesized Codex replay ID to be namespaced")
+
+        let rawCodexEventID = try checkNotNil(
+            HookAdapterMapper.codexHookEvent(
+                from: Data(#"{"hook_event_name":"PreToolUse","event_id":"raw-sensitive-event-id","session_id":"session-1","turn_id":"turn-1","tool_use_id":"tool-1"}"#.utf8),
+                context: HookAdapterContext(
+                    agent: .codexCLI,
+                    host: "codex-cli",
+                    processID: 43,
+                    cwdHashSalt: "local-salt",
+                    eventIDProvider: { "fallback" }
+                )
+            ),
+            "Expected Codex native hook with raw event_id to map"
+        )
+        try check(rawCodexEventID.eventID.hasPrefix("codex-"), "Expected raw Codex event_id to be HMAC namespaced")
+        try check(rawCodexEventID.eventID != "raw-sensitive-event-id", "Expected raw Codex event_id not to pass through")
+
+        let startupSession = try checkNotNil(
+            HookAdapterMapper.codexHookEvent(
+                from: Data(#"{"hook_event_name":"SessionStart","session_id":"session-1","source":"startup"}"#.utf8),
+                context: codexContext
+            ),
+            "Expected Codex startup session event to map"
+        )
+        let resumeSession = try checkNotNil(
+            HookAdapterMapper.codexHookEvent(
+                from: Data(#"{"hook_event_name":"SessionStart","session_id":"session-1","source":"resume"}"#.utf8),
+                context: codexContext
+            ),
+            "Expected Codex resume session event to map"
+        )
+        try check(startupSession.eventID != resumeSession.eventID, "Expected Codex SessionStart replay IDs to include source")
 
         let promptPayload = #"{"hook_event_name":"UserPromptSubmit","session_id":"session-1","prompt":"do work"}"#
         let promptEvent = try checkNotNil(
@@ -1082,6 +1242,16 @@ struct ClawShellCoreChecks {
         let codexElapsed = Date().timeIntervalSince(codexStartedAt)
         try check(codexResult == HookAdapterRunResult(), "Expected Codex unavailable adapter run to no-op")
         try check(codexElapsed < 0.25, "Expected forwarded Codex notify to avoid blocking the no-op path")
+
+        let codexHookStartedAt = Date()
+        let codexHookResult = HookAdapterRunner(runtimeStore: ControlRuntimeStore(paths: paths))
+            .runCodexHook(
+                stdin: Data(#"{"hook_event_name":"UserPromptSubmit","session_id":"session-2","turn_id":"turn-2","prompt":"do work"}"#.utf8),
+                context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", processID: 44)
+            )
+        let codexHookElapsed = Date().timeIntervalSince(codexHookStartedAt)
+        try check(codexHookResult == HookAdapterRunResult(), "Expected unavailable Codex native hook adapter run to no-op")
+        try check(codexHookElapsed < 0.25, "Expected unavailable Codex native hook no-op path to complete within 250ms")
     }
 
     private static func hookAdapterRoutesIntegrationEventsThroughControlServer() throws {
@@ -1233,12 +1403,48 @@ struct ClawShellCoreChecks {
         try patcher.validate(install.patchedData)
         try check(installed.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex patcher to add owned block")
         try check(installed.contains("--forward-notify"), "Expected Codex patcher to forward previous notify command")
+        try check(installed.contains("--mode codex-hook"), "Expected Codex patcher to add native hook command")
+        try check(installed.contains("[[hooks.SessionStart]]"), "Expected Codex patcher to add session-start hook")
+        try check(installed.contains("[[hooks.UserPromptSubmit]]"), "Expected Codex patcher to add turn-start hook")
+        try check(installed.contains("[[hooks.PreToolUse]]"), "Expected Codex patcher to add pre-tool hook")
+        try check(installed.contains("[[hooks.PostToolUse]]"), "Expected Codex patcher to add post-tool hook")
+        try check(installed.contains("[[hooks.Stop]]"), "Expected Codex patcher to add stop hook")
+        try check(installed.contains("timeout = 1"), "Expected Codex native hook command to have a short timeout")
         try check(installed.contains("[profiles.work]"), "Expected Codex patcher to preserve unrelated tables")
 
         let removal = try patcher.removalPlan(currentData: install.patchedData)
         let removed = String(data: removal.patchedData, encoding: .utf8) ?? ""
+        try patcher.validate(removal.patchedData)
         try check(removed.contains(#"notify = ["/usr/local/bin/notify-user", "Codex"]"#), "Expected Codex removal to restore previous notify line")
+        try check(!removed.contains(#""Codex"][profiles.work]"#), "Expected Codex removal not to glue restored notify to next table")
         try check(!removed.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex removal to remove owned block")
+        try check(!removed.contains("[[hooks.UserPromptSubmit]]"), "Expected Codex removal to remove owned native hooks")
+
+        let withUserHook = """
+        [hooks.state."/tmp/user-hook:pre_tool_use:0:0"]
+        enabled = true
+
+        [[hooks.PreToolUse]]
+        matcher = "^Bash$"
+
+        [[hooks.PreToolUse.hooks]]
+        type = "command"
+        command = "/usr/local/bin/user-codex-hook"
+        """
+        let userHookInstall = try patcher.installPlan(
+            currentData: Data(withUserHook.utf8),
+            adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter"
+        )
+        let userHookInstalled = String(data: userHookInstall.patchedData, encoding: .utf8) ?? ""
+        try check(userHookInstalled.contains("/usr/local/bin/user-codex-hook"), "Expected Codex install to preserve user native hook")
+        try check(userHookInstalled.contains(#"[hooks.state."/tmp/user-hook:pre_tool_use:0:0"]"#), "Expected Codex install to preserve user hook state table")
+        try check(userHookInstalled.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex install to add owned block beside user hooks")
+        let userHookRemoval = try patcher.removalPlan(currentData: userHookInstall.patchedData)
+        let userHookRemoved = String(data: userHookRemoval.patchedData, encoding: .utf8) ?? ""
+        try patcher.validate(userHookRemoval.patchedData)
+        try check(userHookRemoved.contains("/usr/local/bin/user-codex-hook"), "Expected Codex removal to preserve user native hook")
+        try check(userHookRemoved.contains(#"[hooks.state."/tmp/user-hook:pre_tool_use:0:0"]"#), "Expected Codex removal to preserve user hook state table")
+        try check(!userHookRemoved.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex removal to remove only owned native hook block")
     }
 
     private static func codexPatcherHandlesMultilineAndSingleQuotedNotify() throws {
@@ -1266,6 +1472,7 @@ struct ClawShellCoreChecks {
 
         let removal = try patcher.removalPlan(currentData: install.patchedData)
         let removed = String(data: removal.patchedData, encoding: .utf8) ?? ""
+        try patcher.validate(removal.patchedData)
         try check(removed.contains("notify = ["), "Expected removal to restore multiline notify assignment")
         try check(removed.contains("'/usr/local/bin/notify-user'"), "Expected removal to restore single-quoted command")
         try check(removed.contains("'Codex'"), "Expected removal to restore single-quoted argument")

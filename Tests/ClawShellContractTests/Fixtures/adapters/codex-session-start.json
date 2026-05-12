@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "SessionStart",
+  "session_id": "codex-session-1",
+  "cwd": "/Users/tester/private-codex-project",
+  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+  "model": "gpt-5.5",
+  "permission_mode": "default",
+  "source": "startup"
+}

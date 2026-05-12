@@ -55,8 +55,8 @@ The V1 integration layer has both portable checks and contract fixtures:
 - `HookAdapterMapper` reduces Claude Code hook stdin and Codex `notify` payloads to ClawShell's minimal event schema.
 - Adapter output is host-safe and empty on success/no-op, including when ClawShell is not running.
 - Claude Code patching preserves existing hook groups, adds only owned command handlers, and removes only handlers containing ClawShell's owner marker.
-- Codex patching owns the top-level `notify` command, forwards a previous notify command through the adapter, preserves unrelated TOML, and restores the previous notify line on removal.
-- Native Codex hook events are source-backed by the #7 early-signal check, but ClawShell runtime support remains #23.
+- Codex patching owns native hook groups for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, and `Stop`, keeps the top-level `notify` fallback, forwards a previous notify command through the adapter, preserves unrelated TOML and user hooks, and restores the previous notify line on removal.
+- Native Codex hook stdin is reduced to ClawShell's minimal event schema without prompt text, raw cwd, transcript paths, tool input, tool output, or assistant text. See [codex-native-hooks.md](codex-native-hooks.md) for confidence transitions.
 - Integration removal persists per-agent `doNotAutoInstall` suppression and writes a local audit event.
 
 ## Coverage Status

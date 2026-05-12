@@ -252,13 +252,14 @@ public struct CodexConfigPatcher {
         let content = try utf8String(from: currentData)
         let cleaned = try removeOwnedBlock(from: content).content
         let previousNotify = topLevelNotifyLine(in: cleaned)
-        let block = try Self.ownedBlock(adapterPath: adapterPath, previousNotifyText: previousNotify?.text)
-        let patched = insertOwnedBlock(block, replacing: previousNotify, in: cleaned)
+        let notifyBlock = try Self.ownedNotifyBlock(adapterPath: adapterPath, previousNotifyText: previousNotify?.text)
+        let hooksBlock = Self.ownedHooksBlock(adapterPath: adapterPath)
+        let patched = insertOwnedBlocks(notifyBlock: notifyBlock, hooksBlock: hooksBlock, replacing: previousNotify, in: cleaned)
 
         return IntegrationPatchPlan(
             operation: .install,
             manifest: Self.manifest,
-            dryRunDiff: ["install Codex notify command with previous notify forwarding"],
+            dryRunDiff: ["install Codex native hooks plus notify command with previous notify forwarding"],
             patchedData: Data(patched.utf8),
             backupRequired: !currentData.isEmpty
         )
@@ -279,13 +280,23 @@ public struct CodexConfigPatcher {
     public func validate(_ data: Data) throws {
         let content = try utf8String(from: data)
         _ = try Self.ownedBlockRanges(in: content)
+        if let notifyLine = topLevelNotifyLine(in: content) {
+            try Self.validateNotifyAssignment(notifyLine.text)
+        }
     }
 
     private static let beginMarker = "# BEGIN \(manifest.ownerMarker)"
     private static let endMarker = "# END \(manifest.ownerMarker)"
     private static let previousNotifyPrefix = "# clawshell-previous-notify-base64: "
+    private static let codexHookEvents = [
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "Stop"
+    ]
 
-    private static func ownedBlock(adapterPath: String, previousNotifyText: String?) throws -> String {
+    private static func ownedNotifyBlock(adapterPath: String, previousNotifyText: String?) throws -> String {
         let previousNotifyBase64 = previousNotifyText
             .map { Data($0.utf8).base64EncodedString() } ?? "none"
         let previousNotifyArray: [String]
@@ -313,25 +324,64 @@ public struct CodexConfigPatcher {
 
         return [
             beginMarker,
-            "# ClawShell owns this top-level notify command and forwards the previous notify command when one existed.",
+            "# ClawShell owns this top-level Codex notify fallback.",
             "\(previousNotifyPrefix)\(previousNotifyBase64)",
             "notify = \(tomlArray(notifyCommand))",
             endMarker
         ].joined(separator: "\n")
     }
 
-    private func insertOwnedBlock(
-        _ block: String,
+    private static func ownedHooksBlock(adapterPath: String) -> String {
+        var lines = [
+            beginMarker,
+            "# ClawShell owns these Codex native hooks.",
+            "# Existing user hooks are preserved outside this owned block.",
+            ""
+        ]
+        let hookCommand = Self.codexHookCommand(adapterPath: adapterPath)
+        for event in codexHookEvents {
+            lines.append("[[hooks.\(event)]]")
+            lines.append("[[hooks.\(event).hooks]]")
+            lines.append("type = \"command\"")
+            lines.append("command = \(tomlString(hookCommand))")
+            lines.append("timeout = 1")
+            lines.append("")
+        }
+
+        lines.append(endMarker)
+        return lines.joined(separator: "\n")
+    }
+
+    private static func codexHookCommand(adapterPath: String) -> String {
+        [
+            shellQuote(adapterPath),
+            "--mode",
+            "codex-hook",
+            "--agent",
+            AgentKind.codexCLI.rawValue,
+            "--host",
+            AgentKind.codexCLI.rawValue,
+            "--owner-marker",
+            shellQuote(manifest.ownerMarker)
+        ].joined(separator: " ")
+    }
+
+    private func insertOwnedBlocks(
+        notifyBlock: String,
+        hooksBlock: String,
         replacing notifyLine: (range: Range<String.Index>, text: String)?,
         in content: String
     ) -> String {
+        let withNotify: String
         if let notifyLine {
             var next = content
-            next.replaceSubrange(notifyLine.range, with: block)
-            return ensureTrailingNewline(next)
+            next.replaceSubrange(notifyLine.range, with: notifyBlock)
+            withNotify = next
+        } else {
+            withNotify = notifyBlock + (content.isEmpty ? "" : "\n" + content)
         }
 
-        return ensureTrailingNewline(block + (content.isEmpty ? "" : "\n" + content))
+        return ensureTrailingNewline(ensureTrailingNewline(withNotify) + "\n" + hooksBlock)
     }
 
     private func removeOwnedBlock(from content: String) throws -> (content: String, removed: Bool) {
@@ -347,14 +397,17 @@ public struct CodexConfigPatcher {
             let block = String(content[blockRange])
             let restoredNotify = previousNotifyLine(from: block)
             if let restoredNotify {
-                next.append(restoredNotify)
+                next.append(ensureTrailingNewline(restoredNotify))
             }
             cursor = blockRange.upperBound
         }
         next.append(contentsOf: content[cursor..<content.endIndex])
 
         let compacted = next.replacingOccurrences(of: "\n\n\n", with: "\n\n")
-        return (compacted.isEmpty ? "" : ensureTrailingNewline(compacted), true)
+        guard !compacted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ("", true)
+        }
+        return (ensureTrailingNewline(compacted), true)
     }
 
     private func previousNotifyLine(from block: String) -> String? {
@@ -414,12 +467,45 @@ public struct CodexConfigPatcher {
         guard rhs.hasPrefix("[") else {
             throw IntegrationPatcherError.invalidTOML("notify assignment must be an array")
         }
+        try validateNotifyArrayRemainder(String(rhs))
 
         guard let values = parseTomlStringArray(rhs) else {
             throw IntegrationPatcherError.invalidTOML("notify array must contain parseable string values")
         }
 
         return values
+    }
+
+    private static func validateNotifyAssignment(_ text: String) throws {
+        guard let equals = text.firstIndex(of: "=") else {
+            throw IntegrationPatcherError.invalidTOML("notify assignment is missing '='")
+        }
+
+        let rhs = text[text.index(after: equals)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard rhs.hasPrefix("[") else {
+            throw IntegrationPatcherError.invalidTOML("notify assignment must be an array")
+        }
+
+        try validateNotifyArrayRemainder(String(rhs))
+    }
+
+    private static func validateNotifyArrayRemainder(_ raw: String) throws {
+        guard let closingBracket = tomlArrayClosingBracket(in: raw) else {
+            throw IntegrationPatcherError.invalidTOML("notify array must be closed")
+        }
+
+        let remainderStart = raw.index(after: closingBracket)
+        var cursor = remainderStart
+        while cursor < raw.endIndex {
+            let character = raw[cursor]
+            if character == "#" {
+                return
+            }
+            guard character.isWhitespace else {
+                throw IntegrationPatcherError.invalidTOML("notify assignment has trailing content after array")
+            }
+            cursor = raw.index(after: cursor)
+        }
     }
 
     private static func ownedBlockRanges(in content: String) throws -> [Range<String.Index>] {
@@ -549,6 +635,60 @@ private func parseTomlStringArray(_ raw: String) -> [String]? {
         if character == "]" {
             return values
         }
+    }
+
+    return nil
+}
+
+private func tomlArrayClosingBracket(in raw: String) -> String.Index? {
+    var cursor = raw.startIndex
+    var stringDelimiter: Character?
+    var escaped = false
+    var hasOpenedArray = false
+    var bracketDepth = 0
+    var inComment = false
+
+    while cursor < raw.endIndex {
+        let character = raw[cursor]
+
+        if inComment {
+            if character == "\n" {
+                inComment = false
+            }
+        } else if let delimiter = stringDelimiter {
+            if escaped {
+                escaped = false
+            } else if delimiter == "\"" && character == "\\" {
+                escaped = true
+            } else if character == delimiter {
+                stringDelimiter = nil
+            }
+        } else if !hasOpenedArray {
+            if character.isWhitespace {
+                cursor = raw.index(after: cursor)
+                continue
+            }
+
+            guard character == "[" else {
+                return nil
+            }
+
+            hasOpenedArray = true
+            bracketDepth = 1
+        } else if character == "#" {
+            inComment = true
+        } else if character == "\"" || character == "'" {
+            stringDelimiter = character
+        } else if character == "[" {
+            bracketDepth += 1
+        } else if character == "]" {
+            bracketDepth -= 1
+            if bracketDepth == 0 {
+                return cursor
+            }
+        }
+
+        cursor = raw.index(after: cursor)
     }
 
     return nil

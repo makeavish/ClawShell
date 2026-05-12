@@ -1,0 +1,11 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "codex-session-1",
+  "turn_id": "codex-turn-1",
+  "cwd": "/Users/tester/private-codex-project",
+  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+  "model": "gpt-5.5",
+  "permission_mode": "default",
+  "last_assistant_message": "assistant message that must stay local",
+  "stop_hook_active": true
+}

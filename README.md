@@ -29,7 +29,7 @@ Long-running coding agents can work for minutes or hours. macOS can interrupt th
 | Agent | Planned behavior |
 |---|---|
 | Claude Code | First-class local hook integration where available, with process fallback |
-| Codex CLI | Local `notify` integration where available, with process fallback |
+| Codex CLI | Native lifecycle hooks where available, legacy `notify` completion fallback, and process fallback |
 
 Gemini CLI, Cursor, VS Code, and custom binaries are planned for later versions.
 
