@@ -11,7 +11,7 @@ three evidence issues:
 |---|---|---|
 | [#29](https://github.com/makeavish/ClawShell/issues/29) primitive matrix | Real hardware `pmset disablesleep` matrix evidence is still missing. | Run the primitive matrix on target hardware, fill `manual-result.md`, verify the manifest, and attach pass/fail/inconclusive evidence. |
 | [#27](https://github.com/makeavish/ClawShell/issues/27) no-membership helper prototype | `.build/helper-service-readiness/recheck-20260512T105510Z` records full Xcode/tooling available, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. Developer ID membership is intentionally deferred. | Prototype a local/ad-hoc signed and hash/pairing-pinned helper path that does not require Apple Developer Program membership. Try `SMAppService` with the strongest local signing mode first; if macOS rejects it, prove a fallback LaunchDaemon install/update/uninstall path. |
-| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | `.build/temperature-provider-helper-readiness/recheck-20260512T100451Z` records `powermetricsAvailable=true`, `sudoNonInteractiveAvailable=false`, `powermetricsHelperPermissionState=sudoPasswordRequired`, and `providerProofReady=false`. | Run helper/root-equivalent sampling that does not prompt during Bag Mode, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
+| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | `.build/temperature-provider-proof/smappservice-real-20260512T163358Z` proves the no-membership `SMAppService` helper can launch as root and unregister cleanly, but `powermetrics --samplers thermal` timed out under the 1s deadline without numeric output. | Test a faster helper-owned source or command shape, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
 
 Readiness harnesses, scaffolds, and verifier success are support gates only.
 They do not close #7 without the real evidence above.
@@ -142,7 +142,7 @@ The provider proof must choose a fresh, permission-compatible temperature source
 
 Current artifact: [Temperature Provider Check](temperature-provider-check.md).
 
-The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `powermetrics` requires elevated privileges, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. The helper-equivalent preflight confirms `powermetrics` is installed on this Apple Silicon MacBook, but non-interactive sampling from this shell is blocked by sudo authorization. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
+The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. A no-membership `SMAppService` provider run later proved that an ad-hoc helper can launch as root and clean up on this machine, but the tested `powermetrics --samplers thermal` command timed out under the 1 second provider deadline without numeric output. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
 
 Before attempting helper/root sampling, run the non-mutating preflight:
 

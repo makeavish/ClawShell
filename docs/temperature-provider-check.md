@@ -10,6 +10,8 @@ App-side artifact: `.build/temperature-provider-validation/local-20260512T023358
 
 Helper-equivalent preflight artifact: `.build/temperature-provider-helper-readiness/recheck-20260512T100451Z`
 
+SMAppService provider artifact: `.build/temperature-provider-proof/smappservice-real-20260512T163358Z`
+
 ## Question
 
 Which fresh, permission-compatible temperature source is reliable enough for Bag Mode cutoff decisions?
@@ -43,6 +45,7 @@ Reference:
 | `pmset -g therm` | Works without root | Returned within the 1s command timeout | No current numeric temperature in this run | Warning history/status, not a sensor source | Not a cutoff provider |
 | `powermetrics --samplers thermal` | Refused non-root execution with `powermetrics must be invoked as the superuser` | Returned within the 1s command timeout when non-root | Not available without root | Not validated in this artifact | Follow-up required |
 | AppleSmartBattery I/O Registry fields | Works without root when battery service exists | Returned within the 1s command timeout; update age was 12s in this run, above the 10s freshness target | Battery pack/virtual values were present | Battery temperature does not prove CPU/package or closed-bag thermal coverage | Context only |
+| SMAppService helper `powermetrics --samplers thermal` | Ad-hoc/no-membership helper launched as root | Helper hit the 1s timeout before a complete sample | No numeric temperature observed | Not validated; no cutoff signal captured | Helper path viable, command not proven |
 
 Captured values from `validation-config.txt`:
 
@@ -108,16 +111,53 @@ helperSamplingCandidateAvailable=false
 providerProofReady=false
 ```
 
-This narrows the current local blocker: `powermetrics` exists on this Apple
-Silicon MacBook, but this shell cannot run helper-equivalent sampling without a
-user-visible authorization path. The preflight does not prove freshness,
-cadence, closed-bag coverage, fail-closed behavior, or provider reliability.
+This preflight explained the earlier non-interactive shell blocker. The later
+SMAppService run below moved past that blocker by launching the provider helper
+as root; the current local blocker is now provider output quality, not helper
+authorization.
+
+## No-Membership SMAppService Provider Run
+
+The no-membership `SMAppService` provider artifact
+`.build/temperature-provider-proof/smappservice-real-20260512T163358Z`
+registered, reached enabled state, launched once as a system LaunchDaemon, and
+unregistered cleanly.
+
+Relevant lifecycle evidence:
+
+```text
+statusAfterRegisterRaw=2
+statusAfterApprovalRaw=1
+launchctlRuns=1
+helperRuntimeUid=0
+helperRuntimeEuid=0
+unregisterStatusBeforeRaw=1
+unregisterStatusAfterRaw=0
+launchctlAfterUnregister=service-not-found
+```
+
+The helper runtime proved root ownership, but the selected command did not
+produce a usable numeric provider sample under the required deadline:
+
+```text
+command=/usr/bin/powermetrics -n 1 -i 1000 --samplers thermal
+timeoutSeconds=1
+timedOut=true
+durationSeconds=2
+helperOwned=true
+numericTemperatureObserved=false
+```
+
+This is useful evidence for the helper mechanism, not proof of a production
+temperature provider. The next #25 work should test a faster helper-owned
+source or a different command shape before attempting freshness, cadence,
+closed-bag coverage, and fail-closed evidence.
 
 ## Conclusion
 
 No production Bag Mode temperature provider is selected from the non-root app-side sources tested.
 
-`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. `powermetrics` is installed, but this shell cannot run it through a non-interactive helper-equivalent path; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root output, freshness, cadence, timeout, and coverage.
+`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine, but the tested `powermetrics --samplers thermal` command timed out under the 1 second provider deadline without numeric output; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root numeric output, freshness, cadence, timeout, and coverage.
 
 Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a no-membership helper or helper-equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
 
