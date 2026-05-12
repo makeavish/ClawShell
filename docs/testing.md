@@ -98,6 +98,16 @@ Preflight is only a readiness check. It does not create validation evidence. #5 
 
 See [power-validation.md](power-validation.md) for the current normal assertion policy, disk/display assertion status, timed-idle caveats, and hardware result matrix.
 
+## Temperature Provider Harness
+
+Use the non-destructive temperature-provider harness for #7 safety-source checks:
+
+```sh
+scripts/temperature-provider-validation.sh --output-dir .build/temperature-provider-validation/local-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+The harness writes `validation-config.txt`, command outputs, command status files, and `summary.md`. It never uses sudo and must not mark `bagModeTemperatureProviderReady=true`; production provider readiness requires the signed-helper follow-up.
+
 ## Manual Hardware Checklist
 
 Hardware validation is gated and must be run intentionally on supported machines. Do not intentionally overheat hardware; thermal cutoff validation uses mocks or simulated sensor providers.
