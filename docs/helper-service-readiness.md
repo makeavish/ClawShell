@@ -102,6 +102,18 @@ scripts/helper-service-prototype-verify.sh \
   --manifest .build/helper-service-prototype/<case-id>/prototype-manifest.tsv
 ```
 
+To start the package layout without inventing rows by hand, generate a
+non-mutating scaffold:
+
+```bash
+scripts/helper-service-prototype-scaffold.sh \
+  --output-dir .build/helper-service-prototype/<case-id>
+```
+
+The scaffold is not evidence. It intentionally omits `validation-config.txt`
+and `manual-result.md`, and writes `TODO` manifest rows so the verifier fails
+until real signed-helper output is captured.
+
 The verifier expects three files at the manifest root:
 
 - `validation-config.txt`
