@@ -30,7 +30,7 @@ If the local toolchain cannot import `Testing` or `XCTest`, the script skips Swi
 - Grace timer reset and non-reset rules: covered by `AgentSessionStateMachineTests`
 - Manual override precedence and persistence
 - Normal assertion ownership/release and failed-release retry behavior: covered by `AssertionManagerTests`
-- Safety transitions, stale sensors, unavailable sensors, and hysteresis
+- Safety transitions, stale sensors, unavailable sensors, and hysteresis: covered by `BagModeSafetyPolicy` checks in `ClawShellCoreChecks`
 - Settings migration, atomic write, corrupt settings recovery
 - Export redaction and exclusion rules
 
@@ -138,6 +138,8 @@ scripts/temperature-provider-validation.sh --output-dir .build/temperature-provi
 ```
 
 The harness writes `validation-config.txt`, command outputs, command status files, and `summary.md`. It never uses sudo and must not mark `bagModeTemperatureProviderReady=true`; production provider readiness requires the signed-helper follow-up.
+
+Thermal cutoff and fail-closed behavior are tested with mocked provider inputs through `BagModeSafetyPolicy`. These tests cover warning, cutoff, stale, unavailable, permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout, coverage-insufficient, missing/invalid battery, battery floor, and hysteresis transitions without intentionally heating hardware.
 
 ## Helper Service Readiness Harness
 

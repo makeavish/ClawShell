@@ -137,7 +137,7 @@ private let issueNineCoveragePlan: [CoverageRequirement] = [
     CoverageRequirement(id: "out-of-order-hook-events", area: .unit, status: .pendingImplementation),
     CoverageRequirement(id: "grace-reset-rules", area: .unit, status: .automated),
     CoverageRequirement(id: "manual-override-precedence", area: .unit, status: .pendingImplementation),
-    CoverageRequirement(id: "safety-transition-matrix", area: .unit, status: .pendingImplementation),
+    CoverageRequirement(id: "safety-transition-matrix", area: .unit, status: .automated),
     CoverageRequirement(id: "settings-migration-recovery", area: .unit, status: .automated),
     CoverageRequirement(id: "export-redaction-exclusion", area: .unit, status: .automated),
     CoverageRequirement(id: "adapter-redaction", area: .contract, status: .automated),

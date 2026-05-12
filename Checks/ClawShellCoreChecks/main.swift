@@ -15,6 +15,7 @@ struct ClawShellCoreChecks {
         try executablePathHashParticipatesInVerifiedIdentity()
         try cpuDiagnosticsDoNotDriveTransitions()
         try remainingTransitionRowsAreExecutable()
+        try bagModeSafetyPolicyCoversWarningCutoffFailClosedAndHysteresis()
         try trustedEventsAreMonotonic()
         try assertionManagerAcquiresValidatedNormalAssertionsAndReleases()
         try assertionManagerPauseAndReleaseOverridesStopAssertions()
@@ -398,6 +399,174 @@ struct ClawShellCoreChecks {
         let processGoneSession = try checkNotNil(machine.sessions.first(where: { $0.id == processGoneID }), "Expected process-backed session to remain visible")
         try check(processGoneSession.state == .finished, "Expected missing process poll to finish the session")
         try check(processGoneSession.processExitedAt == baseline.addingTimeInterval(50), "Expected process exit time to be recorded")
+    }
+
+    private static func bagModeSafetyPolicyCoversWarningCutoffFailClosedAndHysteresis() throws {
+        let now = Date(timeIntervalSince1970: 4_500)
+        let policy = BagModeSafetyPolicy(
+            settings: SafetySettings(
+                temperatureWarningCelsius: 85,
+                temperatureCutoffCelsius: 95,
+                batteryFloorPercent: 15
+            )
+        )
+
+        let warning = policy.evaluate(
+            input: safetyInput(temperature: 86, battery: 80, now: now),
+            isBagModeArmed: false
+        )
+        try check(warning.state.mode == .warning, "Expected warning temperature to enter warning mode")
+        try check(warning.action == .warn, "Expected warning temperature to warn without cutting off")
+        try check(warning.canArmBagMode, "Expected warning state to remain armable below cutoff")
+
+        let supplementalWarning = policy.evaluate(
+            input: safetyInput(temperature: 60, pressure: .serious, battery: 80, now: now),
+            isBagModeArmed: false
+        )
+        try check(supplementalWarning.state.mode == .warning, "Expected app thermal pressure to be supplemental warning")
+        try check(supplementalWarning.action == .warn, "Expected app thermal pressure not to be sole cutoff source")
+        try check(supplementalWarning.canArmBagMode, "Expected app thermal pressure warning not to veto arming by itself")
+
+        let temperatureCutoff = policy.evaluate(
+            input: safetyInput(temperature: 96, battery: 80, now: now),
+            isBagModeArmed: true
+        )
+        try check(temperatureCutoff.state.mode == .cutoffLockedOut, "Expected cutoff temperature to lock out")
+        try check(temperatureCutoff.state.cutoffReason == .temperature, "Expected temperature cutoff reason")
+        try check(temperatureCutoff.action == .releaseIfArmed, "Expected armed Bag Mode to release on cutoff")
+
+        let batteryCutoff = policy.evaluate(
+            input: safetyInput(temperature: 70, battery: 15, now: now),
+            isBagModeArmed: true
+        )
+        try check(batteryCutoff.state.cutoffReason == .battery, "Expected battery floor cutoff")
+
+        let stale = policy.evaluate(
+            input: BagModeSafetyInput(
+                temperature: .sample(
+                    BagModeTemperatureSample(
+                        celsius: 70,
+                        capturedAt: now.addingTimeInterval(-11),
+                        coversClosedBagRisk: true
+                    )
+                ),
+                batteryPercent: 80,
+                now: now
+            ),
+            isBagModeArmed: false
+        )
+        try check(stale.state.cutoffReason == .staleSensor, "Expected stale readings to fail closed")
+        try check(stale.action == .failClosedBeforeArming, "Expected unarmed stale readings to block arming")
+
+        let malformedSamples = [
+            BagModeTemperatureSample(celsius: .nan, capturedAt: now),
+            BagModeTemperatureSample(celsius: .infinity, capturedAt: now),
+            BagModeTemperatureSample(celsius: 70, capturedAt: now.addingTimeInterval(1))
+        ]
+        for malformedSample in malformedSamples {
+            let decision = policy.evaluate(
+                input: BagModeSafetyInput(
+                    temperature: .sample(malformedSample),
+                    batteryPercent: 80,
+                    now: now
+                ),
+                isBagModeArmed: true
+            )
+            try check(decision.state.cutoffReason == .parseFailed, "Expected malformed temperature samples to fail closed")
+            try check(decision.action == .releaseIfArmed, "Expected malformed temperature samples to release armed Bag Mode")
+        }
+
+        let failClosedReadings: [(BagModeTemperatureReading, BagModeSafetyCutoffReason)] = [
+            (.unavailable, .unavailableSensor),
+            (.permissionDenied, .permissionDenied),
+            (.parseFailed, .parseFailed),
+            (.helperCrashed, .helperCrashed),
+            (.unsupportedHardware, .unsupportedHardware),
+            (.timedOut, .timedOut)
+        ]
+        for (reading, reason) in failClosedReadings {
+            let decision = policy.evaluate(
+                input: BagModeSafetyInput(temperature: reading, batteryPercent: 80, now: now),
+                isBagModeArmed: true
+            )
+            try check(decision.state.cutoffReason == reason, "Expected \(reason.rawValue) to fail closed")
+            try check(decision.action == .releaseIfArmed, "Expected \(reason.rawValue) to release armed Bag Mode")
+        }
+
+        let coverage = policy.evaluate(
+            input: BagModeSafetyInput(
+                temperature: .sample(
+                    BagModeTemperatureSample(
+                        celsius: 70,
+                        capturedAt: now,
+                        coversClosedBagRisk: false
+                    )
+                ),
+                batteryPercent: 80,
+                now: now
+            ),
+            isBagModeArmed: true
+        )
+        try check(coverage.state.cutoffReason == .coverageInsufficient, "Expected unsupported thermal coverage to fail closed")
+
+        let missingBattery = policy.evaluate(
+            input: BagModeSafetyInput(
+                temperature: .sample(BagModeTemperatureSample(celsius: 70, capturedAt: now)),
+                batteryPercent: nil,
+                now: now
+            ),
+            isBagModeArmed: false
+        )
+        try check(missingBattery.state.cutoffReason == .batteryUnavailable, "Expected missing battery reading to fail closed")
+
+        let invalidBattery = policy.evaluate(
+            input: safetyInput(temperature: 70, battery: 999, now: now),
+            isBagModeArmed: true
+        )
+        try check(invalidBattery.state.cutoffReason == .batteryInvalid, "Expected out-of-range battery reading to fail closed")
+        try check(invalidBattery.action == .releaseIfArmed, "Expected invalid battery reading to release armed Bag Mode")
+
+        let locked = BagModeSafetyState(
+            mode: .cutoffLockedOut,
+            cutoffReason: .temperature,
+            cutoffAt: now.addingTimeInterval(-60)
+        )
+        let stillLocked = policy.evaluate(
+            previous: locked,
+            input: safetyInput(temperature: 86, battery: 21, now: now),
+            isBagModeArmed: false
+        )
+        try check(stillLocked.state.mode == .cutoffLockedOut, "Expected hysteresis to keep lockout until temperature recovers enough")
+
+        let rearmEligible = policy.evaluate(
+            previous: locked,
+            input: safetyInput(temperature: 84, battery: 20, now: now),
+            isBagModeArmed: false
+        )
+        try check(rearmEligible.state.mode == .rearmEligible, "Expected recovered temperature and battery to become rearm eligible")
+        try check(rearmEligible.canArmBagMode, "Expected rearm eligible state to allow arming")
+
+        let recoveredButStillArmed = policy.evaluate(
+            previous: locked,
+            input: safetyInput(temperature: 84, battery: 20, now: now),
+            isBagModeArmed: true
+        )
+        try check(recoveredButStillArmed.state.mode == .cutoffLockedOut, "Expected lockout to stay active until Bag Mode is observed disarmed")
+        try check(recoveredButStillArmed.action == .releaseIfArmed, "Expected recovered but still armed lockout to keep requesting release")
+
+        let rearmed = policy.evaluate(
+            previous: rearmEligible.state,
+            input: safetyInput(temperature: 70, battery: 80, now: now),
+            isBagModeArmed: true
+        )
+        try check(rearmed.state.mode == .normal, "Expected re-arm to clear rearm eligible state")
+
+        let rearmedWarning = policy.evaluate(
+            previous: rearmEligible.state,
+            input: safetyInput(temperature: 86, battery: 80, now: now),
+            isBagModeArmed: true
+        )
+        try check(rearmedWarning.state.mode == .warning, "Expected re-armed warning input to remain warning")
     }
 
     private static func trustedEventsAreMonotonic() throws {
@@ -1917,6 +2086,20 @@ struct ClawShellCoreChecks {
             .appendingPathComponent("cs-\(UUID().uuidString.prefix(8))", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return ClawShellPaths(applicationSupportDirectory: url)
+    }
+
+    private static func safetyInput(
+        temperature: Double,
+        pressure: BagModeAppThermalPressure? = nil,
+        battery: Int,
+        now: Date
+    ) -> BagModeSafetyInput {
+        BagModeSafetyInput(
+            temperature: .sample(BagModeTemperatureSample(celsius: temperature, capturedAt: now)),
+            appThermalPressure: pressure,
+            batteryPercent: battery,
+            now: now
+        )
     }
 
     private static func observation(
