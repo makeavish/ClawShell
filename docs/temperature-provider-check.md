@@ -10,7 +10,12 @@ App-side artifact: `.build/temperature-provider-validation/local-20260512T023358
 
 Helper-equivalent preflight artifact: `.build/temperature-provider-helper-readiness/recheck-20260512T100451Z`
 
-SMAppService provider artifact: `.build/temperature-provider-proof/smappservice-real-20260512T163358Z`
+SMAppService provider artifacts:
+
+- `.build/temperature-provider-proof/smappservice-real-20260512T163358Z`
+- `.build/temperature-provider-proof/smappservice-unique-20260512T175157Z`
+- `.build/temperature-provider-proof/smappservice-all-20260512T181830Z`
+- `.build/temperature-provider-proof/smappservice-all-timeout5-20260512T182146Z`
 
 ## Question
 
@@ -45,7 +50,8 @@ Reference:
 | `pmset -g therm` | Works without root | Returned within the 1s command timeout | No current numeric temperature in this run | Warning history/status, not a sensor source | Not a cutoff provider |
 | `powermetrics --samplers thermal` | Refused non-root execution with `powermetrics must be invoked as the superuser` | Returned within the 1s command timeout when non-root | Not available without root | Not validated in this artifact | Follow-up required |
 | AppleSmartBattery I/O Registry fields | Works without root when battery service exists | Returned within the 1s command timeout; update age was 12s in this run, above the 10s freshness target | Battery pack/virtual values were present | Battery temperature does not prove CPU/package or closed-bag thermal coverage | Context only |
-| SMAppService helper `powermetrics --samplers thermal` | Ad-hoc/no-membership helper launched as root | Helper hit the 1s timeout before a complete sample | No numeric temperature observed | Not validated; no cutoff signal captured | Helper path viable, command not proven |
+| SMAppService helper `powermetrics --samplers thermal` | Ad-hoc/no-membership helper launched as root | Timed out after partial output; captured thermal pressure only | No numeric temperature observed | Not validated; no cutoff signal captured | Helper path viable, command not proven |
+| SMAppService helper `powermetrics --samplers all` | Same no-membership helper launched as root | 1s run produced only the command header; 5s diagnostic emitted broad task/power output but still timed out | No trustworthy numeric temperature observed after detector correction | Not validated; no cutoff signal captured | Diagnostic only; command not viable as provider |
 
 Captured values from `validation-config.txt`:
 
@@ -116,14 +122,18 @@ SMAppService run below moved past that blocker by launching the provider helper
 as root; the current local blocker is now provider output quality, not helper
 authorization.
 
-## No-Membership SMAppService Provider Run
+## No-Membership SMAppService Provider Runs
 
 The no-membership `SMAppService` provider artifact
-`.build/temperature-provider-proof/smappservice-real-20260512T163358Z`
-registered, reached enabled state, launched once as a system LaunchDaemon, and
-unregistered cleanly.
+`.build/temperature-provider-proof/smappservice-unique-20260512T175157Z`
+reached the approval/enabled path and produced root-owned runtime evidence from
+a system LaunchDaemon with a unique ad-hoc bundle/helper identity. Its register
+capture still includes the expected `Operation not permitted` transition before
+approval, and it did not capture unregister cleanup.
 
-Relevant lifecycle evidence:
+Relevant lifecycle evidence therefore combines the earlier unregister-capable
+`smappservice-real` artifact with the newer unique-identity root-runtime
+captures:
 
 ```text
 statusAfterRegisterRaw=2
@@ -136,11 +146,12 @@ unregisterStatusAfterRaw=0
 launchctlAfterUnregister=service-not-found
 ```
 
-The helper runtime proved root ownership, but the selected command did not
-produce a usable numeric provider sample under the required deadline:
+The helper runtime proved root ownership. With the default `thermal` sampler,
+the command produced thermal pressure state but no usable numeric provider
+sample:
 
 ```text
-command=/usr/bin/powermetrics -n 1 -i 1000 --samplers thermal
+command=/usr/bin/powermetrics --show-initial-usage -n 1 -i 1000 --samplers thermal
 timeoutSeconds=1
 timedOut=true
 durationSeconds=2
@@ -148,16 +159,42 @@ helperOwned=true
 numericTemperatureObserved=false
 ```
 
-This is useful evidence for the helper mechanism, not proof of a production
-temperature provider. The next #25 work should test a faster helper-owned
-source or a different command shape before attempting freshness, cadence,
-closed-bag coverage, and fail-closed evidence.
+The later `.build/temperature-provider-proof/smappservice-all-20260512T181830Z`
+artifact used the same helper path with `--samplers all`. It confirmed the
+LaunchDaemon arguments and root-owned helper execution, but the 1 second run
+timed out before a sampler body was captured. This is runtime-capture evidence,
+not verifier-accepted #25 proof:
+
+```text
+command=/usr/bin/powermetrics --show-initial-usage -n 1 -i 1000 --samplers all
+timeoutSeconds=1
+timedOut=true
+durationSeconds=2
+helperOwned=true
+numericTemperatureObserved=false
+```
+
+The 5 second diagnostic artifact
+`.build/temperature-provider-proof/smappservice-all-timeout5-20260512T182146Z`
+emitted broad `powermetrics --samplers all` output, but still timed out and did
+not contain a trustworthy numeric temperature reading. Its original
+`numericTemperatureObserved=true` was a detector false positive from task-table
+output. The artifact still stores that old field value, so the corrected result
+is an interpretation from the hardened detector and captured output, not a
+promoted artifact row.
+
+These artifacts are useful evidence for the no-membership helper mechanism, not
+proof of a production temperature provider. The next #25 work should test a
+different helper-owned source, such as direct SMC/IOReport-style sampling if it
+is available without Developer ID membership, before attempting freshness,
+cadence, closed-bag coverage, and fail-closed evidence.
 
 ## Conclusion
 
-No production Bag Mode temperature provider is selected from the non-root app-side sources tested.
+No production Bag Mode temperature provider is selected from the non-root or
+helper-owned `powermetrics` sources tested.
 
-`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine, but the tested `powermetrics --samplers thermal` command timed out under the 1 second provider deadline without numeric output; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root numeric output, freshness, cadence, timeout, and coverage.
+`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine, but the tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source under the provider contract; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root numeric output, freshness, cadence, timeout, and coverage.
 
 Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a no-membership helper or helper-equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
 
@@ -194,15 +231,16 @@ scripts/temperature-provider-smappservice-proof.sh \
 
 The default mode builds an ad-hoc signed app/helper bundle whose LaunchDaemon
 helper runs one timeout-bounded `powermetrics` sample after registration and
-approval. New artifacts default to `powermetrics --show-initial-usage -n 1 -i
-1000 --samplers thermal` so the next run can test whether an initial sample
-finishes inside the 1 second provider deadline; set
-`CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE=false` only when comparing
-against the earlier timed-out command shape. To compare root-owned
-`powermetrics` sampler variants without editing the generated helper, set
-`CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` before
-creating the artifact, for example `all`, `default`, `cpu_power`, or
-`thermal,cpu_power`.
+approval. New artifacts still default to `powermetrics --show-initial-usage -n
+1 -i 1000 --samplers thermal` for reproducible comparison with existing
+evidence, but the current local conclusion is that the tested `powermetrics`
+variants are not the primary path to a provider-ready numeric cutoff source.
+Use `CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE=false` or
+`CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` only for
+comparison runs, for example `all`, `default`, `cpu_power`, or
+`thermal,cpu_power`. The next primary #25 source probe should target a
+different helper-owned source if one is available without Developer ID
+membership.
 
 Each new artifact also gets a unique SMAppService bundle/helper identity derived
 from its output path. This avoids reusing stale macOS approval/code-signing state
