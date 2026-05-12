@@ -87,6 +87,10 @@ Unsigned public builds must not expose production Bag Mode. Local helper experim
 
 The provider proof must choose a fresh, permission-compatible temperature source for Bag Mode.
 
+Current artifact: [Temperature Provider Check](temperature-provider-check.md).
+
+The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `powermetrics` requires elevated privileges, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
+
 Required notes:
 
 - Source tested: SMC, `powermetrics`, `ProcessInfo.thermalState`, or other
