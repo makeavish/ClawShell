@@ -11,7 +11,7 @@ three evidence issues:
 |---|---|---|
 | [#29](https://github.com/makeavish/ClawShell/issues/29) primitive matrix | Real hardware `pmset disablesleep` matrix evidence is still missing. | Run the primitive matrix on target hardware, fill `manual-result.md`, verify the manifest, and attach pass/fail/inconclusive evidence. |
 | [#27](https://github.com/makeavish/ClawShell/issues/27) no-membership helper prototype | `.build/helper-service-readiness/recheck-20260512T105510Z` records full Xcode/tooling available, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. Developer ID membership is intentionally deferred. | Prototype a local/ad-hoc signed and hash/pairing-pinned helper path that does not require Apple Developer Program membership. Try `SMAppService` with the strongest local signing mode first; if macOS rejects it, prove a fallback LaunchDaemon install/update/uninstall path. |
-| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | `.build/temperature-provider-proof/smappservice-real-20260512T163358Z` proves the no-membership `SMAppService` helper can launch as root and unregister cleanly, but `powermetrics --samplers thermal` timed out under the 1s deadline without numeric output. | Test a faster helper-owned source or command shape, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
+| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | The unique no-membership `SMAppService` helper artifacts provide root-runtime evidence after approval, but are not verifier-accepted provider proof. `powermetrics --samplers thermal` captured only thermal pressure before timing out, `--samplers all` timed out at 1s, and the 5s `all` diagnostic has no trustworthy numeric temperature when interpreted with the hardened detector. | Test a different helper-owned source, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
 
 Readiness harnesses, scaffolds, and verifier success are support gates only.
 They do not close #7 without the real evidence above.
@@ -142,7 +142,7 @@ The provider proof must choose a fresh, permission-compatible temperature source
 
 Current artifact: [Temperature Provider Check](temperature-provider-check.md).
 
-The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. A no-membership `SMAppService` provider run later proved that an ad-hoc helper can launch as root and clean up on this machine, but the tested `powermetrics --samplers thermal` command timed out under the 1 second provider deadline without numeric output. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
+The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine, but the tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source under the provider contract. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
 
 Before attempting helper/root sampling, run the non-mutating preflight:
 
@@ -178,12 +178,15 @@ scripts/temperature-provider-smappservice-proof.sh \
 ```
 
 New artifacts default to `powermetrics --show-initial-usage -n 1 -i 1000
---samplers thermal` so the next #25 run can test whether an initial thermal
-sample beats the 1 second provider deadline. To compare root-owned
-`powermetrics` sampler variants without hand-editing the helper, set
+--samplers thermal` for reproducible comparison with existing evidence. On this
+machine, the tested `powermetrics` variants have not produced a trustworthy
+numeric cutoff source under the provider contract, so treat further
+`powermetrics` runs as comparison/diagnostic work. To compare root-owned sampler
+variants without hand-editing the helper, set
 `CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` before
 creating the artifact, for example `all`, `default`, `cpu_power`, or
-`thermal,cpu_power`.
+`thermal,cpu_power`. The next primary #25 source probe should target a different
+helper-owned source if one is available without Developer ID membership.
 
 Each artifact also gets a unique SMAppService identity derived from its output
 path so repeated ad-hoc attempts do not reuse stale approval/code-signing state.
