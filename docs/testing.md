@@ -103,10 +103,31 @@ See [power-validation.md](power-validation.md) for the current normal assertion 
 Use the Bag Mode primitive harness only for issue #7/#29 evidence:
 
 ```sh
-scripts/bag-mode-primitive-validation.sh --case-id apple-silicon-battery-internal
+sudo scripts/bag-mode-primitive-validation.sh \
+  --output-dir .build/power-validation/bag-mode-matrix/apple-silicon-battery-internal \
+  --case-id apple-silicon-battery-internal \
+  --apply \
+  --i-understand-this-changes-power-settings
 ```
 
-The default run is baseline-only and non-mutating. Mutating lid-close or reboot-held runs require root and explicit acknowledgement; attach the evidence directory and filled `manual-result.md` to the primitive matrix issue.
+The default run is baseline-only and non-mutating. Mutating lid-close or reboot-held runs require root and explicit acknowledgement; attach the evidence directory and filled `manual-result.md` to the primitive matrix issue. For reboot-held evidence, add `--reboot-held`, follow `ROLLBACK_REQUIRED.txt`, capture `post-reboot/`, roll back, and capture `after-rollback/`.
+
+Record every supported row or explicit N/A/deferred reason in a tab-separated manifest:
+
+```tsv
+caseId	status	evidenceDir	naReason
+apple-silicon-battery-internal	evidence	apple-silicon-battery-internal	evidence attached
+macos-13-intel	deferred		No Intel test host in scope for this run
+external-display	n/a		No external display physically available
+```
+
+Before attaching a matrix evidence root, run:
+
+```sh
+scripts/bag-mode-primitive-matrix-verify.sh --manifest .build/power-validation/bag-mode-matrix/matrix-manifest.tsv
+```
+
+This checks manifest and evidence completeness only. It does not prove the primitive is reliable. After the matrix is attached to #29, update the readiness docs with the pass/fail/inconclusive result before production Bag Mode implementation begins.
 
 ## Temperature Provider Harness
 

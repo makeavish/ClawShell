@@ -41,6 +41,22 @@ Helper-dependent cases, such as helper restart and helper upgrade mid-hold, are 
 
 Each case still needs the exact command applied, rollback command, `pmset -g custom`, `pmset -g assertions`, relevant IORegistry state, lid-close result, reboot state or explicit `N/A`, and a pass/fail/inconclusive conclusion in `manual-result.md`. Attach evidence directories to #29 and summarize or cross-link the result on #7.
 
+Before attaching evidence, run:
+
+```sh
+scripts/bag-mode-primitive-matrix-verify.sh --manifest <matrix-evidence-root>/matrix-manifest.tsv
+```
+
+The manifest is a tab-separated file with this header:
+
+```tsv
+caseId	status	evidenceDir	naReason
+```
+
+Use `status=evidence` for rows with a completed evidence directory, `status=n/a` for physically unavailable rows, and `status=deferred` for helper-dependent rows blocked on #27. `n/a` and `deferred` rows must include a concrete reason in `naReason`.
+
+The verifier fails missing files, baseline-only captures, placeholder manual fields, missing reboot state, missing IORegistry snapshots, incomplete snapshot directories, and placeholder N/A/deferred reasons. Passing the verifier only means the manifest and evidence package are structurally complete; it does not mean the primitive passed the hardware matrix.
+
 ## Conclusion
 
 The primitive remains unproven. Production Bag Mode must stay blocked until [#29](https://github.com/makeavish/ClawShell/issues/29) records the real hardware matrix or the TDD switches to a different proven primitive.
