@@ -156,6 +156,11 @@ is_choice_value() {
     return 1
 }
 
+has_placeholder_content() {
+    local file="$1"
+    grep -Eiq '(^|[[:space:]])(TODO|TBD)([[:space:]]|$)|<(paste output|paste here|output|TODO|TBD)[^>]*>|paste[[:space:]-]*(output|here)|placeholder evidence|evidence for [A-Za-z0-9_-]+' "$file"
+}
+
 record_error() {
     local case_name="$1"
     local message="$2"
@@ -181,6 +186,8 @@ require_command_output_file() {
         record_error "$case_name" "snapshot command output is missing command header: ${file}"
     elif [[ -s "$file" && "$(wc -l <"$file" | tr -d '[:space:]')" -lt 2 ]]; then
         record_error "$case_name" "snapshot command output has no captured command body: ${file}"
+    elif [[ -s "$file" ]] && has_placeholder_content "$file"; then
+        record_error "$case_name" "snapshot command output contains placeholder content: ${file}"
     fi
 }
 
