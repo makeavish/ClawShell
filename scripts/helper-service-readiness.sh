@@ -177,6 +177,22 @@ redact_identities() {
     mv "${output_file}.tmp" "$output_file"
 }
 
+normalize_xcode_developer_dir() {
+    local candidate="$1"
+
+    if [[ -x "$candidate/usr/bin/xcodebuild" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    if [[ -x "$candidate/Contents/Developer/usr/bin/xcodebuild" ]]; then
+        printf '%s\n' "$candidate/Contents/Developer"
+        return 0
+    fi
+
+    return 1
+}
+
 codesigning_raw="$(mktemp)"
 installer_raw="$(mktemp)"
 RAW_IDENTITY_FILES+=("$codesigning_raw" "$installer_raw")
@@ -184,11 +200,42 @@ capture_to "$codesigning_raw" "$OUTPUT_DIR/codesigning-identities.status" securi
 redact_identities "codesigning" "$codesigning_raw" "$OUTPUT_DIR/codesigning-identities.txt"
 capture_to "$installer_raw" "$OUTPUT_DIR/installer-identities.status" security find-identity -p basic -v
 redact_identities "basic" "$installer_raw" "$OUTPUT_DIR/installer-identities.txt"
+capture "xcode-select-path" xcode-select -p
+
+selected_developer_dir=""
+if grep -q '^exitCode=0$' "$OUTPUT_DIR/xcode-select-path.status"; then
+    selected_developer_dir="$(head -n 1 "$OUTPUT_DIR/xcode-select-path.txt" | tr -d '\r')"
+fi
+
+xcode_developer_dir=""
+xcode_developer_dir_source="none"
+if [[ -n "${DEVELOPER_DIR:-}" ]] &&
+   xcode_developer_dir="$(normalize_xcode_developer_dir "$DEVELOPER_DIR")"; then
+    xcode_developer_dir_source="environment"
+elif [[ "$selected_developer_dir" == *"Xcode.app"* ]] &&
+     xcode_developer_dir="$(normalize_xcode_developer_dir "$selected_developer_dir")"; then
+    xcode_developer_dir_source="xcode-select"
+else
+    for candidate in \
+        "/Applications/Xcode.app" \
+        "/Applications/Xcode-beta.app"
+    do
+        if xcode_developer_dir="$(normalize_xcode_developer_dir "$candidate")"; then
+            xcode_developer_dir_source="applications"
+            break
+        fi
+    done
+fi
+
 capture "xcodebuild-version" xcodebuild -version
+if [[ -n "$xcode_developer_dir" ]]; then
+    capture "xcodebuild-discovered-version" "$xcode_developer_dir/usr/bin/xcodebuild" -version
+else
+    capture "xcodebuild-discovered-version" /usr/bin/false
+fi
 capture "swift-version" swift --version
 capture "pkgbuild-path" command -v pkgbuild
 capture "productbuild-path" command -v productbuild
-capture "xcode-select-path" xcode-select -p
 capture "macos-sdk-path" xcrun --sdk macosx --show-sdk-path
 capture "codesign-path" xcrun --find codesign
 capture "notarytool-path" xcrun --find notarytool
@@ -200,8 +247,19 @@ developer_id_installer_count="$(sed -n 's/^developerIDInstallerIdentityCount=//p
 apple_development_count="$(sed -n 's/^appleDevelopmentIdentityCount=//p' "$OUTPUT_DIR/codesigning-identities.txt")"
 apple_distribution_count="$(sed -n 's/^appleDistributionIdentityCount=//p' "$OUTPUT_DIR/codesigning-identities.txt")"
 
-xcodebuild_available=false
+xcodebuild_active_available=false
 if grep -q '^exitCode=0$' "$OUTPUT_DIR/xcodebuild-version.status"; then
+    xcodebuild_active_available=true
+fi
+
+xcodebuild_discovered_available=false
+if grep -q '^exitCode=0$' "$OUTPUT_DIR/xcodebuild-discovered-version.status"; then
+    xcodebuild_discovered_available=true
+fi
+
+xcodebuild_available=false
+if [[ "$xcodebuild_active_available" == true ||
+      "$xcodebuild_discovered_available" == true ]]; then
     xcodebuild_available=true
 fi
 
@@ -249,6 +307,9 @@ fi
     echo "developerIDInstallerIdentityCount=$developer_id_installer_count"
     echo "appleDevelopmentIdentityCount=$apple_development_count"
     echo "appleDistributionIdentityCount=$apple_distribution_count"
+    echo "xcodeDeveloperDirSource=$xcode_developer_dir_source"
+    echo "xcodebuildActiveAvailable=$xcodebuild_active_available"
+    echo "xcodebuildDiscoveredAvailable=$xcodebuild_discovered_available"
     echo "xcodebuildAvailable=$xcodebuild_available"
     echo "pkgbuildAvailable=$pkgbuild_available"
     echo "productbuildAvailable=$productbuild_available"
@@ -272,6 +333,9 @@ or run any helper.
 - Valid code-signing identities: \`$codesigning_count\`
 - Developer ID Application identities: \`$developer_id_application_count\`
 - Developer ID Installer identities: \`$developer_id_installer_count\`
+- Xcode developer directory source: \`$xcode_developer_dir_source\`
+- xcodebuild active selection available: \`$xcodebuild_active_available\`
+- xcodebuild discovered full Xcode available: \`$xcodebuild_discovered_available\`
 - xcodebuild available: \`$xcodebuild_available\`
 - pkgbuild available: \`$pkgbuild_available\`
 - productbuild available: \`$productbuild_available\`
