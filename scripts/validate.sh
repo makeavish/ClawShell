@@ -533,6 +533,27 @@ if ! grep -q "requires bash" "$bag_mode_smoke_error"; then
     cat "$bag_mode_smoke_error" >&2
     exit 1
 fi
+bag_mode_matrix_scaffold_file="$bag_mode_smoke_dir/matrix-scaffold-file"
+touch "$bag_mode_matrix_scaffold_file"
+if scripts/bag-mode-primitive-matrix-scaffold.sh --output-dir "$bag_mode_matrix_scaffold_file" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix scaffold accepted an output path that is not a directory" >&2
+    exit 1
+fi
+if ! grep -q "not a directory" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+bag_mode_matrix_scaffold_non_empty="$bag_mode_smoke_dir/matrix-scaffold-non-empty"
+mkdir -p "$bag_mode_matrix_scaffold_non_empty"
+touch "$bag_mode_matrix_scaffold_non_empty/existing"
+if scripts/bag-mode-primitive-matrix-scaffold.sh --output-dir "$bag_mode_matrix_scaffold_non_empty" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix scaffold overwrote a non-empty output directory" >&2
+    exit 1
+fi
+if ! grep -q "Output directory is not empty" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
 bag_mode_matrix_test_only="$bag_mode_smoke_dir/matrix-test-only"
 cp -R "$bag_mode_matrix_case" "$bag_mode_matrix_test_only"
 sed -i '' 's/^testOnly=false$/testOnly=true/' "$bag_mode_matrix_test_only/validation-config.txt"
