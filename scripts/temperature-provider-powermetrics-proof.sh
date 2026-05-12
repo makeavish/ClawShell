@@ -260,7 +260,7 @@ if [[ "$powermetrics_exit_code" == "0" && "$powermetrics_timed_out" != "true" ]]
 fi
 
 numeric_temperature_observed=false
-if grep -Eiq '([0-9]+([.][0-9]+)?[[:space:]]*(C|°C|celsius))|((temperature|temp)[^0-9-]*-?[0-9]+([.][0-9]+)?)' "$EVIDENCE_DIR/numeric-temperature-output.txt"; then
+if grep -Eiq '(-?[0-9]+([.][0-9]+)?[[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))|(\<(temperature|temp)\>[^0-9-]*-?[0-9]+([.][0-9]+)?)' "$EVIDENCE_DIR/numeric-temperature-output.txt"; then
     numeric_temperature_observed=true
 fi
 
