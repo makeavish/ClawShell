@@ -121,7 +121,7 @@ Re-check Codex source/docs for any supported signal before `notify`. If no earli
 
 Current artifact: [Codex Early Signal Check](codex-early-signal-check.md).
 
-The May 12, 2026 source check found upstream Codex hook events before legacy `notify`: `SessionStart`, `UserPromptSubmit`, and tool hooks provide earlier native lifecycle signals, while `Stop` is a native completion signal before legacy `notify`. Current ClawShell behavior still uses legacy `notify` plus process detection; native Codex hook support is tracked in [#23](https://github.com/makeavish/ClawShell/issues/23).
+The May 12, 2026 source check found upstream Codex hook events before legacy `notify`: `SessionStart`, `UserPromptSubmit`, and tool hooks provide earlier native lifecycle signals, while `Stop` is a native completion signal before legacy `notify`. ClawShell now installs redaction-safe native Codex hooks while preserving legacy `notify` and process detection as fallback paths. See [Codex Native Hooks](codex-native-hooks.md).
 
 Required artifact:
 

@@ -32,6 +32,9 @@ struct ClawShellHookAdapterMain {
         case "claude-hook":
             let stdin = FileHandle.standardInput.readDataToEndOfFile()
             result = runner.runClaudeCodeHook(stdin: stdin, context: context)
+        case "codex-hook":
+            let stdin = FileHandle.standardInput.readDataToEndOfFile()
+            result = runner.runCodexHook(stdin: stdin, context: context)
         case "codex-notify":
             let payload = parser.trailingArgument ?? "{}"
             let forward = parser.forwardNotifyCommand()

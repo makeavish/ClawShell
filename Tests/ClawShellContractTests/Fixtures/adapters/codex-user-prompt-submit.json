@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "codex-session-1",
+  "turn_id": "codex-turn-1",
+  "cwd": "/Users/tester/private-codex-project",
+  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+  "model": "gpt-5.5",
+  "permission_mode": "default",
+  "prompt": "secret prompt text"
+}

@@ -9,6 +9,10 @@ struct IntegrationContractTests {
         try runAdapterReducesClaudePayloadWithoutSensitiveFields()
     }
 
+    @Test func adapterReducesCodexNativeHooksWithoutSensitiveFields() throws {
+        try runAdapterReducesCodexNativeHooksWithoutSensitiveFields()
+    }
+
     @Test func adapterNoOpsWhenControlEndpointIsUnavailable() throws {
         try runAdapterNoOpsWhenControlEndpointIsUnavailable()
     }
@@ -25,6 +29,10 @@ import XCTest
 final class IntegrationContractTests: XCTestCase {
     func testAdapterReducesClaudePayloadWithoutSensitiveFields() throws {
         try runAdapterReducesClaudePayloadWithoutSensitiveFields()
+    }
+
+    func testAdapterReducesCodexNativeHooksWithoutSensitiveFields() throws {
+        try runAdapterReducesCodexNativeHooksWithoutSensitiveFields()
     }
 
     func testAdapterNoOpsWhenControlEndpointIsUnavailable() throws {
@@ -94,6 +102,87 @@ private func runAdapterReducesClaudePayloadWithoutSensitiveFields() throws {
     try check(nativeToolEvent.eventID == replayedNativeToolEvent.eventID, "Expected Claude tool payloads with occurrence IDs to get stable replay IDs")
 }
 
+private func runAdapterReducesCodexNativeHooksWithoutSensitiveFields() throws {
+    let cases: [(fixture: String, event: HookAdapterEventKind, sessionID: String)] = [
+        ("codex-session-start", .sessionStarted, "codex-session-1"),
+        ("codex-user-prompt-submit", .turnStarted, "codex-turn-1"),
+        ("codex-pre-tool-use", .toolStarted, "codex-turn-1"),
+        ("codex-post-tool-use", .toolFinishedContinuing, "codex-turn-1"),
+        ("codex-stop", .turnFinished, "codex-turn-1")
+    ]
+
+    for testCase in cases {
+        let event = try checkNotNil(
+            HookAdapterMapper.codexHookEvent(
+                from: fixtureData("adapters/\(testCase.fixture)", extension: "json"),
+                context: HookAdapterContext(
+                    agent: .codexCLI,
+                    host: "codex-cli",
+                    processID: 202,
+                    cwdHashSalt: "contract-salt",
+                    eventIDProvider: { "fallback-\(testCase.fixture)" }
+                )
+            ),
+            "Expected \(testCase.fixture) to map to a ClawShell event"
+        )
+        let encoded = try String(data: JSONEncoder().encode(event), encoding: .utf8) ?? ""
+
+        try check(event.agent == .codexCLI, "Expected Codex native hook to keep Codex agent identity")
+        try check(event.event == testCase.event, "Expected \(testCase.fixture) to map to \(testCase.event.rawValue)")
+        try check(event.pid == 202, "Expected Codex native hook to carry resolved process id")
+        try check(event.integrationSessionId == testCase.sessionID, "Expected Codex native hook to prefer turn id when present")
+        try check(event.cwdHash == CWDHash.hmacSHA256("/Users/tester/private-codex-project", salt: "contract-salt"), "Expected Codex cwd to be HMAC hashed")
+        try check(event.eventID.hasPrefix("codex-"), "Expected Codex native hook replay IDs to be namespaced")
+
+        for sensitive in ["secret prompt text", "cat .env", "SECRET_TOKEN", "private-codex-project", "transcript", "assistant message"] {
+            try check(!encoded.contains(sensitive), "Expected reduced Codex event to exclude \(sensitive)")
+        }
+    }
+
+    let replayPayload = try fixtureData("adapters/codex-pre-tool-use", extension: "json")
+    let first = try checkNotNil(
+        HookAdapterMapper.codexHookEvent(
+            from: replayPayload,
+            context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", cwdHashSalt: "contract-salt")
+        ),
+        "Expected first Codex tool payload to map"
+    )
+    let second = try checkNotNil(
+        HookAdapterMapper.codexHookEvent(
+            from: replayPayload,
+            context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", cwdHashSalt: "contract-salt")
+        ),
+        "Expected replayed Codex tool payload to map"
+    )
+    try check(first.eventID == second.eventID, "Expected Codex native hook occurrence IDs to produce stable replay IDs")
+
+    let rawEventID = try checkNotNil(
+        HookAdapterMapper.codexHookEvent(
+            from: Data(#"{"hook_event_name":"PreToolUse","event_id":"raw-sensitive-event-id","session_id":"contract-session","turn_id":"contract-turn","tool_use_id":"tool-1"}"#.utf8),
+            context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", cwdHashSalt: "contract-salt")
+        ),
+        "Expected Codex native hook with raw event_id to map"
+    )
+    try check(rawEventID.eventID.hasPrefix("codex-"), "Expected raw Codex event_id to be HMAC namespaced")
+    try check(rawEventID.eventID != "raw-sensitive-event-id", "Expected raw Codex event_id not to pass through")
+
+    let startupSession = try checkNotNil(
+        HookAdapterMapper.codexHookEvent(
+            from: Data(#"{"hook_event_name":"SessionStart","session_id":"contract-session","source":"startup"}"#.utf8),
+            context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", cwdHashSalt: "contract-salt")
+        ),
+        "Expected Codex startup session event to map"
+    )
+    let resumeSession = try checkNotNil(
+        HookAdapterMapper.codexHookEvent(
+            from: Data(#"{"hook_event_name":"SessionStart","session_id":"contract-session","source":"resume"}"#.utf8),
+            context: HookAdapterContext(agent: .codexCLI, host: "codex-cli", cwdHashSalt: "contract-salt")
+        ),
+        "Expected Codex resume session event to map"
+    )
+    try check(startupSession.eventID != resumeSession.eventID, "Expected Codex SessionStart replay IDs to include source")
+}
+
 private func runAdapterNoOpsWhenControlEndpointIsUnavailable() throws {
     let paths = try temporaryPaths()
     defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
@@ -133,11 +222,41 @@ private func runConfigPatchersPreserveAndRemoveOnlyOwnedBlocks() throws {
     )
     let codexInstalled = String(data: codexInstall.patchedData, encoding: .utf8) ?? ""
     try check(codexInstalled.contains("--forward-notify"), "Expected Codex patcher to forward existing notify")
+    try check(codexInstalled.contains("--mode codex-hook"), "Expected Codex patcher to install native hook command")
+    try check(codexInstalled.contains("[[hooks.UserPromptSubmit]]"), "Expected Codex patcher to install turn-start hook")
+    try check(codexInstalled.contains("[[hooks.Stop.hooks]]"), "Expected Codex patcher to install stop hook handler")
+    try check(codexInstalled.contains("timeout = 1"), "Expected Codex native hook command to have a short timeout")
     try check(codexInstalled.contains("[profiles.work]"), "Expected Codex patcher to preserve unrelated TOML")
     let codexRemoval = try codexPatcher.removalPlan(currentData: codexInstall.patchedData)
     let codexRemoved = String(data: codexRemoval.patchedData, encoding: .utf8) ?? ""
+    try codexPatcher.validate(codexRemoval.patchedData)
     try check(codexRemoved.contains(#"notify = ["/usr/local/bin/notify-user", "Codex"]"#), "Expected Codex removal to restore notify")
+    try check(!codexRemoved.contains(#""Codex"][profiles.work]"#), "Expected Codex removal not to glue restored notify to next table")
     try check(!codexRemoved.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex removal to remove owned block")
+    try check(!codexRemoved.contains("[[hooks.UserPromptSubmit]]"), "Expected Codex removal to remove owned native hooks")
+
+    let codexWithUserHooks = """
+    [hooks.state."/tmp/user-hook:pre_tool_use:0:0"]
+    enabled = true
+
+    [[hooks.PreToolUse]]
+    matcher = "^Bash$"
+
+    [[hooks.PreToolUse.hooks]]
+    type = "command"
+    command = "/usr/local/bin/user-codex-hook"
+    """
+    let userHookInstall = try codexPatcher.installPlan(currentData: Data(codexWithUserHooks.utf8), adapterPath: adapterPath)
+    let userHookInstalled = String(data: userHookInstall.patchedData, encoding: .utf8) ?? ""
+    try check(userHookInstalled.contains("/usr/local/bin/user-codex-hook"), "Expected Codex patcher to preserve user hook command")
+    try check(userHookInstalled.contains(#"[hooks.state."/tmp/user-hook:pre_tool_use:0:0"]"#), "Expected Codex patcher to preserve user hook state table")
+    try check(userHookInstalled.contains("[[hooks.PreToolUse]]"), "Expected Codex patcher to preserve user hook table")
+    let userHookRemoval = try codexPatcher.removalPlan(currentData: userHookInstall.patchedData)
+    let userHookRemoved = String(data: userHookRemoval.patchedData, encoding: .utf8) ?? ""
+    try codexPatcher.validate(userHookRemoval.patchedData)
+    try check(userHookRemoved.contains("/usr/local/bin/user-codex-hook"), "Expected Codex removal to preserve user hook command")
+    try check(userHookRemoved.contains(#"[hooks.state."/tmp/user-hook:pre_tool_use:0:0"]"#), "Expected Codex removal to preserve user hook state table")
+    try check(!userHookRemoved.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex removal to remove only owned native hook block")
 
     let multilineCodex = """
     model = "gpt-5.5"

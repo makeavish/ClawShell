@@ -64,3 +64,5 @@ The old TDD assumption that Codex has no earlier lifecycle signal before `notify
 ClawShell should not change runtime behavior in this spike. The current implementation still patches only top-level `notify` and uses process detection as liveness backup. Native Codex hook support needs a dedicated implementation slice because the hook payloads include sensitive prompt, cwd, transcript, tool input, tool output, and assistant-message fields that must be reduced before reaching ClawShell.
 
 Follow-up issue [#23](https://github.com/makeavish/ClawShell/issues/23) tracks upgrading the Codex integration from legacy `notify` to native hooks while preserving the existing `notify` fallback.
+
+Implementation follow-up: see [Codex Native Hooks](codex-native-hooks.md) for the runtime path that installs redaction-safe native hooks and keeps legacy `notify` as completion fallback.

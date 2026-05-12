@@ -1,0 +1,15 @@
+{
+  "hook_event_name": "PostToolUse",
+  "session_id": "codex-session-1",
+  "turn_id": "codex-turn-1",
+  "cwd": "/Users/tester/private-codex-project",
+  "transcript_path": "/Users/tester/.codex/sessions/session.jsonl",
+  "model": "gpt-5.5",
+  "permission_mode": "default",
+  "tool_name": "shell",
+  "tool_input": {
+    "command": "cat .env"
+  },
+  "tool_response": "SECRET_TOKEN=abc123",
+  "tool_use_id": "codex-tool-1"
+}

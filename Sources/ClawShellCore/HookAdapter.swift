@@ -162,6 +162,38 @@ public enum HookAdapterMapper {
         )
     }
 
+    public static func codexHookEvent(
+        from data: Data,
+        context: HookAdapterContext
+    ) throws -> HookAdapterEvent? {
+        guard context.agent == .codexCLI else {
+            throw HookAdapterError.unsupportedAgent(context.agent.rawValue)
+        }
+
+        guard let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw HookAdapterError.invalidPayload
+        }
+
+        guard let nativeEvent = payload["hook_event_name"] as? String else {
+            throw HookAdapterError.invalidPayload
+        }
+
+        guard let event = codexHookEventMap[nativeEvent] else {
+            return nil
+        }
+
+        return HookAdapterEvent(
+            agent: .codexCLI,
+            host: context.host,
+            event: event,
+            pid: context.processID,
+            processStartTime: context.processStartTime,
+            integrationSessionId: codexIntegrationSessionID(from: payload),
+            cwdHash: cwdHash(from: payload, salt: context.cwdHashSalt),
+            eventID: codexEventID(from: payload, salt: context.cwdHashSalt, fallback: context.eventIDProvider)
+        )
+    }
+
     private static let claudeEventMap: [String: HookAdapterEventKind] = [
         "SessionStart": .sessionStarted,
         "UserPromptSubmit": .turnStarted,
@@ -169,6 +201,14 @@ public enum HookAdapterMapper {
         "PostToolUse": .toolFinishedContinuing,
         "Stop": .turnFinished,
         "SessionEnd": .sessionFinished
+    ]
+
+    private static let codexHookEventMap: [String: HookAdapterEventKind] = [
+        "SessionStart": .sessionStarted,
+        "UserPromptSubmit": .turnStarted,
+        "PreToolUse": .toolStarted,
+        "PostToolUse": .toolFinishedContinuing,
+        "Stop": .turnFinished
     ]
 
     private static func eventID(
@@ -190,6 +230,46 @@ public enum HookAdapterMapper {
         }
 
         return fallback()
+    }
+
+    private static func codexIntegrationSessionID(from payload: [String: Any]) -> String? {
+        payload["turn_id"] as? String
+            ?? payload["turn-id"] as? String
+            ?? payload["session_id"] as? String
+    }
+
+    private static func codexEventID(
+        from payload: [String: Any],
+        salt: String?,
+        fallback: @Sendable () -> String
+    ) -> String {
+        guard let salt,
+              !salt.isEmpty,
+              let hookEvent = payload["hook_event_name"] as? String,
+              !hookEvent.isEmpty else {
+            return fallback()
+        }
+
+        let occurrenceFields = [
+            ("event_id", payload["event_id"] as? String),
+            ("session_id", payload["session_id"] as? String),
+            ("turn_id", payload["turn_id"] as? String ?? payload["turn-id"] as? String),
+            ("tool_use_id", payload["tool_use_id"] as? String),
+            ("source", payload["source"] as? String)
+        ]
+        let occurrenceParts = occurrenceFields.compactMap { name, value -> String? in
+            guard let value, !value.isEmpty else {
+                return nil
+            }
+            return "\(name)=\(value)"
+        }
+
+        guard !occurrenceParts.isEmpty else {
+            return fallback()
+        }
+
+        let replayKey = ([hookEvent] + occurrenceParts).joined(separator: ":")
+        return "codex-\(CWDHash.hmacSHA256(replayKey, salt: salt))"
     }
 
     private static func cwdHash(from payload: [String: Any], salt: String?) -> String? {
@@ -335,6 +415,21 @@ public final class HookAdapterRunner {
 
         forwardCodexNotifyIfNeeded(command: forwardNotifyCommand, payload: payload)
         return HookAdapterRunResult()
+    }
+
+    public func runCodexHook(
+        stdin: Data,
+        context: HookAdapterContext
+    ) -> HookAdapterRunResult {
+        do {
+            guard let event = try HookAdapterMapper.codexHookEvent(from: stdin, context: context) else {
+                return HookAdapterRunResult()
+            }
+
+            return send(event)
+        } catch {
+            return HookAdapterRunResult()
+        }
     }
 
     private func send(_ event: HookAdapterEvent) -> HookAdapterRunResult {
