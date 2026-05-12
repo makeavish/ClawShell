@@ -63,6 +63,24 @@ public final class SettingsStore: StubLifecycleComponent {
         logStore?.append(kind: .settingsImported, message: "Settings imported")
     }
 
+    public func recordIntegrationState(_ state: IntegrationState) throws {
+        var next = settings
+        next.integrationStates[state.agentID] = state
+        try save(next)
+    }
+
+    public func recordIntegrationSuppression(agentID: String, reason: String?) throws {
+        var next = settings
+        next.integrationSuppressions[agentID] = IntegrationSuppression(doNotAutoInstall: true, reason: reason)
+        try save(next)
+    }
+
+    public func clearIntegrationSuppression(agentID: String) throws {
+        var next = settings
+        next.integrationSuppressions.removeValue(forKey: agentID)
+        try save(next)
+    }
+
     public func loadOrRecover() -> ClawShellSettings {
         do {
             return try load()
@@ -137,6 +155,13 @@ public final class SettingsStore: StubLifecycleComponent {
             }
             guard seenAgentIDs.insert(agent.id).inserted else {
                 throw SettingsStoreError.duplicateAgentID(agent.id)
+            }
+        }
+
+        for (agentID, state) in settings.integrationStates {
+            try validateAgentID(agentID)
+            guard state.agentID == agentID else {
+                throw SettingsStoreError.invalidAgentConfiguration(agentID)
             }
         }
     }

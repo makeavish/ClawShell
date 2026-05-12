@@ -1,0 +1,12 @@
+{
+  "session_id": "contract-session",
+  "transcript_path": "/Users/tester/.claude/projects/private-project/transcript.jsonl",
+  "cwd": "/Users/tester/private-project",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm test"
+  },
+  "prompt": "secret prompt"
+}

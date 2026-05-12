@@ -106,6 +106,21 @@ public final class AgentMonitor: AppLifecycleComponent {
         }
     }
 
+    public func applyIntegrationEvent(_ event: HookAdapterEvent, at now: Date) {
+        queue.sync {
+            do {
+                let snapshots = try snapshotProvider.snapshots()
+                let settings = settingsProvider()
+                stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
+                let detector = AgentProcessDetector(settings: settings)
+                let observations = detector.observations(in: snapshots)
+                stateMachine.applyIntegrationEvent(event, at: now, fallbackObservations: observations)
+            } catch {
+                stateMachine.applyIntegrationEvent(event, at: now)
+            }
+        }
+    }
+
     private func pollOnQueue() {
         let timestamp = now()
 
@@ -123,12 +138,6 @@ public final class AgentMonitor: AppLifecycleComponent {
     }
 }
 
-public final class IntegrationManager: StubLifecycleComponent {
-    public init() {
-        super.init(componentName: "IntegrationManager")
-    }
-}
-
 public final class ClawShellServices {
     public let agentMonitor: AgentMonitor
     public let controlServer: ControlServerComponent
@@ -141,16 +150,23 @@ public final class ClawShellServices {
         agentMonitor: AgentMonitor? = nil,
         controlServer: ControlServerComponent? = nil,
         assertionManager: AssertionManager? = nil,
-        integrationManager: IntegrationManager = IntegrationManager(),
+        integrationManager: IntegrationManager? = nil,
         settingsStore: SettingsStore? = nil,
         logStore: LogStore? = nil,
-        paths: ClawShellPaths = .defaultPaths()
+        paths: ClawShellPaths = .defaultPaths(),
+        autoInstallIntegrations: Bool = false
     ) {
-        self.integrationManager = integrationManager
         let resolvedLogStore = logStore ?? LogStore(paths: paths)
         self.logStore = resolvedLogStore
         let resolvedSettingsStore = settingsStore ?? SettingsStore(paths: paths, logStore: resolvedLogStore)
         self.settingsStore = resolvedSettingsStore
+        let resolvedIntegrationManager = integrationManager ?? IntegrationManager(
+            settingsStore: resolvedSettingsStore,
+            logStore: resolvedLogStore,
+            autoInstallOnStart: autoInstallIntegrations,
+            installLocations: autoInstallIntegrations ? .defaultLocations() : nil
+        )
+        self.integrationManager = resolvedIntegrationManager
         let resolvedAgentMonitor = agentMonitor ?? AgentMonitor(settingsProvider: { resolvedSettingsStore.settings })
         self.agentMonitor = resolvedAgentMonitor
         let resolvedAssertionManager = assertionManager ?? AssertionManager(
@@ -169,6 +185,23 @@ public final class ClawShellServices {
             }, releaseNowHandler: { receivedAt in
                 resolvedAgentMonitor.releaseHeldSessions(at: receivedAt)
                 resolvedAssertionManager.reconcile()
+            }, integrationsListProvider: {
+                resolvedIntegrationManager.listMessage()
+            }, integrationsStatusProvider: {
+                resolvedIntegrationManager.statusMessage()
+            }, integrationRemoveHandler: { agentID, receivedAt in
+                try resolvedIntegrationManager.removeIntegration(agentID: agentID, at: receivedAt)
+            }, integrationEnableAutoHandler: { agentID, _ in
+                try resolvedIntegrationManager.enableAutoInstall(agentID: agentID)
+            }, integrationEventHandler: { event, receivedAt in
+                resolvedAgentMonitor.applyIntegrationEvent(event, at: receivedAt)
+                resolvedAssertionManager.reconcile()
+                return "Integration event accepted: \(event.agent.rawValue) \(event.event.rawValue)"
+            }, uninstallHandler: { removeHelper, removeIntegrations, receivedAt in
+                if removeIntegrations {
+                    try resolvedIntegrationManager.removeAllIntegrations(at: receivedAt)
+                }
+                return "Uninstall requested removeHelper=\(removeHelper) removeIntegrations=\(removeIntegrations)"
             })
         )
     }

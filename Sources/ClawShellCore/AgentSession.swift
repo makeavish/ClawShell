@@ -56,6 +56,7 @@ public enum SessionEventKind: String, Codable, Equatable, Sendable {
     case sessionFinished
     case processDisappeared
     case toolStarted
+    case toolFinishedContinuing
     case agentResumed
     case processTreeChanged
     case graceExpired

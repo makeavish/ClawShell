@@ -41,4 +41,8 @@ public struct ClawShellPaths: Equatable, Sendable {
     public var hookTokenURL: URL {
         runtimeDirectory.appendingPathComponent("hook-token", isDirectory: false)
     }
+
+    public var cwdHashSaltURL: URL {
+        applicationSupportDirectory.appendingPathComponent("cwd-hash-salt", isDirectory: false)
+    }
 }

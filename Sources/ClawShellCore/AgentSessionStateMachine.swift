@@ -22,14 +22,29 @@ public final class AgentSessionStateMachine {
         refreshExpirations(at: now)
 
         let observedRuntimeIdentities = Set(observations.compactMap(\.key.processRuntimeIdentity))
+        let observedRuntimeIdentitiesByAgent = Dictionary(grouping: observations, by: \.agent)
+            .mapValues { Set($0.compactMap(\.key.processRuntimeIdentity)) }
+        let observedPIDsByAgent = Dictionary(grouping: observations, by: \.agent)
+            .mapValues { Set($0.map { $0.snapshot.pid }) }
         for index in sessions.indices {
-            guard sessions[index].source == .processScan,
-                  let identity = sessions[index].key.processRuntimeIdentity,
-                  !observedRuntimeIdentities.contains(identity) else {
+            if sessions[index].source == .processScan,
+               let identity = sessions[index].key.processRuntimeIdentity,
+               !observedRuntimeIdentities.contains(identity) {
+                markProcessDisappeared(at: index, now: now)
                 continue
             }
 
-            markProcessDisappeared(at: index, now: now)
+            if sessions[index].source == .integrationEvent,
+               sessions[index].state != .finished {
+                if let identity = sessions[index].key.processRuntimeIdentity {
+                    if observedRuntimeIdentitiesByAgent[sessions[index].agent]?.contains(identity) != true {
+                        markProcessDisappeared(at: index, now: now)
+                    }
+                } else if let pid = sessions[index].key.pid,
+                          observedPIDsByAgent[sessions[index].agent]?.contains(pid) != true {
+                    markProcessDisappeared(at: index, now: now)
+                }
+            }
         }
 
         for observation in observations {
@@ -73,6 +88,54 @@ public final class AgentSessionStateMachine {
         }
 
         applyTrustedEvent(kind, toSessionAt: index, at: now)
+    }
+
+    public func applyIntegrationEvent(_ event: HookAdapterEvent, at now: Date) {
+        refreshExpirations(at: now)
+
+        guard event.schemaVersion == 1 else {
+            return
+        }
+
+        if let index = firstIntegrationSessionIndex(matching: event) {
+            guard shouldAcceptTrustedEvent(event.sessionEventKind, forSessionAt: index, at: now) else {
+                return
+            }
+
+            applyTrustedEvent(event.sessionEventKind, toSessionAt: index, at: now)
+            return
+        }
+
+        guard event.createsSession else {
+            return
+        }
+
+        sessions.append(
+            AgentSession(
+                key: SessionKey(
+                    pid: event.pid,
+                    processStartTime: event.processStartTime,
+                    integrationSessionId: event.integrationSessionId,
+                    cwdHash: event.cwdHash
+                ),
+                agent: event.agent,
+                confidence: .integrated,
+                source: .integrationEvent,
+                firstSeenAt: now,
+                lastActivityAt: now,
+                lastObservedAt: now,
+                lastEvent: SessionEvent(kind: event.sessionEventKind, occurredAt: now)
+            )
+        )
+    }
+
+    public func applyIntegrationEvent(_ event: HookAdapterEvent, at now: Date, fallbackObservations: [AgentProcessObservation]) {
+        if let pid = event.pid,
+           let processObservation = fallbackObservations.first(where: { $0.snapshot.pid == pid && $0.agent == event.agent }) {
+            applyProcessObservations([processObservation], at: now)
+        }
+
+        applyIntegrationEvent(event, at: now)
     }
 
     public func pauseAll(until expiresAt: Date?) {
@@ -145,7 +208,7 @@ public final class AgentSessionStateMachine {
             sessions[index].standingByExpiresAt = nil
             sessions[index].lastEvent = SessionEvent(kind: kind, occurredAt: now)
 
-        case .toolStarted, .agentResumed, .processTreeChanged:
+        case .toolStarted, .toolFinishedContinuing, .agentResumed, .processTreeChanged:
             guard !sessions[index].hasTerminalEndEvent else {
                 return
             }
@@ -174,6 +237,58 @@ public final class AgentSessionStateMachine {
 
         case .matchingProcessStarted, .graceExpired:
             return
+        }
+    }
+
+    private func firstIntegrationSessionIndex(matching event: HookAdapterEvent) -> Array<AgentSession>.Index? {
+        if let integrationSessionId = event.integrationSessionId,
+           let index = sessions.firstIndex(where: {
+               $0.agent == event.agent
+                   && $0.key.integrationSessionId == integrationSessionId
+                   && $0.state != .finished
+                   && eventProcessEvidenceMatches(session: $0, event: event)
+           }) {
+            return index
+        }
+
+        if let pid = event.pid,
+           let index = sessions.firstIndex(where: {
+               guard $0.agent == event.agent && $0.key.pid == pid && $0.state != .finished else {
+                   return false
+               }
+
+               guard eventProcessEvidenceMatches(session: $0, event: event) else {
+                   return false
+               }
+
+               if $0.key.processStartTime != nil, event.processStartTime != nil {
+                   return true
+               }
+
+               return $0.source == .integrationEvent
+           }) {
+            return index
+        }
+
+        return nil
+    }
+
+    private func eventProcessEvidenceMatches(session: AgentSession, event: HookAdapterEvent) -> Bool {
+        guard let eventPID = event.pid else {
+            return true
+        }
+
+        guard session.key.pid == eventPID else {
+            return false
+        }
+
+        switch (session.key.processStartTime, event.processStartTime) {
+        case let (sessionStart?, eventStart?):
+            return sessionStart == eventStart
+        case (nil, nil):
+            return true
+        case (.some, nil), (nil, .some):
+            return false
         }
     }
 
@@ -250,7 +365,7 @@ public final class AgentSessionStateMachine {
 
         if sessions[index].hasTerminalEndEvent {
             switch kind {
-            case .toolStarted, .agentResumed, .processTreeChanged, .turnFinished, .keepHolding:
+            case .toolStarted, .toolFinishedContinuing, .agentResumed, .processTreeChanged, .turnFinished, .keepHolding:
                 return false
             default:
                 return true
@@ -267,6 +382,34 @@ private extension AgentSession {
         case .sessionFinished, .processDisappeared, .graceExpired:
             true
         default:
+            false
+        }
+    }
+}
+
+private extension HookAdapterEvent {
+    var sessionEventKind: SessionEventKind {
+        switch event {
+        case .sessionStarted, .turnStarted:
+            .agentResumed
+        case .toolStarted:
+            .toolStarted
+        case .toolFinishedContinuing:
+            .toolFinishedContinuing
+        case .agentResumed:
+            .agentResumed
+        case .turnFinished:
+            .turnFinished
+        case .sessionFinished:
+            .sessionFinished
+        }
+    }
+
+    var createsSession: Bool {
+        switch event {
+        case .sessionStarted, .turnStarted, .toolStarted, .toolFinishedContinuing, .agentResumed:
+            true
+        case .turnFinished, .sessionFinished:
             false
         }
     }

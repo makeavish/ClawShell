@@ -3,6 +3,7 @@ import Foundation
 
 public struct ProcessSnapshot: Equatable, Sendable {
     public var pid: Int32
+    public var parentPID: Int32?
     public var processName: String
     public var executablePath: String?
     public var processStartTime: Date?
@@ -10,12 +11,14 @@ public struct ProcessSnapshot: Equatable, Sendable {
 
     public init(
         pid: Int32,
+        parentPID: Int32? = nil,
         processName: String,
         executablePath: String? = nil,
         processStartTime: Date? = nil,
         cpuPercent: Double? = nil
     ) {
         self.pid = pid
+        self.parentPID = parentPID
         self.processName = processName
         self.executablePath = executablePath
         self.processStartTime = processStartTime
