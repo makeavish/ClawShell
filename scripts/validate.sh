@@ -2412,7 +2412,7 @@ if scripts/helper-service-smappservice-prototype.sh --output-dir "$helper_smapps
     echo "SMAppService helper prototype harness allowed post-approval capture combined with register" >&2
     exit 1
 fi
-if ! grep -q "cannot be combined" "$bag_mode_smoke_error"; then
+if ! grep -q "Use only one" "$bag_mode_smoke_error"; then
     cat "$bag_mode_smoke_error" >&2
     exit 1
 fi
@@ -2456,6 +2456,101 @@ if scripts/helper-service-smappservice-prototype.sh --output-dir "$helper_smapps
 fi
 if ! grep -q -- "--i-understand-this-registers-helper" "$bag_mode_smoke_error"; then
     cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+helper_smappservice_capture_unregister_without_ack="$bag_mode_smoke_dir/helper-smappservice-capture-unregister-without-ack"
+if scripts/helper-service-smappservice-prototype.sh --output-dir "$helper_smappservice_capture_unregister_without_ack" --capture-unregister >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "SMAppService helper prototype harness allowed unregister capture without acknowledgement" >&2
+    exit 1
+fi
+if ! grep -q -- "--i-understand-this-registers-helper" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if scripts/helper-service-smappservice-prototype.sh --output-dir "$helper_smappservice_prepare" --capture-post-approval --capture-unregister --i-understand-this-registers-helper >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "SMAppService helper prototype harness allowed combined append capture modes" >&2
+    exit 1
+fi
+if ! grep -q "Use only one" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+helper_smappservice_capture_unregister_fake="$bag_mode_smoke_dir/helper-smappservice-capture-unregister-fake"
+mkdir -p "$helper_smappservice_capture_unregister_fake/ClawShellHelperPrototype.app/Contents/MacOS" \
+    "$helper_smappservice_capture_unregister_fake/evidence" \
+    "$helper_smappservice_capture_unregister_fake/runtime"
+{
+    printf '%s\n' '#!/usr/bin/env bash'
+    printf '%s\n' 'set -euo pipefail'
+    printf '%s\n' 'command="${1:-status}"'
+    printf '%s\n' 'echo "command=$command"'
+    printf '%s\n' 'echo "plistName=com.makeavish.ClawShell.HelperPrototype.daemon.plist"'
+    printf '%s\n' 'case "$command" in'
+    printf '%s\n' '  unregister)'
+    printf '%s\n' '    echo "statusBeforeRaw=1"'
+    printf '%s\n' '    echo "statusBeforeDescription=SMAppServiceStatus(rawValue: 1)"'
+    printf '%s\n' '    echo "unregisterResult=success"'
+    printf '%s\n' '    echo "statusAfterRaw=0"'
+    printf '%s\n' '    echo "statusAfterDescription=SMAppServiceStatus(rawValue: 0)"'
+    printf '%s\n' '    ;;'
+    printf '%s\n' '  status)'
+    printf '%s\n' '    echo "statusBeforeRaw=0"'
+    printf '%s\n' '    echo "statusBeforeDescription=SMAppServiceStatus(rawValue: 0)"'
+    printf '%s\n' '    echo "statusAfterRaw=0"'
+    printf '%s\n' '    echo "statusAfterDescription=SMAppServiceStatus(rawValue: 0)"'
+    printf '%s\n' '    ;;'
+    printf '%s\n' '  *) exit 64 ;;'
+    printf '%s\n' 'esac'
+} >"$helper_smappservice_capture_unregister_fake/ClawShellHelperPrototype.app/Contents/MacOS/ClawShellHelperPrototype"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$helper_smappservice_capture_unregister_fake/ClawShellHelperPrototype.app/Contents/MacOS/ClawShellHelperPrototypeDaemon"
+chmod +x "$helper_smappservice_capture_unregister_fake/ClawShellHelperPrototype.app/Contents/MacOS/ClawShellHelperPrototype" \
+    "$helper_smappservice_capture_unregister_fake/ClawShellHelperPrototype.app/Contents/MacOS/ClawShellHelperPrototypeDaemon"
+{
+    printf 'evidenceFormat=helper-prototype-v1\n'
+    printf 'unregisterAttempted=false\n'
+} >"$helper_smappservice_capture_unregister_fake/validation-config.txt"
+cp "$helper_smappservice_prepare/prototype-manifest.tsv" "$helper_smappservice_capture_unregister_fake/prototype-manifest.tsv"
+CLAWSHELL_SMAPP_LOG_LAST=1m scripts/helper-service-smappservice-prototype.sh \
+    --output-dir "$helper_smappservice_capture_unregister_fake" \
+    --capture-unregister \
+    --i-understand-this-registers-helper >/dev/null
+if ! grep -q '^unregisterAttempted=true$' "$helper_smappservice_capture_unregister_fake/validation-config.txt"; then
+    echo "SMAppService helper prototype unregister capture did not update unregisterAttempted" >&2
+    cat "$helper_smappservice_capture_unregister_fake/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^unregisterCaptureAttempted=true$' "$helper_smappservice_capture_unregister_fake/validation-config.txt"; then
+    echo "SMAppService helper prototype unregister capture did not update unregisterCaptureAttempted" >&2
+    cat "$helper_smappservice_capture_unregister_fake/validation-config.txt" >&2
+    exit 1
+fi
+for unregister_capture in \
+    helper-uninstall \
+    helper-status-after-unregister \
+    launchctl-status-after-unregister \
+    log-evidence-after-unregister
+do
+    if [[ ! -s "$helper_smappservice_capture_unregister_fake/evidence/$unregister_capture.txt" ]]; then
+        echo "SMAppService helper prototype unregister capture missing evidence: $unregister_capture" >&2
+        exit 1
+    fi
+    if [[ ! -s "$helper_smappservice_capture_unregister_fake/evidence/$unregister_capture.status" ]]; then
+        echo "SMAppService helper prototype unregister capture missing status: $unregister_capture" >&2
+        exit 1
+    fi
+done
+for unpromoted_unregister_row in \
+    helper-uninstall \
+    helper-uninstall-state-cleanup
+do
+    if ! awk -F '\t' -v check_id="$unpromoted_unregister_row" '$1 == check_id && $2 == "TODO" { found = 1 } END { exit !found }' "$helper_smappservice_capture_unregister_fake/prototype-manifest.tsv"; then
+        echo "SMAppService helper prototype unregister capture should not auto-promote row: $unpromoted_unregister_row" >&2
+        cat "$helper_smappservice_capture_unregister_fake/prototype-manifest.tsv" >&2
+        exit 1
+    fi
+done
+if [[ ! -s "$helper_smappservice_capture_unregister_fake/unregister-capture.md" ]]; then
+    echo "SMAppService helper prototype unregister capture missing summary" >&2
     exit 1
 fi
 helper_smappservice_file="$bag_mode_smoke_dir/helper-smappservice-file"

@@ -151,6 +151,22 @@ automatically; review the captured output, update the manifest and manual
 result deliberately, then run the verifier before attaching the artifact to
 #27.
 
+After cleanup approval, append mutating unregister evidence to the same
+artifact directory:
+
+```bash
+scripts/helper-service-smappservice-prototype.sh \
+  --output-dir .build/helper-service-prototype/<same-smappservice-register-artifact> \
+  --capture-unregister \
+  --i-understand-this-registers-helper
+```
+
+This cleanup mode calls `unregister()` from the existing app bundle and records
+follow-up `status`, `launchctl`, and unified log output without auto-promoting
+manifest rows. Review the captured output before mapping it to
+`helper-uninstall`, `helper-uninstall-state-cleanup`, and the manual uninstall
+fields, then run the verifier.
+
 The verifier expects three files at the manifest root:
 
 - `validation-config.txt`
