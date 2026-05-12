@@ -6,11 +6,11 @@ Issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
 
 Follow-up: [#27](https://github.com/makeavish/ClawShell/issues/27)
 
-Local artifact: `.build/helper-service-readiness/recheck-20260512T100451Z`
+Local artifact: `.build/helper-service-readiness/recheck-20260512T105510Z`
 
 ## Question
 
-Is `SMAppService` a source-backed helper path worth prototyping before ClawShell claims signed helper install/update/uninstall support?
+Is `SMAppService` a source-backed helper path worth trying before ClawShell proves a no-membership Bag Mode helper install/update/uninstall path?
 
 ## Source Findings
 
@@ -35,7 +35,7 @@ Sources:
 Command used:
 
 ```bash
-scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/recheck-20260512T100451Z
+scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/recheck-20260512T105510Z
 ```
 
 Captured result:
@@ -61,40 +61,45 @@ metadataRedacted=true
 
 The local environment now has full Xcode installed under `/Applications/Xcode.app`, even though the active `xcode-select` developer directory still points at Command Line Tools. The readiness harness detects that installed Xcode separately from the active selection and records `xcodebuildAvailable=true`.
 
-This still is not enough to complete the signed prototype: the keychain has no Developer ID Application identity and no Developer ID Installer identity. The harness records only redacted identity counts: app-signing identities come from the `codesigning` policy, while installer identities come from a separate `basic` identity query. Therefore this machine cannot complete the signed install/update/uninstall prototype until those signing identities are available.
+This still is not enough to complete a Developer ID signed prototype: the keychain has no Developer ID Application identity and no Developer ID Installer identity. The harness records only redacted identity counts: app-signing identities come from the `codesigning` policy, while installer identities come from a separate `basic` identity query.
+
+The product plan now treats Apple Developer Program membership as deferred until traction or donations justify the cost, so #27 must first prove a no-membership helper path instead of waiting on Developer ID identities.
 
 ## Provisional Design Verdict
 
-`SMAppService` remains the source-backed V1 target to prototype, but #7 cannot claim the signed helper path is validated yet.
+`SMAppService` remains the source-backed first target to prototype, but #7 cannot claim the helper path is validated yet. The next #27 prototype must answer whether `SMAppService` works with a no-membership local signing mode; if not, it must prove a fallback local/admin-approved LaunchDaemon install path.
 
 The design should keep these constraints:
 
 - App bundle contains the helper and LaunchDaemon plist.
 - LaunchDaemon plist lives under `Contents/Library/LaunchDaemons`.
-- App and helper are signed with compatible designated requirements.
+- App and helper use the strongest available local signing/auth model; Developer ID designated requirements are a later distribution upgrade.
 - Registration is app-initiated after Bag Mode consent.
 - LaunchDaemon approval is admin-mediated in System Settings.
-- Production Bag Mode stays hidden or unavailable in unsigned public builds.
-- A Homebrew cask may install the signed app bundle containing the helper and plist, but it must not call `SMAppService.register()`, run `launchctl`, or execute installer scripts that activate the helper. Onboarding triggers registration after Bag Mode consent, and macOS admin approval happens in System Settings.
+- Non-Developer-ID public builds may expose Bag Mode only after the local/ad-hoc signed and hash/pairing-pinned helper path passes real validation and the UI clearly labels the local helper trust model. Truly unsigned helper experiments stay development-only.
+- A Homebrew cask may install the app bundle containing the helper and plist, but it must not silently activate the helper. Onboarding triggers `SMAppService` registration or a local admin-approved fallback install after Bag Mode consent.
 
 ## Required Prototype Notes
 
-Follow-up [#27](https://github.com/makeavish/ClawShell/issues/27) must produce the signed SMAppService evidence:
+Follow-up [#27](https://github.com/makeavish/ClawShell/issues/27) must produce no-membership helper evidence:
 
 - `codesign -dvvv --entitlements :-` for app and helper
-- designated requirements for app and helper
-- `spctl -a -vv` assessment of the distributable app
+- local signing/auth model for app and helper; Developer ID designated requirements only when available
+- `spctl -a -vv` assessment of the distributable app when meaningful for the chosen path
 - app bundle layout showing helper and plist locations
-- `SMAppService.daemon(plistName:)` register and status outputs
-- System Settings approval behavior
+- `SMAppService.daemon(plistName:)` register and status outputs, or the exact failure proving fallback is needed
+- System Settings approval behavior for `SMAppService`, or fallback local admin password flow with exact fixed `launchctl bootstrap`, `launchctl bootout`, file install/remove, repair, and uninstall commands
 - `launchctl` evidence before and after approval
 - reboot behavior after approval
 - update behavior from helper generation N to N+1
-- uninstall behavior via `unregister()` plus helper-owned Bag Mode cleanup
-- failure cases for unsigned caller, wrong bundle id, wrong label/plist path, wrong user, stale app version, denied approval, and revoked approval
+- uninstall behavior via `unregister()` or fallback `launchctl bootout` plus helper-owned Bag Mode cleanup
+- fixed command API evidence for `status`, `enableBagMode`, `disableBagMode`, `repair`, and `uninstall`
+- root-owned ledger schema, file ownership/mode, sample owner token/generation/boot state, restore conflict behavior, and repair output
+- CLI evidence for `clawshell helper status`, `clawshell helper repair`, and `clawshell uninstall --remove-helper --remove-integrations`
+- failure cases for unpaired caller, wrong bundle id, wrong label/plist path, wrong user, stale app version, denied approval, and revoked approval
 - Homebrew cask behavior if the prototype is exercised through `brew install --cask`, `brew upgrade --cask`, or `brew uninstall --cask`; otherwise track cask semantics separately from the helper prototype
 
-Before attaching a signed prototype evidence package to #27, run the structural
+Before attaching a helper prototype evidence package to #27, run the structural
 verifier:
 
 ```bash
@@ -112,7 +117,7 @@ scripts/helper-service-prototype-scaffold.sh \
 
 The scaffold is not evidence. It intentionally omits `validation-config.txt`
 and `manual-result.md`, and writes `TODO` manifest rows so the verifier fails
-until real signed-helper output is captured.
+until real helper output is captured.
 
 The verifier expects three files at the manifest root:
 
@@ -123,13 +128,15 @@ The verifier expects three files at the manifest root:
 `validation-config.txt` must record the machine-readable prototype shape:
 
 ```text
-evidenceFormat=smappservice-prototype-v1
+evidenceFormat=helper-prototype-v1
 metadataRedacted=true
 macOSVersion=15.0
 appBundleIdentifier=com.example.ClawShell
 helperLabel=com.example.ClawShell.Helper
 launchDaemonPlist=ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist
-developerIDApplicationSigned=true
+helperInstallPath=smappservice
+localAuthModel=ad-hoc app/helper signature plus root-owned pairing token
+developerIDApplicationSigned=false
 packageInstallerUsed=false
 homebrewCaskUsed=false
 result=inconclusive
@@ -141,22 +148,24 @@ result=inconclusive
 # Helper Service Prototype Result
 
 ## Prototype Case
-- Case ID: apple-silicon-smappservice-signed
+- Case ID: apple-silicon-smappservice-local
 - macOS: 15.0
 - App bundle: /Applications/ClawShell.app
 - LaunchDaemon plist: ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist
-- SMAppService API: SMAppService.daemon(plistName:)
+- Helper install path: smappservice
+- Helper install API/path: SMAppService.daemon(plistName:)
 
 ## Signing
 - App signed: yes
 - Helper signed: yes
-- Designated requirements recorded: yes
+- Local auth model recorded: yes
+- Developer ID designated requirements recorded: N/A - no Apple Developer Program membership
 - Package installer used: no
 - Package signed with Developer ID Installer: N/A - no package installer used
 
 ## Lifecycle
-- Register status transition: requiresApproval -> enabled
-- System Settings approval confirmed: yes
+- Install/status transition: requiresApproval -> enabled
+- Admin approval/password flow confirmed: yes
 - Helper bootstraps after approval: yes
 - Helper bootstraps after reboot: yes
 - Old helper inactive after update: yes
@@ -174,8 +183,8 @@ result=inconclusive
 ```
 
 The verifier compares `manual-result.md` against `validation-config.txt`.
-`macOS`, `LaunchDaemon plist`, and `Result` must match `macOSVersion`,
-`launchDaemonPlist`, and `result`.
+`macOS`, `LaunchDaemon plist`, helper install path, Developer ID status, and
+`Result` must match the corresponding config fields.
 
 `prototype-manifest.tsv` must use this tab-separated header:
 
@@ -187,31 +196,37 @@ Required rows must use `status=evidence` and point to relative, non-empty files
 or directories inside the evidence package. Evidence paths and evidence
 directories must not contain symlink components, and evidence files must contain
 real captured output rather than `TODO`, `<paste output>`, or placeholder text.
-Optional rows are `package-installer-signing` and `homebrew-cask-semantics`; use
-`status=n/a` with an explicit note when those paths were not exercised. Verifier
-success means the evidence package is structurally complete only. It does not
-prove the helper prototype passed or close #27 by itself.
+Optional rows are `smappservice-rejection`, `package-installer-signing`, and
+`homebrew-cask-semantics`; use `status=n/a` with an explicit note when those
+paths were not exercised. If `helperInstallPath=launchdaemon-fallback`, the
+verifier requires `smappservice-rejection` evidence and the `launchDaemonPlist`
+config value must point to the installed `/Library/LaunchDaemons/<label>.plist`
+artifact. Verifier success means the evidence package is structurally complete
+only. It does not prove the helper prototype passed or close #27 by itself.
 
 Required manifest `checkId` rows:
 
-- `app-bundle-layout`
+- `app-bundle-or-install-layout`
 - `launchdaemon-plist`
-- `app-codesign`
-- `helper-codesign`
-- `app-designated-requirement`
-- `helper-designated-requirement`
-- `spctl-assessment`
-- `smappservice-register`
-- `smappservice-status-requires-approval`
-- `system-settings-approval`
-- `smappservice-status-enabled`
+- `app-signing-or-auth-model`
+- `helper-signing-or-auth-model`
+- `caller-auth-model`
+- `fixed-command-api`
+- `spctl-or-gatekeeper-assessment`
+- `helper-install-or-register`
+- `helper-status-after-approval`
+- `admin-approval-or-password-flow`
 - `helper-bootstrap-after-approval`
 - `post-reboot-helper-bootstrap`
+- `root-ledger-schema-and-permissions`
+- `root-ledger-ownership-sample`
 - `helper-update-old-inactive`
 - `helper-update-ledger-compatibility`
-- `helper-uninstall-unregister`
+- `helper-repair-conflict`
+- `helper-uninstall`
 - `helper-uninstall-state-cleanup`
-- `failure-unsigned-caller`
+- `cli-helper-status-repair-uninstall`
+- `failure-unpaired-caller`
 - `failure-wrong-bundle-id-or-label`
 - `failure-wrong-user`
 - `failure-stale-app-version`
@@ -221,6 +236,8 @@ Required manifest `checkId` rows:
 
 Optional manifest `checkId` rows:
 
+- `smappservice-rejection` when `helperInstallPath=launchdaemon-fallback`;
+  otherwise include an `n/a` row with the reason `SMAppService` was used.
 - `package-installer-signing` when `packageInstallerUsed=true`; otherwise
   include an `n/a` row with the reason no package installer was used.
 - `homebrew-cask-semantics` when `homebrewCaskUsed=true`; otherwise include an
@@ -228,4 +245,4 @@ Optional manifest `checkId` rows:
 
 ## Conclusion
 
-The helper path is source-backed but not locally validated as a signed prototype. Production Bag Mode remains blocked until #27 records install/update/uninstall evidence with a real signing identity and full macOS app bundle.
+The helper path is source-backed but not locally validated as a no-membership prototype. Bag Mode remains blocked until #27 records install/update/uninstall evidence for a real local/admin-approved helper path. Developer ID signing remains a later distribution/trust milestone.

@@ -12,15 +12,18 @@ PACKAGE_INSTALLER_USED=""
 HOMEBREW_CASK_USED=""
 PACKAGE_INSTALLER_STATUS=""
 HOMEBREW_CASK_STATUS=""
+SMAPPSERVICE_REJECTION_STATUS=""
 CONFIG_MACOS_VERSION=""
 CONFIG_LAUNCHDAEMON_PLIST=""
+CONFIG_HELPER_INSTALL_PATH=""
+CONFIG_DEVELOPER_ID_APPLICATION_SIGNED=""
 CONFIG_RESULT=""
 
 usage() {
     cat <<'EOF'
 Usage: scripts/helper-service-prototype-verify.sh --manifest PATH
 
-Checks the signed SMAppService helper prototype evidence package for #27. This
+Checks the helper prototype evidence package for #27. This
 verifier is structural only: it fails missing, placeholder, or internally
 inconsistent evidence before the package is attached to the issue. It does not
 sign, install, register, approve, unregister, or run a helper.
@@ -73,24 +76,27 @@ MANUAL_FILE="$MANIFEST_DIR/manual-result.md"
 
 required_check_ids() {
     cat <<'EOF'
-app-bundle-layout
+app-bundle-or-install-layout
 launchdaemon-plist
-app-codesign
-helper-codesign
-app-designated-requirement
-helper-designated-requirement
-spctl-assessment
-smappservice-register
-smappservice-status-requires-approval
-system-settings-approval
-smappservice-status-enabled
+app-signing-or-auth-model
+helper-signing-or-auth-model
+caller-auth-model
+fixed-command-api
+spctl-or-gatekeeper-assessment
+helper-install-or-register
+helper-status-after-approval
+admin-approval-or-password-flow
 helper-bootstrap-after-approval
 post-reboot-helper-bootstrap
+root-ledger-schema-and-permissions
+root-ledger-ownership-sample
 helper-update-old-inactive
 helper-update-ledger-compatibility
-helper-uninstall-unregister
+helper-repair-conflict
+helper-uninstall
 helper-uninstall-state-cleanup
-failure-unsigned-caller
+cli-helper-status-repair-uninstall
+failure-unpaired-caller
 failure-wrong-bundle-id-or-label
 failure-wrong-user
 failure-stale-app-version
@@ -102,6 +108,7 @@ EOF
 
 optional_check_ids() {
     cat <<'EOF'
+smappservice-rejection
 package-installer-signing
 homebrew-cask-semantics
 EOF
@@ -273,21 +280,25 @@ verify_config() {
     require_file "validation-config.txt" "$CONFIG_FILE"
     [[ -f "$CONFIG_FILE" ]] || return
 
-    local format metadata_redacted macos_version launchdaemon_plist signed result
+    local format metadata_redacted macos_version launchdaemon_plist signed result helper_install_path local_auth_model
     format="$(value_for_key evidenceFormat "$CONFIG_FILE" 2>/dev/null || true)"
     metadata_redacted="$(value_for_key metadataRedacted "$CONFIG_FILE" 2>/dev/null || true)"
     macos_version="$(value_for_key macOSVersion "$CONFIG_FILE" 2>/dev/null || true)"
     launchdaemon_plist="$(value_for_key launchDaemonPlist "$CONFIG_FILE" 2>/dev/null || true)"
+    helper_install_path="$(value_for_key helperInstallPath "$CONFIG_FILE" 2>/dev/null || true)"
+    local_auth_model="$(value_for_key localAuthModel "$CONFIG_FILE" 2>/dev/null || true)"
     signed="$(value_for_key developerIDApplicationSigned "$CONFIG_FILE" 2>/dev/null || true)"
     PACKAGE_INSTALLER_USED="$(value_for_key packageInstallerUsed "$CONFIG_FILE" 2>/dev/null || true)"
     HOMEBREW_CASK_USED="$(value_for_key homebrewCaskUsed "$CONFIG_FILE" 2>/dev/null || true)"
     result="$(value_for_key result "$CONFIG_FILE" 2>/dev/null || true)"
     CONFIG_MACOS_VERSION="$macos_version"
     CONFIG_LAUNCHDAEMON_PLIST="$launchdaemon_plist"
+    CONFIG_HELPER_INSTALL_PATH="$helper_install_path"
+    CONFIG_DEVELOPER_ID_APPLICATION_SIGNED="$signed"
     CONFIG_RESULT="$result"
 
-    if [[ "$format" != "smappservice-prototype-v1" ]]; then
-        record_error "validation-config.txt" "evidenceFormat must be smappservice-prototype-v1"
+    if [[ "$format" != "helper-prototype-v1" ]]; then
+        record_error "validation-config.txt" "evidenceFormat must be helper-prototype-v1"
     fi
     if [[ "$metadata_redacted" != "true" ]]; then
         record_error "validation-config.txt" "metadataRedacted must be true"
@@ -311,11 +322,23 @@ verify_config() {
         record_error "validation-config.txt" "macOSVersion must look like a macOS version, for example 15.0"
     fi
 
-    if [[ "$launchdaemon_plist" != *"Contents/Library/LaunchDaemons/"* || "$launchdaemon_plist" != *.plist ]]; then
-        record_error "validation-config.txt" "launchDaemonPlist must live under Contents/Library/LaunchDaemons and end in .plist"
+    if ! is_choice_value "$helper_install_path" "smappservice" "launchdaemon-fallback"; then
+        record_error "validation-config.txt" "helperInstallPath must be smappservice or launchdaemon-fallback"
     fi
-    if [[ "$signed" != "true" ]]; then
-        record_error "validation-config.txt" "developerIDApplicationSigned must be true for #27 evidence"
+    if is_unfilled_value "$local_auth_model"; then
+        record_error "validation-config.txt" "localAuthModel is missing or placeholder"
+    fi
+    if [[ "$helper_install_path" == "smappservice" ]]; then
+        if [[ "$launchdaemon_plist" != *"Contents/Library/LaunchDaemons/"* || "$launchdaemon_plist" != *.plist ]]; then
+            record_error "validation-config.txt" "launchDaemonPlist must live under Contents/Library/LaunchDaemons and end in .plist for helperInstallPath=smappservice"
+        fi
+    elif [[ "$helper_install_path" == "launchdaemon-fallback" ]]; then
+        if [[ "$launchdaemon_plist" != /Library/LaunchDaemons/*.plist ]]; then
+            record_error "validation-config.txt" "launchDaemonPlist must be an installed /Library/LaunchDaemons plist for helperInstallPath=launchdaemon-fallback"
+        fi
+    fi
+    if ! is_choice_value "$signed" "true" "false"; then
+        record_error "validation-config.txt" "developerIDApplicationSigned must be true or false"
     fi
     if ! is_choice_value "$PACKAGE_INSTALLER_USED" "true" "false"; then
         record_error "validation-config.txt" "packageInstallerUsed must be true or false"
@@ -337,14 +360,16 @@ verify_manual_result() {
         "macOS" \
         "App bundle" \
         "LaunchDaemon plist" \
-        "SMAppService API" \
+        "Helper install path" \
+        "Helper install API/path" \
         "App signed" \
         "Helper signed" \
-        "Designated requirements recorded" \
+        "Local auth model recorded" \
+        "Developer ID designated requirements recorded" \
         "Package installer used" \
         "Package signed with Developer ID Installer" \
-        "Register status transition" \
-        "System Settings approval confirmed" \
+        "Install/status transition" \
+        "Admin approval/password flow confirmed" \
         "Helper bootstraps after approval" \
         "Helper bootstraps after reboot" \
         "Old helper inactive after update" \
@@ -361,8 +386,8 @@ verify_manual_result() {
 
     require_yes_field "App signed"
     require_yes_field "Helper signed"
-    require_yes_field "Designated requirements recorded"
-    require_yes_field "System Settings approval confirmed"
+    require_yes_field "Local auth model recorded"
+    require_yes_field "Admin approval/password flow confirmed"
     require_yes_field "Helper bootstraps after approval"
     require_yes_field "Helper bootstraps after reboot"
     require_yes_field "Old helper inactive after update"
@@ -372,7 +397,7 @@ verify_manual_result() {
     require_yes_field "Failure cases recorded"
     check_choice_field "Result" "pass" "fail" "inconclusive"
 
-    local manual_macos manual_result launchdaemon_plist smappservice_api status_transition package_used package_signed cask_used cask_registers
+    local manual_macos manual_result launchdaemon_plist helper_install_api helper_install_path status_transition package_used package_signed cask_used cask_registers developer_id_requirements
     manual_macos="$(field_value "macOS" "$MANUAL_FILE" 2>/dev/null || true)"
     manual_macos="$(trim_value "$manual_macos")"
     if [[ -n "$CONFIG_MACOS_VERSION" && "$manual_macos" != "$CONFIG_MACOS_VERSION" && "$manual_macos" != "macOS $CONFIG_MACOS_VERSION" ]]; then
@@ -386,23 +411,41 @@ verify_manual_result() {
     fi
 
     launchdaemon_plist="$(field_value "LaunchDaemon plist" "$MANUAL_FILE" 2>/dev/null || true)"
-    if [[ "$launchdaemon_plist" != *"Contents/Library/LaunchDaemons/"* || "$launchdaemon_plist" != *.plist ]]; then
-        record_error "manual-result.md" "LaunchDaemon plist must live under Contents/Library/LaunchDaemons and end in .plist"
-    fi
     if [[ -n "$CONFIG_LAUNCHDAEMON_PLIST" &&
           "$launchdaemon_plist" != "$CONFIG_LAUNCHDAEMON_PLIST" &&
           "$launchdaemon_plist" != *"/$CONFIG_LAUNCHDAEMON_PLIST" ]]; then
         record_error "manual-result.md" "LaunchDaemon plist field must match validation-config launchDaemonPlist"
     fi
 
-    smappservice_api="$(field_value "SMAppService API" "$MANUAL_FILE" 2>/dev/null || true)"
-    if [[ "$smappservice_api" != *"SMAppService.daemon"* ]]; then
-        record_error "manual-result.md" "SMAppService API must mention SMAppService.daemon(plistName:)"
+    helper_install_path="$(field_value "Helper install path" "$MANUAL_FILE" 2>/dev/null || true)"
+    helper_install_path="$(trim_value "$helper_install_path")"
+    if ! is_choice_value "$helper_install_path" "smappservice" "launchdaemon-fallback"; then
+        record_error "manual-result.md" "Helper install path must be smappservice or launchdaemon-fallback"
+    elif [[ -n "$CONFIG_HELPER_INSTALL_PATH" && "$helper_install_path" != "$CONFIG_HELPER_INSTALL_PATH" ]]; then
+        record_error "manual-result.md" "Helper install path field must match validation-config helperInstallPath"
     fi
 
-    status_transition="$(field_value "Register status transition" "$MANUAL_FILE" 2>/dev/null || true)"
-    if [[ "$status_transition" != *"requiresApproval"* || "$status_transition" != *"enabled"* ]]; then
-        record_error "manual-result.md" "Register status transition must include requiresApproval and enabled states"
+    helper_install_api="$(field_value "Helper install API/path" "$MANUAL_FILE" 2>/dev/null || true)"
+    helper_install_api="$(trim_value "$helper_install_api")"
+    if is_unfilled_value "$helper_install_api"; then
+        record_error "manual-result.md" "Helper install API/path is missing or placeholder"
+    elif [[ "$helper_install_path" == "smappservice" && "$helper_install_api" != *"SMAppService.daemon"* ]]; then
+        record_error "manual-result.md" "Helper install API/path must mention SMAppService.daemon(plistName:) when Helper install path is smappservice"
+    fi
+
+    status_transition="$(field_value "Install/status transition" "$MANUAL_FILE" 2>/dev/null || true)"
+    if is_unfilled_value "$status_transition"; then
+        record_error "manual-result.md" "Install/status transition is missing or placeholder"
+    elif [[ "$helper_install_path" == "smappservice" &&
+          ( "$status_transition" != *"requiresApproval"* || "$status_transition" != *"enabled"* ) ]]; then
+        record_error "manual-result.md" "Install/status transition must include requiresApproval and enabled states for smappservice"
+    fi
+
+    developer_id_requirements="$(normalize_yes_no "$(field_value "Developer ID designated requirements recorded" "$MANUAL_FILE" 2>/dev/null || true)")"
+    if [[ "$CONFIG_DEVELOPER_ID_APPLICATION_SIGNED" == "true" && "$developer_id_requirements" != "yes" ]]; then
+        record_error "manual-result.md" "Developer ID designated requirements recorded must be yes when validation-config developerIDApplicationSigned=true"
+    elif [[ "$CONFIG_DEVELOPER_ID_APPLICATION_SIGNED" == "false" && "$developer_id_requirements" != "no" && "$developer_id_requirements" != N/A* ]]; then
+        record_error "manual-result.md" "Developer ID designated requirements recorded must be no or N/A when validation-config developerIDApplicationSigned=false"
     fi
 
     package_used="$(normalize_yes_no "$(field_value "Package installer used" "$MANUAL_FILE" 2>/dev/null || true)")"
@@ -512,6 +555,8 @@ verify_manifest() {
             PACKAGE_INSTALLER_STATUS="$row_status"
         elif [[ "$check_id" == "homebrew-cask-semantics" ]]; then
             HOMEBREW_CASK_STATUS="$row_status"
+        elif [[ "$check_id" == "smappservice-rejection" ]]; then
+            SMAPPSERVICE_REJECTION_STATUS="$row_status"
         fi
 
         if is_required_id "$check_id"; then
@@ -553,6 +598,9 @@ verify_manifest() {
     fi
     if [[ "$HOMEBREW_CASK_USED" == "true" && "$HOMEBREW_CASK_STATUS" != "evidence" ]]; then
         record_error "homebrew-cask-semantics" "homebrewCaskUsed=true requires cask install/upgrade/uninstall evidence"
+    fi
+    if [[ "$CONFIG_HELPER_INSTALL_PATH" == "launchdaemon-fallback" && "$SMAPPSERVICE_REJECTION_STATUS" != "evidence" ]]; then
+        record_error "smappservice-rejection" "helperInstallPath=launchdaemon-fallback requires evidence of the SMAppService rejection or incompatibility that justifies fallback"
     fi
 }
 

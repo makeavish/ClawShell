@@ -10,10 +10,10 @@ usage() {
 Usage: scripts/helper-service-prototype-scaffold.sh --output-dir DIR
    or: scripts/helper-service-prototype-scaffold.sh DIR
 
-Creates a non-mutating starter directory for the #27 signed SMAppService helper
+Creates a non-mutating starter directory for the #27 no-membership helper
 prototype evidence package. The generated manifest intentionally contains TODO
 rows and no validation-config.txt/manual-result.md so it cannot pass the
-prototype verifier until real signed-helper evidence is captured.
+prototype verifier until real helper evidence is captured.
 USAGE
 }
 
@@ -79,30 +79,34 @@ checkId	status	evidencePath	note
 EOF
 
 {
-    write_required_row "app-bundle-layout"
+    write_required_row "app-bundle-or-install-layout"
     write_required_row "launchdaemon-plist"
-    write_required_row "app-codesign"
-    write_required_row "helper-codesign"
-    write_required_row "app-designated-requirement"
-    write_required_row "helper-designated-requirement"
-    write_required_row "spctl-assessment"
-    write_required_row "smappservice-register"
-    write_required_row "smappservice-status-requires-approval"
-    write_required_row "system-settings-approval"
-    write_required_row "smappservice-status-enabled"
+    write_required_row "app-signing-or-auth-model"
+    write_required_row "helper-signing-or-auth-model"
+    write_required_row "caller-auth-model"
+    write_required_row "fixed-command-api"
+    write_required_row "spctl-or-gatekeeper-assessment"
+    write_required_row "helper-install-or-register"
+    write_required_row "helper-status-after-approval"
+    write_required_row "admin-approval-or-password-flow"
     write_required_row "helper-bootstrap-after-approval"
     write_required_row "post-reboot-helper-bootstrap"
+    write_required_row "root-ledger-schema-and-permissions"
+    write_required_row "root-ledger-ownership-sample"
     write_required_row "helper-update-old-inactive"
     write_required_row "helper-update-ledger-compatibility"
-    write_required_row "helper-uninstall-unregister"
+    write_required_row "helper-repair-conflict"
+    write_required_row "helper-uninstall"
     write_required_row "helper-uninstall-state-cleanup"
-    write_required_row "failure-unsigned-caller"
+    write_required_row "cli-helper-status-repair-uninstall"
+    write_required_row "failure-unpaired-caller"
     write_required_row "failure-wrong-bundle-id-or-label"
     write_required_row "failure-wrong-user"
     write_required_row "failure-stale-app-version"
     write_required_row "failure-denied-or-revoked-approval"
     write_required_row "launchctl-status"
     write_required_row "log-evidence"
+    printf '%s\tn/a\t\tNo fallback path used in this prototype package yet\n' "smappservice-rejection"
     printf '%s\tn/a\t\tNo package installer path used in this prototype package yet\n' "package-installer-signing"
     printf '%s\tn/a\t\tNo Homebrew cask path used in this prototype package yet\n' "homebrew-cask-semantics"
 } >>"$OUTPUT_DIR/prototype-manifest.tsv"
@@ -116,7 +120,7 @@ The manifest intentionally starts with `TODO` statuses for required checks and
 does not create `validation-config.txt` or `manual-result.md`. Before attaching
 a prototype package to #27, replace every required row with `status=evidence`
 and a relative captured evidence path, then add filled `validation-config.txt`
-and `manual-result.md` files from the real signed-helper prototype.
+and `manual-result.md` files from the real helper prototype.
 
 Run the verifier before attaching the package:
 
@@ -133,10 +137,10 @@ Current local prerequisite gate:
 scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/local-$(date -u +%Y%m%dT%H%M%SZ)
 ```
 
-The signed prototype still requires Developer ID Application signing for the
-app/helper, Developer ID Installer signing when a package installer is used,
-SMAppService registration/status evidence, admin approval evidence, reboot,
-update, uninstall, failure-case, launchctl, and log evidence.
+The prototype still requires a real local signing/auth model for the app/helper,
+Developer ID evidence only when available, SMAppService or fallback install
+evidence, admin approval or password-flow evidence, reboot, update, uninstall,
+failure-case, launchctl, and log evidence.
 EOF
 
 cat >"$OUTPUT_DIR/scaffold-config.txt" <<EOF

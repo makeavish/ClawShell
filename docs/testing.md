@@ -161,7 +161,7 @@ Use the non-destructive temperature-provider harness for #7 safety-source checks
 scripts/temperature-provider-validation.sh --output-dir .build/temperature-provider-validation/local-$(date -u +%Y%m%dT%H%M%SZ)
 ```
 
-The harness writes `validation-config.txt`, command outputs, command status files, and `summary.md`. It never uses sudo and must not mark `bagModeTemperatureProviderReady=true`; production provider readiness requires the signed-helper follow-up.
+The harness writes `validation-config.txt`, command outputs, command status files, and `summary.md`. It never uses sudo and must not mark `bagModeTemperatureProviderReady=true`; production provider readiness requires the no-membership helper follow-up.
 
 Use the helper-equivalent preflight before attempting root/helper
 `powermetrics` sampling:
@@ -206,7 +206,7 @@ not select a provider or run privileged sampling.
 
 ## Helper Service Readiness Harness
 
-Use the non-mutating helper readiness harness before attempting a signed `SMAppService` prototype:
+Use the non-mutating helper readiness harness before attempting a helper prototype:
 
 ```sh
 scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/local-$(date -u +%Y%m%dT%H%M%SZ)
@@ -218,7 +218,7 @@ Xcode install discovered under `/Applications`, because Xcode can be installed
 while the active developer directory still points at Command Line Tools. It does
 not install, register, approve, unregister, or run a helper.
 
-Use the signed prototype evidence verifier before attaching #27 evidence:
+Use the helper prototype evidence verifier before attaching #27 evidence:
 
 ```sh
 scripts/helper-service-prototype-verify.sh \
@@ -235,10 +235,10 @@ scripts/helper-service-prototype-scaffold.sh \
 
 The scaffold is not evidence. It intentionally omits `validation-config.txt`
 and `manual-result.md`, and required manifest rows start as `TODO`, so it should
-fail the verifier until real signed-helper evidence is captured.
+fail the verifier until real helper evidence is captured.
 
 The verifier checks `validation-config.txt`, `manual-result.md`, and the TSV
-manifest for the required app/helper signing, `SMAppService`, approval,
+manifest for the required app/helper signing or local auth model, `SMAppService` or fallback install path, approval,
 bootstrap, reboot, update, uninstall, failure-case, `launchctl`, and log
 evidence rows. It is a structural gate only; it does not sign, install,
 register, approve, unregister, or run a helper.

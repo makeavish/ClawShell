@@ -1661,13 +1661,15 @@ helper_prototype_manifest="$helper_prototype_dir/prototype-manifest.tsv"
 helper_prototype_evidence_dir="$helper_prototype_dir/evidence"
 mkdir -p "$helper_prototype_evidence_dir"
 cat >"$helper_prototype_dir/validation-config.txt" <<'EOF'
-evidenceFormat=smappservice-prototype-v1
+evidenceFormat=helper-prototype-v1
 metadataRedacted=true
 macOSVersion=15.0
 appBundleIdentifier=com.example.ClawShell
 helperLabel=com.example.ClawShell.Helper
 launchDaemonPlist=ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist
-developerIDApplicationSigned=true
+helperInstallPath=smappservice
+localAuthModel=ad-hoc app/helper signature plus root-owned pairing token
+developerIDApplicationSigned=false
 packageInstallerUsed=false
 homebrewCaskUsed=false
 result=pass
@@ -1680,18 +1682,20 @@ cat >"$helper_prototype_dir/manual-result.md" <<'EOF'
 - macOS: 15.0
 - App bundle: /Applications/ClawShell.app
 - LaunchDaemon plist: ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist
-- SMAppService API: SMAppService.daemon(plistName:)
+- Helper install path: smappservice
+- Helper install API/path: SMAppService.daemon(plistName:)
 
 ## Signing
 - App signed: yes
 - Helper signed: yes
-- Designated requirements recorded: yes
+- Local auth model recorded: yes
+- Developer ID designated requirements recorded: N/A - no Apple Developer Program membership
 - Package installer used: no
 - Package signed with Developer ID Installer: N/A - no package installer used
 
 ## Lifecycle
-- Register status transition: requiresApproval -> enabled
-- System Settings approval confirmed: yes
+- Install/status transition: requiresApproval -> enabled
+- Admin approval/password flow confirmed: yes
 - Helper bootstraps after approval: yes
 - Helper bootstraps after reboot: yes
 - Old helper inactive after update: yes
@@ -1708,24 +1712,27 @@ cat >"$helper_prototype_dir/manual-result.md" <<'EOF'
 - Result: pass
 EOF
 helper_prototype_required_checks=(
-    app-bundle-layout
+    app-bundle-or-install-layout
     launchdaemon-plist
-    app-codesign
-    helper-codesign
-    app-designated-requirement
-    helper-designated-requirement
-    spctl-assessment
-    smappservice-register
-    smappservice-status-requires-approval
-    system-settings-approval
-    smappservice-status-enabled
+    app-signing-or-auth-model
+    helper-signing-or-auth-model
+    caller-auth-model
+    fixed-command-api
+    spctl-or-gatekeeper-assessment
+    helper-install-or-register
+    helper-status-after-approval
+    admin-approval-or-password-flow
     helper-bootstrap-after-approval
     post-reboot-helper-bootstrap
+    root-ledger-schema-and-permissions
+    root-ledger-ownership-sample
     helper-update-old-inactive
     helper-update-ledger-compatibility
-    helper-uninstall-unregister
+    helper-repair-conflict
+    helper-uninstall
     helper-uninstall-state-cleanup
-    failure-unsigned-caller
+    cli-helper-status-repair-uninstall
+    failure-unpaired-caller
     failure-wrong-bundle-id-or-label
     failure-wrong-user
     failure-stale-app-version
@@ -1739,10 +1746,48 @@ helper_prototype_required_checks=(
         printf '$ %s\ncaptured helper prototype output for %s\n' "$check_id" "$check_id" >"$helper_prototype_evidence_dir/$check_id.txt"
         printf '%s\tevidence\tevidence/%s.txt\tevidence attached\n' "$check_id" "$check_id"
     done
+    printf 'smappservice-rejection\tn/a\t\tSMAppService path used in this smoke\n'
     printf 'package-installer-signing\tn/a\t\tNo package installer used in this smoke\n'
     printf 'homebrew-cask-semantics\tn/a\t\tNo Homebrew cask used in this smoke\n'
 } >"$helper_prototype_manifest"
 scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_manifest" >/dev/null
+
+helper_prototype_fallback_dir="$bag_mode_smoke_dir/helper-prototype-fallback"
+cp -R "$helper_prototype_dir" "$helper_prototype_fallback_dir"
+sed -i '' 's#launchDaemonPlist=ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist#launchDaemonPlist=/Library/LaunchDaemons/com.example.ClawShell.Helper.plist#' "$helper_prototype_fallback_dir/validation-config.txt"
+sed -i '' 's/helperInstallPath=smappservice/helperInstallPath=launchdaemon-fallback/' "$helper_prototype_fallback_dir/validation-config.txt"
+sed -i '' 's#- LaunchDaemon plist: ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist#- LaunchDaemon plist: /Library/LaunchDaemons/com.example.ClawShell.Helper.plist#' "$helper_prototype_fallback_dir/manual-result.md"
+sed -i '' 's/- Helper install path: smappservice/- Helper install path: launchdaemon-fallback/' "$helper_prototype_fallback_dir/manual-result.md"
+sed -i '' 's#- Helper install API/path: SMAppService.daemon(plistName:)#- Helper install API/path: launchctl bootstrap system /Library/LaunchDaemons/com.example.ClawShell.Helper.plist#' "$helper_prototype_fallback_dir/manual-result.md"
+sed -i '' 's/- Install\/status transition: requiresApproval -> enabled/- Install\/status transition: bootout -> bootstrap -> running/' "$helper_prototype_fallback_dir/manual-result.md"
+printf '$ smappservice-rejection\ncaptured kSMErrorInvalidSignature fallback evidence\n' >"$helper_prototype_fallback_dir/evidence/smappservice-rejection.txt"
+sed -i '' 's#smappservice-rejection	n/a		SMAppService path used in this smoke#smappservice-rejection	evidence	evidence/smappservice-rejection.txt	fallback justified by SMAppService rejection#' "$helper_prototype_fallback_dir/prototype-manifest.tsv"
+scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_fallback_dir/prototype-manifest.tsv" >/dev/null
+
+helper_prototype_fallback_missing_rejection_dir="$bag_mode_smoke_dir/helper-prototype-fallback-missing-rejection"
+cp -R "$helper_prototype_fallback_dir" "$helper_prototype_fallback_missing_rejection_dir"
+sed -i '' 's#smappservice-rejection	evidence	evidence/smappservice-rejection.txt	fallback justified by SMAppService rejection#smappservice-rejection	n/a		No fallback rejection evidence#' "$helper_prototype_fallback_missing_rejection_dir/prototype-manifest.tsv"
+if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_fallback_missing_rejection_dir/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype verifier accepted fallback without SMAppService rejection evidence" >&2
+    exit 1
+fi
+if ! grep -q "smappservice-rejection" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+
+helper_prototype_fallback_bad_plist_dir="$bag_mode_smoke_dir/helper-prototype-fallback-bad-plist"
+cp -R "$helper_prototype_fallback_dir" "$helper_prototype_fallback_bad_plist_dir"
+sed -i '' 's#launchDaemonPlist=/Library/LaunchDaemons/com.example.ClawShell.Helper.plist#launchDaemonPlist=ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist#' "$helper_prototype_fallback_bad_plist_dir/validation-config.txt"
+sed -i '' 's#- LaunchDaemon plist: /Library/LaunchDaemons/com.example.ClawShell.Helper.plist#- LaunchDaemon plist: ClawShell.app/Contents/Library/LaunchDaemons/com.example.ClawShell.Helper.plist#' "$helper_prototype_fallback_bad_plist_dir/manual-result.md"
+if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_fallback_bad_plist_dir/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype verifier accepted fallback without installed LaunchDaemon plist evidence" >&2
+    exit 1
+fi
+if ! grep -q "/Library/LaunchDaemons" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
 
 helper_prototype_scaffold="$bag_mode_smoke_dir/helper-prototype-scaffold"
 scripts/helper-service-prototype-scaffold.sh --output-dir "$helper_prototype_scaffold" >/dev/null
@@ -1776,6 +1821,7 @@ helper_prototype_scaffold_actual_ids="$bag_mode_smoke_dir/helper-prototype-scaff
     for check_id in "${helper_prototype_required_checks[@]}"; do
         printf '%s\n' "$check_id"
     done
+    printf '%s\n' "smappservice-rejection"
     printf '%s\n' "package-installer-signing"
     printf '%s\n' "homebrew-cask-semantics"
 } | sort >"$helper_prototype_scaffold_expected_ids"
@@ -1803,9 +1849,10 @@ if ! awk -F '\t' '
         value = trim(value)
         return value != "" && value != "TODO" && value != "TBD" && !(value ~ /</ && value ~ />/) && value !~ / \| /
     }
+    $1 == "smappservice-rejection" && $2 == "n/a" && usable_note($4) { rejection = 1 }
     $1 == "package-installer-signing" && $2 == "n/a" && usable_note($4) { package = 1 }
     $1 == "homebrew-cask-semantics" && $2 == "n/a" && usable_note($4) { cask = 1 }
-    END { exit !(package && cask) }
+    END { exit !(rejection && package && cask) }
 ' "$helper_prototype_scaffold/prototype-manifest.tsv"; then
     echo "Helper service prototype scaffold missing optional n/a rows with notes" >&2
     cat "$helper_prototype_scaffold/prototype-manifest.tsv" >&2
@@ -1884,7 +1931,7 @@ fi
 
 helper_prototype_empty_dir="$bag_mode_smoke_dir/helper-prototype-empty-evidence"
 cp -R "$helper_prototype_dir" "$helper_prototype_empty_dir"
-: >"$helper_prototype_empty_dir/evidence/app-codesign.txt"
+: >"$helper_prototype_empty_dir/evidence/app-signing-or-auth-model.txt"
 if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_empty_dir/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
     echo "Helper service prototype verifier accepted empty evidence" >&2
     exit 1
@@ -1896,7 +1943,7 @@ fi
 
 helper_prototype_placeholder_evidence_dir="$bag_mode_smoke_dir/helper-prototype-placeholder-evidence"
 cp -R "$helper_prototype_dir" "$helper_prototype_placeholder_evidence_dir"
-echo 'TODO paste output here' >"$helper_prototype_placeholder_evidence_dir/evidence/app-codesign.txt"
+echo 'TODO paste output here' >"$helper_prototype_placeholder_evidence_dir/evidence/app-signing-or-auth-model.txt"
 if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_placeholder_evidence_dir/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
     echo "Helper service prototype verifier accepted placeholder evidence content" >&2
     exit 1
@@ -1908,8 +1955,8 @@ fi
 
 helper_prototype_symlink_dir="$bag_mode_smoke_dir/helper-prototype-symlink-evidence"
 cp -R "$helper_prototype_dir" "$helper_prototype_symlink_dir"
-rm "$helper_prototype_symlink_dir/evidence/app-codesign.txt"
-ln -s /etc/hosts "$helper_prototype_symlink_dir/evidence/app-codesign.txt"
+rm "$helper_prototype_symlink_dir/evidence/app-signing-or-auth-model.txt"
+ln -s /etc/hosts "$helper_prototype_symlink_dir/evidence/app-signing-or-auth-model.txt"
 if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_symlink_dir/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
     echo "Helper service prototype verifier accepted symlink evidence outside the package" >&2
     exit 1
@@ -1921,10 +1968,10 @@ fi
 
 helper_prototype_dir_symlink_dir="$bag_mode_smoke_dir/helper-prototype-directory-symlink-evidence"
 cp -R "$helper_prototype_dir" "$helper_prototype_dir_symlink_dir"
-mkdir "$helper_prototype_dir_symlink_dir/evidence/app-codesign-dir"
-printf '$ app-codesign\ncaptured app codesign output\n' >"$helper_prototype_dir_symlink_dir/evidence/app-codesign-dir/output.txt"
-ln -s /etc/hosts "$helper_prototype_dir_symlink_dir/evidence/app-codesign-dir/escaped-hosts"
-sed -i '' 's#app-codesign	evidence	evidence/app-codesign.txt#app-codesign	evidence	evidence/app-codesign-dir#' "$helper_prototype_dir_symlink_dir/prototype-manifest.tsv"
+mkdir "$helper_prototype_dir_symlink_dir/evidence/app-signing-or-auth-model-dir"
+printf '$ app signing/auth model\ncaptured app signing/auth output\n' >"$helper_prototype_dir_symlink_dir/evidence/app-signing-or-auth-model-dir/output.txt"
+ln -s /etc/hosts "$helper_prototype_dir_symlink_dir/evidence/app-signing-or-auth-model-dir/escaped-hosts"
+sed -i '' 's#app-signing-or-auth-model	evidence	evidence/app-signing-or-auth-model.txt#app-signing-or-auth-model	evidence	evidence/app-signing-or-auth-model-dir#' "$helper_prototype_dir_symlink_dir/prototype-manifest.tsv"
 if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_dir_symlink_dir/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
     echo "Helper service prototype verifier accepted symlink evidence inside a directory" >&2
     exit 1

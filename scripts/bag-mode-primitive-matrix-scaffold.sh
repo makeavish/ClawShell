@@ -99,8 +99,8 @@ EOF
     write_manifest_row "macos-14-host"
     write_manifest_row "macos-15plus-host"
     write_manifest_row "intel-host"
-    printf '%s\tdeferred\t\tBlocked until #27 produces a signed helper prototype\n' "helper-restart-after-27"
-    printf '%s\tdeferred\t\tBlocked until #27 produces a signed helper prototype\n' "helper-upgrade-after-27"
+    printf '%s\tdeferred\t\tBlocked until #27 produces a validated no-membership helper prototype\n' "helper-restart-after-27"
+    printf '%s\tdeferred\t\tBlocked until #27 produces a validated no-membership helper prototype\n' "helper-upgrade-after-27"
 } >>"$OUTPUT_DIR/matrix-manifest.tsv"
 
 cat >"$OUTPUT_DIR/README.md" <<'EOF'

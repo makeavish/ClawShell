@@ -36,7 +36,7 @@ redacted metadata. It is a starting point for a later mutating run with
 
 ## Missing Evidence
 
-No pass/fail matrix is recorded yet for the primitive-only cases available before the signed helper prototype:
+No pass/fail matrix is recorded yet for the primitive-only cases available before the validated helper prototype:
 
 - macOS 13, 14, and 15+ where available
 - Apple Silicon, and Intel if Intel support remains in scope
@@ -45,7 +45,7 @@ No pass/fail matrix is recorded yet for the primitive-only cases available befor
 - open, closed, and reopen recovery behavior
 - app quit, app crash, and reboot while held lifecycle cases
 
-Helper-dependent cases, such as helper restart and helper upgrade mid-hold, are deferred until #27 produces a signed helper prototype. Until then, each helper-only lifecycle row must be marked `N/A` or `deferred until #27` in `manual-result.md`.
+Helper-dependent cases, such as helper restart and helper upgrade mid-hold, are deferred until #27 produces a validated no-membership helper prototype. Until then, each helper-only lifecycle row must be marked `N/A` or `deferred until #27` in `manual-result.md`.
 
 Each case still needs the exact command applied, rollback command, `pmset -g custom`, `pmset -g assertions`, relevant IORegistry state, lid-close result, reboot state or explicit `N/A`, and a pass/fail/inconclusive conclusion in `manual-result.md`. Attach evidence directories to #29 and summarize or cross-link the result on #7.
 
