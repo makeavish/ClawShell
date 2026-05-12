@@ -158,6 +158,22 @@ if [[ -e "$temperature_bad_env_dir" ]]; then
     exit 1
 fi
 
+temperature_timeout_bin="$bag_mode_smoke_dir/temperature-timeout-fake"
+mkdir -p "$temperature_timeout_bin"
+cat >"$temperature_timeout_bin/pmset" <<'EOF'
+#!/usr/bin/env bash
+sleep 5
+EOF
+chmod +x "$temperature_timeout_bin/pmset"
+temperature_timeout_dir="$bag_mode_smoke_dir/temperature-timeout"
+CLAWSHELL_TEMPERATURE_PROVIDER_TIMEOUT_SECONDS=1 \
+PATH="$temperature_timeout_bin:$PATH" scripts/temperature-provider-validation.sh --output-dir "$temperature_timeout_dir" >/dev/null
+if ! grep -q '^timedOut=true$' "$temperature_timeout_dir/pmset-therm.status"; then
+    echo "Temperature provider harness did not record timeout for hanging pmset command" >&2
+    cat "$temperature_timeout_dir/pmset-therm.status" >&2
+    exit 1
+fi
+
 temperature_fake_bin="$bag_mode_smoke_dir/temperature-fakes"
 mkdir -p "$temperature_fake_bin"
 cat >"$temperature_fake_bin/swift" <<'EOF'

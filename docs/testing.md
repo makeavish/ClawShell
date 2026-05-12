@@ -98,6 +98,16 @@ Preflight is only a readiness check. It does not create validation evidence. #5 
 
 See [power-validation.md](power-validation.md) for the current normal assertion policy, disk/display assertion status, timed-idle caveats, and hardware result matrix.
 
+## Bag Mode Primitive Harness
+
+Use the Bag Mode primitive harness only for issue #7/#29 evidence:
+
+```sh
+scripts/bag-mode-primitive-validation.sh --case-id apple-silicon-battery-internal
+```
+
+The default run is baseline-only and non-mutating. Mutating lid-close or reboot-held runs require root and explicit acknowledgement; attach the evidence directory and filled `manual-result.md` to the primitive matrix issue.
+
 ## Temperature Provider Harness
 
 Use the non-destructive temperature-provider harness for #7 safety-source checks:

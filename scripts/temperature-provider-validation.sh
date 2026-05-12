@@ -132,8 +132,13 @@ run_capture() {
     fi
 
     start=$(date +%s)
+    set +m
     (
-        "${cmd[@]}"
+        child_pid=""
+        trap 'if [[ -n "$child_pid" ]]; then kill "$child_pid" 2>/dev/null || true; wait "$child_pid" 2>/dev/null || true; fi; exit 124' TERM
+        "${cmd[@]}" &
+        child_pid=$!
+        wait "$child_pid"
     ) >"$out_file" 2>&1 &
     pid=$!
 
