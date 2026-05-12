@@ -736,6 +736,8 @@ for required_file in \
     installer-identities.status \
     xcodebuild-version.txt \
     xcodebuild-version.status \
+    xcodebuild-discovered-version.txt \
+    xcodebuild-discovered-version.status \
     swift-version.txt \
     swift-version.status \
     pkgbuild-path.txt \
@@ -760,6 +762,10 @@ do
 done
 if ! grep -q '^metadataRedacted=true$' "$helper_readiness_dir/validation-config.txt"; then
     echo "Helper readiness harness did not record redacted metadata mode" >&2
+    exit 1
+fi
+if ! grep -Eq '^xcodeDeveloperDirSource=(environment|xcode-select|applications|none)$' "$helper_readiness_dir/validation-config.txt"; then
+    echo "Helper readiness harness did not record a valid Xcode developer directory source" >&2
     exit 1
 fi
 if grep -Eq '[A-Fa-f0-9]{40}|Developer ID|Apple Development|Apple Distribution|Team ID|[()]' "$helper_readiness_dir/codesigning-identities.txt"; then
@@ -804,6 +810,47 @@ if CLAWSHELL_HELPER_READINESS_TIMEOUT_SECONDS=abc \
 fi
 if [[ -e "$helper_bad_env_dir" ]]; then
     echo "Helper readiness harness created evidence for an invalid timeout value" >&2
+    exit 1
+fi
+
+helper_fake_xcode_bin="$bag_mode_smoke_dir/helper-fake-xcode-bin"
+helper_fake_xcode_app="$bag_mode_smoke_dir/FakeXcode.app"
+helper_fake_xcode_developer="$helper_fake_xcode_app/Contents/Developer"
+mkdir -p "$helper_fake_xcode_bin" "$helper_fake_xcode_developer/usr/bin"
+cat >"$helper_fake_xcode_bin/xcodebuild" <<'EOF'
+#!/usr/bin/env bash
+echo "xcode-select: error: active developer directory is a command line tools instance" >&2
+exit 1
+EOF
+cat >"$helper_fake_xcode_bin/xcode-select" <<'EOF'
+#!/usr/bin/env bash
+echo "/Library/Developer/CommandLineTools"
+EOF
+cat >"$helper_fake_xcode_developer/usr/bin/xcodebuild" <<'EOF'
+#!/usr/bin/env bash
+echo "Xcode 99.0"
+echo "Build version 99A1"
+EOF
+chmod +x "$helper_fake_xcode_bin/xcodebuild" "$helper_fake_xcode_bin/xcode-select" \
+    "$helper_fake_xcode_developer/usr/bin/xcodebuild"
+helper_fake_xcode_dir="$bag_mode_smoke_dir/helper-fake-xcode-discovery"
+DEVELOPER_DIR="$helper_fake_xcode_app" \
+PATH="$helper_fake_xcode_bin:$PATH" \
+    scripts/helper-service-readiness.sh --output-dir "$helper_fake_xcode_dir" >/dev/null
+if ! grep -q '^xcodeDeveloperDirSource=environment$' "$helper_fake_xcode_dir/validation-config.txt"; then
+    echo "Helper readiness harness did not use DEVELOPER_DIR for full Xcode discovery" >&2
+    exit 1
+fi
+if ! grep -q '^xcodebuildActiveAvailable=false$' "$helper_fake_xcode_dir/validation-config.txt"; then
+    echo "Helper readiness harness did not distinguish inactive xcodebuild selection" >&2
+    exit 1
+fi
+if ! grep -q '^xcodebuildDiscoveredAvailable=true$' "$helper_fake_xcode_dir/validation-config.txt"; then
+    echo "Helper readiness harness did not detect discovered full Xcode" >&2
+    exit 1
+fi
+if ! grep -q '^xcodebuildAvailable=true$' "$helper_fake_xcode_dir/validation-config.txt"; then
+    echo "Helper readiness harness did not aggregate discovered Xcode availability" >&2
     exit 1
 fi
 

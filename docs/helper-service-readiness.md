@@ -6,7 +6,7 @@ Issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
 
 Follow-up: [#27](https://github.com/makeavish/ClawShell/issues/27)
 
-Local artifact: `.build/helper-service-readiness/local-20260512T024849Z`
+Local artifact: `.build/helper-service-readiness/current-xcode-normalized-20260512T055656Z`
 
 ## Question
 
@@ -35,7 +35,7 @@ Sources:
 Command used:
 
 ```bash
-scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/local-20260512T024849Z
+scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/current-xcode-normalized-20260512T055656Z
 ```
 
 Captured result:
@@ -46,7 +46,10 @@ developerIDApplicationIdentityCount=0
 developerIDInstallerIdentityCount=0
 appleDevelopmentIdentityCount=0
 appleDistributionIdentityCount=0
-xcodebuildAvailable=false
+xcodeDeveloperDirSource=applications
+xcodebuildActiveAvailable=false
+xcodebuildDiscoveredAvailable=true
+xcodebuildAvailable=true
 pkgbuildAvailable=true
 productbuildAvailable=true
 macosSdkAvailable=true
@@ -56,7 +59,9 @@ signedPrototypeReady=false
 metadataRedacted=true
 ```
 
-The local environment has Command Line Tools, a macOS SDK, `codesign`, `notarytool`, and package builders, but no Developer ID Application identity, no Developer ID Installer identity, and no full Xcode-backed `xcodebuild`. The harness records only redacted identity counts: app-signing identities come from the `codesigning` policy, while installer identities come from a separate `basic` identity query. Therefore this machine cannot complete the signed install/update/uninstall prototype.
+The local environment now has full Xcode installed under `/Applications/Xcode.app`, even though the active `xcode-select` developer directory still points at Command Line Tools. The readiness harness detects that installed Xcode separately from the active selection and records `xcodebuildAvailable=true`.
+
+This still is not enough to complete the signed prototype: the keychain has no Developer ID Application identity and no Developer ID Installer identity. The harness records only redacted identity counts: app-signing identities come from the `codesigning` policy, while installer identities come from a separate `basic` identity query. Therefore this machine cannot complete the signed install/update/uninstall prototype until those signing identities are available.
 
 ## Provisional Design Verdict
 

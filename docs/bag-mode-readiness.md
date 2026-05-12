@@ -89,7 +89,7 @@ The helper proof must answer whether `SMAppService` LaunchDaemon is viable for t
 
 Current artifact: [Helper Service Readiness](helper-service-readiness.md).
 
-The May 12, 2026 source/readiness check keeps `SMAppService` as the source-backed V1 target to prototype, but this local environment has no Developer ID signing identities and no full Xcode-backed `xcodebuild`, so the signed install/update/uninstall prototype is not complete. The signed prototype run is tracked in [#27](https://github.com/makeavish/ClawShell/issues/27).
+The May 12, 2026 source/readiness check keeps `SMAppService` as the source-backed V1 target to prototype. Full Xcode is now detected from `/Applications/Xcode.app` even when the active `xcode-select` directory points at Command Line Tools, but this local environment still has no Developer ID signing identities, so the signed install/update/uninstall prototype is not complete. The signed prototype run is tracked in [#27](https://github.com/makeavish/ClawShell/issues/27).
 
 Before attaching the signed prototype package, run:
 

@@ -163,7 +163,11 @@ Use the non-mutating helper readiness harness before attempting a signed `SMAppS
 scripts/helper-service-readiness.sh --output-dir .build/helper-service-readiness/local-$(date -u +%Y%m%dT%H%M%SZ)
 ```
 
-The harness records code-signing identity count and local tool availability. It does not install, register, approve, unregister, or run a helper.
+The harness records code-signing identity count and local tool availability. It
+also distinguishes the active `xcode-select` developer directory from a full
+Xcode install discovered under `/Applications`, because Xcode can be installed
+while the active developer directory still points at Command Line Tools. It does
+not install, register, approve, unregister, or run a helper.
 
 Use the signed prototype evidence verifier before attaching #27 evidence:
 
