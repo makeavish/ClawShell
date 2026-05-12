@@ -179,7 +179,11 @@ scripts/temperature-provider-smappservice-proof.sh \
 
 New artifacts default to `powermetrics --show-initial-usage -n 1 -i 1000
 --samplers thermal` so the next #25 run can test whether an initial thermal
-sample beats the 1 second provider deadline.
+sample beats the 1 second provider deadline. To compare root-owned
+`powermetrics` sampler variants without hand-editing the helper, set
+`CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` before
+creating the artifact, for example `all`, `default`, `cpu_power`, or
+`thermal,cpu_power`.
 
 Each artifact also gets a unique SMAppService identity derived from its output
 path so repeated ad-hoc attempts do not reuse stale approval/code-signing state.

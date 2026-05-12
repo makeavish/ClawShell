@@ -198,7 +198,11 @@ approval. New artifacts default to `powermetrics --show-initial-usage -n 1 -i
 1000 --samplers thermal` so the next run can test whether an initial sample
 finishes inside the 1 second provider deadline; set
 `CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE=false` only when comparing
-against the earlier timed-out command shape.
+against the earlier timed-out command shape. To compare root-owned
+`powermetrics` sampler variants without editing the generated helper, set
+`CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` before
+creating the artifact, for example `all`, `default`, `cpu_power`, or
+`thermal,cpu_power`.
 
 Each new artifact also gets a unique SMAppService bundle/helper identity derived
 from its output path. This avoids reusing stale macOS approval/code-signing state

@@ -1445,8 +1445,23 @@ if ! grep -q '^showInitialUsage=true$' "$temperature_smappservice_provider_prepa
     cat "$temperature_smappservice_provider_prepare/validation-config.txt" >&2
     exit 1
 fi
+if ! grep -q '^powermetricsSamplers=thermal$' "$temperature_smappservice_provider_prepare/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not record default powermetrics samplers" >&2
+    cat "$temperature_smappservice_provider_prepare/validation-config.txt" >&2
+    exit 1
+fi
 if ! grep -q -- '--show-initial-usage' "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt"; then
     echo "Temperature SMAppService provider harness did not wire --show-initial-usage into the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt" >&2
+    exit 1
+fi
+if ! grep -q -- '--powermetrics-samplers' "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not wire powermetrics sampler argument into the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt" >&2
+    exit 1
+fi
+if ! grep -q '"thermal"' "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not wire default thermal sampler into the LaunchDaemon command" >&2
     cat "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt" >&2
     exit 1
 fi
@@ -1468,6 +1483,40 @@ if [[ "$temperature_smappservice_provider_no_initial_label" == "$temperature_sma
     echo "Temperature SMAppService provider harness reused a helper label across distinct artifacts" >&2
     cat "$temperature_smappservice_provider_prepare/validation-config.txt" >&2
     cat "$temperature_smappservice_provider_no_initial/validation-config.txt" >&2
+    exit 1
+fi
+temperature_smappservice_provider_all_samplers="$bag_mode_smoke_dir/temperature-smappservice-provider-all-samplers"
+CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=all \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_all_samplers" >/dev/null
+if ! grep -q '^powermetricsSamplers=all$' "$temperature_smappservice_provider_all_samplers/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not record explicit powermetrics samplers" >&2
+    cat "$temperature_smappservice_provider_all_samplers/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q -- '--powermetrics-samplers' "$temperature_smappservice_provider_all_samplers/evidence/provider-command-or-api.txt" || \
+    ! grep -q '"all"' "$temperature_smappservice_provider_all_samplers/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not wire explicit powermetrics samplers into the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_all_samplers/evidence/provider-command-or-api.txt" >&2
+    exit 1
+fi
+if ! grep -q 'let powermetricsSamplers = argumentValue(after: "--powermetrics-samplers") ?? "thermal"' "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'var powermetricsArguments = \["-n", "1", "-i", "\\(sampleRateMs)", "--samplers", powermetricsSamplers\]' "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift"; then
+    echo "Temperature SMAppService provider helper source did not consume the configured powermetrics sampler argument" >&2
+    cat "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" >&2
+    exit 1
+fi
+temperature_smappservice_provider_multi_samplers="$bag_mode_smoke_dir/temperature-smappservice-provider-multi-samplers"
+CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=thermal,cpu_power \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_multi_samplers" >/dev/null
+if ! grep -q '^powermetricsSamplers=thermal,cpu_power$' "$temperature_smappservice_provider_multi_samplers/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not record comma-separated powermetrics samplers" >&2
+    cat "$temperature_smappservice_provider_multi_samplers/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q -- '--powermetrics-samplers' "$temperature_smappservice_provider_multi_samplers/evidence/provider-command-or-api.txt" || \
+    ! grep -q '"thermal,cpu_power"' "$temperature_smappservice_provider_multi_samplers/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not preserve comma-separated powermetrics samplers in the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_multi_samplers/evidence/provider-command-or-api.txt" >&2
     exit 1
 fi
 temperature_smappservice_provider_manual_identity="$bag_mode_smoke_dir/temperature-smappservice-provider-manual-identity"
@@ -1755,6 +1804,34 @@ if [[ -e "$temperature_smappservice_provider_bad_suffix" ]]; then
     echo "Temperature SMAppService provider harness created evidence for an invalid identity suffix" >&2
     exit 1
 fi
+temperature_smappservice_provider_bad_samplers="$bag_mode_smoke_dir/temperature-smappservice-provider-bad-samplers"
+if CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=smc \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_bad_samplers" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature SMAppService provider harness accepted an unsupported powermetrics sampler" >&2
+    exit 1
+fi
+if ! grep -q "unsupported powermetrics sampler: smc" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if [[ -e "$temperature_smappservice_provider_bad_samplers" ]]; then
+    echo "Temperature SMAppService provider harness created evidence for an invalid powermetrics sampler" >&2
+    exit 1
+fi
+temperature_smappservice_provider_newline_samplers="$bag_mode_smoke_dir/temperature-smappservice-provider-newline-samplers"
+if env $'CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=thermal\nsmc' \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_newline_samplers" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature SMAppService provider harness accepted a newline-delimited powermetrics sampler value" >&2
+    exit 1
+fi
+if ! grep -q "must not contain control characters" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if [[ -e "$temperature_smappservice_provider_newline_samplers" ]]; then
+    echo "Temperature SMAppService provider harness created evidence for a newline-delimited powermetrics sampler" >&2
+    exit 1
+fi
 if zsh scripts/temperature-provider-smappservice-proof.sh --output-dir "$bag_mode_smoke_dir/temperature-smappservice-provider-zsh" >/dev/null 2>"$bag_mode_smoke_error"; then
     echo "Temperature SMAppService provider harness unexpectedly ran under explicit zsh" >&2
     exit 1
@@ -1813,6 +1890,7 @@ timedOut=false
 exitCode=0
 helperOwned=true
 numericTemperatureObserved=true
+powermetricsSamplers=thermal
 EOF
 cat >"$temperature_smappservice_provider_runtime_success/runtime/numeric-temperature-output.txt" <<'EOF'
 $ /usr/bin/powermetrics --show-initial-usage -n 1 -i 1000 --samplers thermal
@@ -1824,6 +1902,7 @@ command=/usr/bin/powermetrics --show-initial-usage -n 1 -i 1000 --samplers therm
 durationSeconds=1
 timeoutSeconds=1
 showInitialUsage=true
+powermetricsSamplers=thermal
 timedOut=false
 exitCode=0
 helperOwned=true
@@ -1866,6 +1945,7 @@ do
         'exitCode=0' \
         'helperOwned=true' \
         'showInitialUsage=true' \
+        'powermetricsSamplers=thermal' \
         'numericTemperatureObserved=true'
     do
         if ! grep -q "$required_status_field" "$temperature_smappservice_provider_runtime_success/evidence/$status_capture.txt"; then
