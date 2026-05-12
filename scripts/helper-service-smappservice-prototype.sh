@@ -11,6 +11,7 @@ Usage: scripts/helper-service-smappservice-prototype.sh --output-dir DIR [--case
        scripts/helper-service-smappservice-prototype.sh --output-dir DIR --register --i-understand-this-registers-helper
        scripts/helper-service-smappservice-prototype.sh --output-dir DIR --unregister --i-understand-this-registers-helper
        scripts/helper-service-smappservice-prototype.sh --output-dir DIR --capture-post-approval
+       scripts/helper-service-smappservice-prototype.sh --output-dir DIR --capture-unregister --i-understand-this-registers-helper
 
 Builds a no-membership SMAppService helper prototype evidence package for #27.
 The default mode is non-mutating: it builds an ad-hoc signed app/helper bundle,
@@ -22,6 +23,9 @@ Use them only during an intentional #27 prototype run.
 --capture-post-approval is non-mutating. Run it against the same existing
 artifact directory after any required System Settings approval to append status,
 launchctl, and log evidence.
+
+--capture-unregister is mutating. Run it against the same existing artifact
+directory to call SMAppService unregister and append cleanup status evidence.
 USAGE
 }
 
@@ -30,6 +34,7 @@ CASE_ID="apple-silicon-smappservice-local"
 REGISTER=false
 UNREGISTER=false
 CAPTURE_POST_APPROVAL=false
+CAPTURE_UNREGISTER=false
 ALLOW_MUTATION=false
 
 while [[ "$#" -gt 0 ]]; do
@@ -56,6 +61,10 @@ while [[ "$#" -gt 0 ]]; do
             CAPTURE_POST_APPROVAL=true
             shift
             ;;
+        --capture-unregister)
+            CAPTURE_UNREGISTER=true
+            shift
+            ;;
         --i-understand-this-registers-helper)
             ALLOW_MUTATION=true
             shift
@@ -76,40 +85,49 @@ if [[ -z "$OUTPUT_DIR" ]]; then
     usage >&2
     exit 64
 fi
-if [[ "$REGISTER" == true && "$UNREGISTER" == true ]]; then
-    echo "Use only one of --register or --unregister per run." >&2
+MODE_COUNT=0
+[[ "$REGISTER" == true ]] && MODE_COUNT=$((MODE_COUNT + 1))
+[[ "$UNREGISTER" == true ]] && MODE_COUNT=$((MODE_COUNT + 1))
+[[ "$CAPTURE_POST_APPROVAL" == true ]] && MODE_COUNT=$((MODE_COUNT + 1))
+[[ "$CAPTURE_UNREGISTER" == true ]] && MODE_COUNT=$((MODE_COUNT + 1))
+if [[ "$MODE_COUNT" -gt 1 ]]; then
+    echo "Use only one of --register, --unregister, --capture-post-approval, or --capture-unregister per run." >&2
     exit 64
 fi
-if [[ "$CAPTURE_POST_APPROVAL" == true && ( "$REGISTER" == true || "$UNREGISTER" == true ) ]]; then
-    echo "--capture-post-approval cannot be combined with --register or --unregister." >&2
+if [[ ( "$REGISTER" == true || "$UNREGISTER" == true || "$CAPTURE_UNREGISTER" == true ) && "$ALLOW_MUTATION" != true ]]; then
+    echo "--register/--unregister/--capture-unregister require --i-understand-this-registers-helper" >&2
     exit 64
 fi
-if [[ ( "$REGISTER" == true || "$UNREGISTER" == true ) && "$ALLOW_MUTATION" != true ]]; then
-    echo "--register/--unregister require --i-understand-this-registers-helper" >&2
-    exit 64
+APPEND_CAPTURE=false
+CAPTURE_ACTION_NAME="Post-approval capture"
+if [[ "$CAPTURE_POST_APPROVAL" == true || "$CAPTURE_UNREGISTER" == true ]]; then
+    APPEND_CAPTURE=true
+fi
+if [[ "$CAPTURE_UNREGISTER" == true ]]; then
+    CAPTURE_ACTION_NAME="Unregister capture"
 fi
 if [[ -e "$OUTPUT_DIR" && ! -d "$OUTPUT_DIR" ]]; then
     echo "Output path exists but is not a directory: $OUTPUT_DIR" >&2
     exit 73
 fi
-if [[ "$CAPTURE_POST_APPROVAL" == true && ! -d "$OUTPUT_DIR" ]]; then
-    echo "Post-approval capture requires an existing artifact directory: $OUTPUT_DIR" >&2
+if [[ "$APPEND_CAPTURE" == true && ! -d "$OUTPUT_DIR" ]]; then
+    echo "$CAPTURE_ACTION_NAME requires an existing artifact directory: $OUTPUT_DIR" >&2
     exit 73
 fi
-if [[ "$CAPTURE_POST_APPROVAL" == true && -L "$OUTPUT_DIR" ]]; then
-    echo "Post-approval capture requires a real artifact directory, not a symlink: $OUTPUT_DIR" >&2
+if [[ "$APPEND_CAPTURE" == true && -L "$OUTPUT_DIR" ]]; then
+    echo "$CAPTURE_ACTION_NAME requires a real artifact directory, not a symlink: $OUTPUT_DIR" >&2
     exit 73
 fi
-if [[ "$CAPTURE_POST_APPROVAL" == false && -e "$OUTPUT_DIR" && -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
+if [[ "$APPEND_CAPTURE" == false && -e "$OUTPUT_DIR" && -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
     echo "Output directory is not empty: $OUTPUT_DIR" >&2
     exit 73
 fi
-if [[ "$CAPTURE_POST_APPROVAL" == true && -z "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
-    echo "Post-approval capture requires a non-empty artifact directory: $OUTPUT_DIR" >&2
+if [[ "$APPEND_CAPTURE" == true && -z "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
+    echo "$CAPTURE_ACTION_NAME requires a non-empty artifact directory: $OUTPUT_DIR" >&2
     exit 73
 fi
 
-if [[ "$CAPTURE_POST_APPROVAL" == false ]]; then
+if [[ "$APPEND_CAPTURE" == false ]]; then
     mkdir -p "$OUTPUT_DIR"
 fi
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
@@ -127,7 +145,7 @@ RUNTIME_DIR="$OUTPUT_DIR/runtime"
 SOURCE_DIR="$OUTPUT_DIR/source-package"
 EVIDENCE_DIR="$OUTPUT_DIR/evidence"
 
-if [[ "$CAPTURE_POST_APPROVAL" == false ]]; then
+if [[ "$APPEND_CAPTURE" == false ]]; then
     mkdir -p "$MACOS_DIR" "$LAUNCHD_DIR" "$RUNTIME_DIR" "$SOURCE_DIR" "$EVIDENCE_DIR"
 fi
 
@@ -336,33 +354,36 @@ require_writable_capture_targets() {
     for name in "$@"; do
         for target in "$EVIDENCE_DIR/$name.txt" "$EVIDENCE_DIR/$name.status"; do
             if [[ -L "$target" || ( -e "$target" && ! -f "$target" ) ]]; then
-                echo "Post-approval capture requires regular capture path: $target" >&2
+                echo "$CAPTURE_ACTION_NAME requires regular capture path: $target" >&2
                 exit 73
             fi
             if [[ -e "$target" && ! -w "$target" ]]; then
-                echo "Post-approval capture requires writable capture path: $target" >&2
+                echo "$CAPTURE_ACTION_NAME requires writable capture path: $target" >&2
                 exit 73
             fi
         done
     done
     target="$OUTPUT_DIR/post-approval-capture.md"
+    if [[ "$CAPTURE_UNREGISTER" == true ]]; then
+        target="$OUTPUT_DIR/unregister-capture.md"
+    fi
     if [[ -L "$target" || ( -e "$target" && ! -f "$target" ) ]]; then
-        echo "Post-approval capture requires regular capture path: $target" >&2
+        echo "$CAPTURE_ACTION_NAME requires regular capture path: $target" >&2
         exit 73
     fi
     if [[ -e "$target" && ! -w "$target" ]]; then
-        echo "Post-approval capture requires writable capture path: $target" >&2
+        echo "$CAPTURE_ACTION_NAME requires writable capture path: $target" >&2
         exit 73
     fi
 }
 
-capture_post_approval_status() {
+require_existing_capture_artifact() {
     for required_path in \
         "$MACOS_DIR/$APP_NAME" \
         "$MACOS_DIR/$HELPER_NAME"
     do
         if [[ ! -x "$required_path" ]]; then
-            echo "Post-approval capture missing required executable artifact path: $required_path" >&2
+            echo "$CAPTURE_ACTION_NAME missing required executable artifact path: $required_path" >&2
             exit 73
         fi
     done
@@ -372,15 +393,15 @@ capture_post_approval_status() {
         "$RUNTIME_DIR"
     do
         if [[ -L "$required_path" ]]; then
-            echo "Post-approval capture requires a real artifact directory path, not a symlink: $required_path" >&2
+            echo "$CAPTURE_ACTION_NAME requires a real artifact directory path, not a symlink: $required_path" >&2
             exit 73
         fi
         if [[ ! -d "$required_path" ]]; then
-            echo "Post-approval capture missing required artifact directory path: $required_path" >&2
+            echo "$CAPTURE_ACTION_NAME missing required artifact directory path: $required_path" >&2
             exit 73
         fi
         if [[ ! -w "$required_path" ]]; then
-            echo "Post-approval capture requires writable artifact directory path: $required_path" >&2
+            echo "$CAPTURE_ACTION_NAME requires writable artifact directory path: $required_path" >&2
             exit 73
         fi
     done
@@ -389,14 +410,18 @@ capture_post_approval_status() {
         "$MANIFEST_FILE"
     do
         if [[ ! -f "$required_path" ]]; then
-            echo "Post-approval capture missing required artifact file path: $required_path" >&2
+            echo "$CAPTURE_ACTION_NAME missing required artifact file path: $required_path" >&2
             exit 73
         fi
     done
     if [[ ! -w "$CONFIG_FILE" ]]; then
-        echo "Post-approval capture requires writable validation config: $CONFIG_FILE" >&2
+        echo "$CAPTURE_ACTION_NAME requires writable validation config: $CONFIG_FILE" >&2
         exit 73
     fi
+}
+
+capture_post_approval_status() {
+    require_existing_capture_artifact
     require_writable_capture_targets \
         helper-status-after-approval \
         launchctl-status \
@@ -429,6 +454,44 @@ verifier before attaching the artifact to #27.
 EOF
 
     echo "Post-approval evidence appended to $OUTPUT_DIR"
+    echo "Run scripts/helper-service-prototype-verify.sh --manifest $MANIFEST_FILE to inspect remaining TODO rows."
+}
+
+capture_unregister_status() {
+    require_existing_capture_artifact
+    require_writable_capture_targets \
+        helper-uninstall \
+        helper-status-after-unregister \
+        launchctl-status-after-unregister \
+        log-evidence-after-unregister
+
+    capture "helper-uninstall" "$MACOS_DIR/$APP_NAME" unregister || true
+    capture "helper-status-after-unregister" "$MACOS_DIR/$APP_NAME" status || true
+    capture "launchctl-status-after-unregister" launchctl print "system/$HELPER_LABEL" || true
+    capture "log-evidence-after-unregister" log show --style syslog --last "${CLAWSHELL_SMAPP_LOG_LAST:-10m}" --predicate "process == \"$HELPER_NAME\" || eventMessage CONTAINS \"$HELPER_LABEL\"" || true
+
+    config_set_key "unregisterAttempted" "true"
+    config_set_key "unregisterCaptureAttempted" "true"
+
+    cat >"$OUTPUT_DIR/unregister-capture.md" <<EOF
+# Unregister Capture
+
+This mutating capture appended cleanup evidence to the existing helper
+prototype artifact by calling SMAppService unregister from the same app bundle.
+
+Captured files:
+
+- \`evidence/helper-uninstall.txt\`
+- \`evidence/helper-status-after-unregister.txt\`
+- \`evidence/launchctl-status-after-unregister.txt\`
+- \`evidence/log-evidence-after-unregister.txt\`
+
+This command does not promote manifest rows automatically. Review the captured
+output, update the manifest and manual result deliberately, then run the
+verifier before attaching the artifact to #27.
+EOF
+
+    echo "Unregister evidence appended to $OUTPUT_DIR"
     echo "Run scripts/helper-service-prototype-verify.sh --manifest $MANIFEST_FILE to inspect remaining TODO rows."
 }
 
@@ -665,6 +728,10 @@ EOF
 
 if [[ "$CAPTURE_POST_APPROVAL" == true ]]; then
     capture_post_approval_status
+    exit 0
+fi
+if [[ "$CAPTURE_UNREGISTER" == true ]]; then
+    capture_unregister_status
     exit 0
 fi
 

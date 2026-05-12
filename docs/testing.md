@@ -266,6 +266,22 @@ logs, and unified logs. It does not call `register()` or `unregister()`, and it
 does not promote manifest rows automatically; review the captured output before
 turning any `TODO` row into evidence.
 
+After cleanup approval, append mutating unregister evidence to the same artifact
+directory:
+
+```sh
+scripts/helper-service-smappservice-prototype.sh \
+  --output-dir .build/helper-service-prototype/<same-smappservice-register-artifact> \
+  --capture-unregister \
+  --i-understand-this-registers-helper
+```
+
+This cleanup mode calls `unregister()` from the existing app bundle, then
+captures follow-up `status`, `launchctl`, and unified log evidence. It does not
+promote manifest rows automatically. Review the captured output before mapping
+it to `helper-uninstall`, `helper-uninstall-state-cleanup`, and the manual
+uninstall fields, then run the verifier.
+
 Use the non-mutating prototype scaffold when starting a new #27 evidence
 package:
 
