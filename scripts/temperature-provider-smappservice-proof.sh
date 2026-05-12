@@ -137,6 +137,7 @@ fi
 TIMEOUT_SECONDS=${CLAWSHELL_TEMPERATURE_PROVIDER_TIMEOUT_SECONDS:-1}
 SAMPLE_RATE_MS=${CLAWSHELL_TEMPERATURE_PROVIDER_SAMPLE_RATE_MS:-1000}
 SHOW_INITIAL_USAGE=${CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE:-true}
+POWERMETRICS_SAMPLERS=${CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS:-thermal}
 FRESHNESS_SECONDS=${CLAWSHELL_TEMPERATURE_PROVIDER_FRESHNESS_SECONDS:-10}
 ACTIVE_CADENCE_SECONDS=${CLAWSHELL_TEMPERATURE_PROVIDER_ACTIVE_CADENCE_SECONDS:-5}
 IDLE_CADENCE_SECONDS=${CLAWSHELL_TEMPERATURE_PROVIDER_IDLE_CADENCE_SECONDS:-30}
@@ -162,6 +163,30 @@ require_bool() {
     esac
 }
 
+require_powermetrics_samplers() {
+    local name="$1"
+    local value="$2"
+    local sampler
+    if [[ "$value" == *[$'\n\r\t']* ]]; then
+        echo "$name must not contain control characters" >&2
+        exit 64
+    fi
+    if [[ -z "$value" || "$value" == *, || "$value" == ,* || "$value" == *,,* ]]; then
+        echo "$name must be a comma-separated list of supported powermetrics samplers" >&2
+        exit 64
+    fi
+    IFS=',' read -r -a samplers <<<"$value"
+    for sampler in "${samplers[@]}"; do
+        case "$sampler" in
+            tasks|battery|network|disk|interrupts|cpu_power|thermal|sfi|gpu_power|ane_power|all|default) ;;
+            *)
+                echo "$name contains unsupported powermetrics sampler: $sampler" >&2
+                exit 64
+                ;;
+        esac
+    done
+}
+
 require_identity_suffix() {
     local name="$1"
     local value="$2"
@@ -183,6 +208,7 @@ require_helper_label() {
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_TIMEOUT_SECONDS" "$TIMEOUT_SECONDS"
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_SAMPLE_RATE_MS" "$SAMPLE_RATE_MS"
 require_bool "CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE" "$SHOW_INITIAL_USAGE"
+require_powermetrics_samplers "CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS" "$POWERMETRICS_SAMPLERS"
 if [[ -n "${CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX:-}" ]]; then
     require_identity_suffix "CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX" "$CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX"
 fi
@@ -743,9 +769,10 @@ let outputPath = argumentValue(after: "--sample-output")
 let statusPath = argumentValue(after: "--sample-status")
 let timeoutSeconds = Int(argumentValue(after: "--timeout-seconds") ?? "1") ?? 1
 let sampleRateMs = Int(argumentValue(after: "--sample-rate-ms") ?? "1000") ?? 1000
+let powermetricsSamplers = argumentValue(after: "--powermetrics-samplers") ?? "thermal"
 let showInitialUsage = CommandLine.arguments.contains("--show-initial-usage")
 let powermetricsPath = "/usr/bin/powermetrics"
-var powermetricsArguments = ["-n", "1", "-i", "\(sampleRateMs)", "--samplers", "thermal"]
+var powermetricsArguments = ["-n", "1", "-i", "\(sampleRateMs)", "--samplers", powermetricsSamplers]
 if showInitialUsage {
     powermetricsArguments.insert("--show-initial-usage", at: 0)
 }
@@ -820,6 +847,7 @@ finishedAt=\(ISO8601DateFormatter().string(from: finished))
 durationSeconds=\(durationSeconds)
 timeoutSeconds=\(timeoutSeconds)
 showInitialUsage=\(showInitialUsage)
+powermetricsSamplers=\(powermetricsSamplers)
 timedOut=\(timedOut)
 exitCode=\(exitCode)
 helperOwned=\(helperOwned)
@@ -842,6 +870,7 @@ powermetricsPath=\(powermetricsPath)
 sampleRateMs=\(sampleRateMs)
 timeoutSeconds=\(timeoutSeconds)
 showInitialUsage=\(showInitialUsage)
+powermetricsSamplers=\(powermetricsSamplers)
 timedOut=\(timedOut)
 exitCode=\(exitCode)
 helperOwned=\(helperOwned)
@@ -889,13 +918,14 @@ EOF
 }
 
 write_launchdaemon_plist() {
-    local helper_path helper_log sample_output sample_status stdout_log stderr_log show_initial_usage_arg
+    local helper_path helper_log sample_output sample_status stdout_log stderr_log powermetrics_samplers show_initial_usage_arg
     helper_path="$(xml_escape "$MACOS_DIR/$HELPER_NAME")"
     helper_log="$(xml_escape "$RUNTIME_DIR/provider.log")"
     sample_output="$(xml_escape "$RUNTIME_DIR/numeric-temperature-output.txt")"
     sample_status="$(xml_escape "$RUNTIME_DIR/numeric-temperature-output.status")"
     stdout_log="$(xml_escape "$RUNTIME_DIR/provider.stdout.log")"
     stderr_log="$(xml_escape "$RUNTIME_DIR/provider.stderr.log")"
+    powermetrics_samplers="$(xml_escape "$POWERMETRICS_SAMPLERS")"
     show_initial_usage_arg=""
     if [[ "$SHOW_INITIAL_USAGE" == true ]]; then
         show_initial_usage_arg="    <string>--show-initial-usage</string>"
@@ -921,6 +951,8 @@ write_launchdaemon_plist() {
     <string>$TIMEOUT_SECONDS</string>
     <string>--sample-rate-ms</string>
     <string>$SAMPLE_RATE_MS</string>
+    <string>--powermetrics-samplers</string>
+    <string>$powermetrics_samplers</string>
 $show_initial_usage_arg
   </array>
   <key>RunAtLoad</key>
@@ -1005,6 +1037,7 @@ helperLabel=$HELPER_LABEL
 identitySuffix=$IDENTITY_SUFFIX
 registerAttempted=$REGISTER
 showInitialUsage=$SHOW_INITIAL_USAGE
+powermetricsSamplers=$POWERMETRICS_SAMPLERS
 providerProofReady=false
 EOF
 
@@ -1033,6 +1066,7 @@ helperLabel=$HELPER_LABEL
 identitySuffix=$IDENTITY_SUFFIX
 sampleRateMs=$SAMPLE_RATE_MS
 showInitialUsage=$SHOW_INITIAL_USAGE
+powermetricsSamplers=$POWERMETRICS_SAMPLERS
 registerAttempted=$REGISTER
 unregisterAttempted=false
 postApprovalCaptureAttempted=false
@@ -1045,6 +1079,7 @@ cat >"$OUTPUT_DIR/manual-result.md" <<EOF
 ## Provider Case
 - Case ID: $CASE_ID
 - Provider source: powermetrics
+- Powermetrics samplers: $POWERMETRICS_SAMPLERS
 - Helper-owned provider: TODO - capture after SMAppService approval
 - Numeric cutoff source: TODO - capture helper powermetrics output, freshness, and cadence
 - No user-visible prompts: yes
@@ -1120,6 +1155,11 @@ SMAppService identity:
 - App bundle id: \`$BUNDLE_ID\`
 - Helper label: \`$HELPER_LABEL\`
 - Identity suffix: \`$IDENTITY_SUFFIX\`
+
+Sampling:
+
+- Powermetrics samplers: \`$POWERMETRICS_SAMPLERS\`
+- Show initial usage: \`$SHOW_INITIAL_USAGE\`
 
 Provider proof ready: \`false\`
 Result: \`$RESULT\`
