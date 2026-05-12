@@ -6,6 +6,10 @@ Bag Mode is blocked until the primitive, helper, and safety-provider spikes prod
 
 `pmset disablesleep` is still only a candidate primitive. Start with a baseline-only capture:
 
+Current artifact: [Bag Mode Primitive Matrix](bag-mode-primitive-matrix.md).
+
+PR #22 added the primitive validation harness, but the candidate primitive is not proven. The real hardware reliability matrix is tracked in [#29](https://github.com/makeavish/ClawShell/issues/29).
+
 ```sh
 scripts/bag-mode-primitive-validation.sh --case-id apple-silicon-battery-internal
 ```
@@ -46,7 +50,7 @@ sudo /usr/bin/pmset disablesleep <prior value>
 CLAWSHELL_PMSET_REDACT_METADATA=1 scripts/pmset-snapshot.sh <evidence-dir>/after-rollback
 ```
 
-The harness redacts host/user metadata by default. Fill in `manual-result.md` before attaching the directory to issue #7. Every primitive matrix case must include reboot state or an explicit `N/A` reason in `manual-result.md`.
+The harness redacts host/user metadata by default. Fill in `manual-result.md`, attach the evidence directory to issue #29, and summarize or cross-link the result on issue #7. Every primitive matrix case must include reboot state or an explicit `N/A` reason in `manual-result.md`.
 
 ## Required Matrix
 
@@ -57,7 +61,8 @@ The harness redacts host/user metadata by default. Fill in `manual-result.md` be
 | Power | AC and battery |
 | Display | Internal only, external display, no external display |
 | Lid | Open, closed, reopen recovery |
-| Lifecycle | App quit, crash, reboot while held, helper restart |
+| Primitive lifecycle now | app quit, app crash, reboot while held |
+| Helper lifecycle after #27 | helper restart, helper upgrade mid-hold |
 
 Each case must record the exact command applied, rollback command, `pmset -g custom`, `pmset -g assertions`, available IORegistry state, lid-close result, and reboot state when relevant.
 
@@ -134,3 +139,5 @@ Issue #7 is not complete until every failed or inconclusive primitive, helper, t
 
 - an updated TDD finding, or
 - a linked follow-up issue with the blocking evidence.
+
+Follow-up issues are blocker tracking, not proof. The primitive path remains open until #29 records pass/fail/inconclusive hardware evidence and the TDD/readiness docs are updated.
