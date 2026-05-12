@@ -823,8 +823,13 @@ if FileManager.default.isExecutableFile(atPath: powermetricsPath) {
 
 let finished = Date()
 let combinedOutput = stdoutText + "\n" + stderrText
-let numericPattern = #"([0-9]+(\.[0-9]+)?\s*(C|°C|celsius))|((temperature|temp)[^0-9-]*-?[0-9]+(\.[0-9]+)?)"#
-let numericObserved = combinedOutput.range(of: numericPattern, options: [.regularExpression, .caseInsensitive]) != nil
+let numericTemperaturePatterns = [
+    #"-?\d+(\.\d+)?[ \t]*(°C|celsius|degrees?[ \t]*C|C\b)"#,
+    #"\b(temperature|temp)\b[^\r\n0-9-]*-?\d+(\.\d+)?"#,
+]
+let numericObserved = numericTemperaturePatterns.contains { pattern in
+    combinedOutput.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+}
 let helperOwned = geteuid() == 0
 let durationSeconds = Int(finished.timeIntervalSince(started).rounded(.up))
 

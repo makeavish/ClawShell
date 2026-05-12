@@ -246,7 +246,7 @@ if [[ -s "$OUTPUT_DIR/processinfo-thermal-state.txt" ]]; then
 fi
 
 pmset_has_numeric_temperature=false
-if grep -Eiq '([0-9]+([.][0-9]+)?[[:space:]]*(C|°C|celsius))|((temperature|temp)[^0-9-]*-?[0-9]+([.][0-9]+)?)' "$OUTPUT_DIR/pmset-therm.txt" >/dev/null 2>&1; then
+if grep -Eiq '(-?[0-9]+([.][0-9]+)?[[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))|(\<(temperature|temp)\>[^0-9-]*-?[0-9]+([.][0-9]+)?)' "$OUTPUT_DIR/pmset-therm.txt" >/dev/null 2>&1; then
     pmset_has_numeric_temperature=true
 fi
 

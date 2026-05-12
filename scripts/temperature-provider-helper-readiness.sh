@@ -200,7 +200,7 @@ if [[ -n "$powermetrics_path" ]]; then
 fi
 
 numeric_temperature_output=false
-if grep -Eiq '([0-9]+([.][0-9]+)?[[:space:]]*(C|°C|celsius))|((temperature|temp)[^0-9-]*-?[0-9]+([.][0-9]+)?)' "$OUTPUT_DIR/powermetrics-helper-sample.txt"; then
+if grep -Eiq '(-?[0-9]+([.][0-9]+)?[[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))|(\<(temperature|temp)\>[^0-9-]*-?[0-9]+([.][0-9]+)?)' "$OUTPUT_DIR/powermetrics-helper-sample.txt"; then
     numeric_temperature_output=true
 fi
 

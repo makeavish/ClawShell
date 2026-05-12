@@ -137,6 +137,71 @@ if swift_test_unavailable_only "$swift_test_classifier_mixed"; then
     exit 1
 fi
 
+echo "==> temperature numeric detector smoke"
+temperature_numeric_grep_pattern='(-?[0-9]+([.][0-9]+)?[[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))|(\<(temperature|temp)\>[^0-9-]*-?[0-9]+([.][0-9]+)?)'
+swift - <<'SWIFT'
+import Foundation
+
+let numericTemperaturePatterns = [
+    #"-?\d+(\.\d+)?[ \t]*(°C|celsius|degrees?[ \t]*C|C\b)"#,
+    #"\b(temperature|temp)\b[^\r\n0-9-]*-?\d+(\.\d+)?"#,
+]
+
+func detectsTemperature(_ text: String) -> Bool {
+    numericTemperaturePatterns.contains { pattern in
+        text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+}
+
+let positiveFixtures = [
+    "CPU die temperature: 42 C",
+    "Battery Temperature = 31.5 Celsius",
+    "SoC sensor 47°C",
+    "temperature\t42",
+]
+let negativeFixtures = [
+    "0.00               \nCodex Helper",
+    "Name ID CPU ms/s User%",
+    "thermalmonitord 550 0.15 47.90",
+    "Current pressure level: Nominal",
+    "attempt 3",
+    "template 42",
+    "temporary reading 31",
+]
+
+for fixture in positiveFixtures where !detectsTemperature(fixture) {
+    fatalError("Temperature detector missed positive fixture: \(fixture)")
+}
+for fixture in negativeFixtures where detectsTemperature(fixture) {
+    fatalError("Temperature detector accepted negative fixture: \(fixture)")
+}
+SWIFT
+for positive_fixture in \
+    'CPU die temperature: 42 C' \
+    'Battery Temperature = 31.5 Celsius' \
+    'SoC sensor 47°C' \
+    $'temperature\t42'
+do
+    if ! printf '%s\n' "$positive_fixture" | grep -Eiq "$temperature_numeric_grep_pattern"; then
+        echo "grep temperature detector missed positive fixture: $positive_fixture" >&2
+        exit 1
+    fi
+done
+for negative_fixture in \
+    $'0.00               \nCodex Helper' \
+    'Name ID CPU ms/s User%' \
+    'thermalmonitord 550 0.15 47.90' \
+    'Current pressure level: Nominal' \
+    'attempt 3' \
+    'template 42' \
+    'temporary reading 31'
+do
+    if printf '%s\n' "$negative_fixture" | grep -Eiq "$temperature_numeric_grep_pattern"; then
+        echo "grep temperature detector accepted negative fixture: $negative_fixture" >&2
+        exit 1
+    fi
+done
+
 echo "==> timed idle blocker guidance smoke"
 timed_idle_guidance_dir="$(mktemp -d)"
 timed_idle_guidance_error="$(mktemp)"
