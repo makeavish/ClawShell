@@ -80,6 +80,136 @@ if [[ "$before_mtime" != "$after_mtime" ]]; then
     exit 1
 fi
 
+bag_mode_matrix_case="$bag_mode_smoke_dir/matrix/validate-smoke"
+mkdir -p \
+    "$bag_mode_matrix_case/before" \
+    "$bag_mode_matrix_case/during-applied" \
+    "$bag_mode_matrix_case/after-lid-window" \
+    "$bag_mode_matrix_case/after-rollback"
+cat >"$bag_mode_matrix_case/validation-config.txt" <<'EOF'
+caseId=validate-smoke
+capturedAtUTC=2026-05-12T00:00:00Z
+mode=apply
+rebootHeld=0
+holdSeconds=1
+candidateCommand=/usr/bin/pmset disablesleep 1
+previousDisablesleep=0
+rollbackCommand=/usr/bin/pmset disablesleep 0
+metadataRedacted=true
+EOF
+cat >"$bag_mode_matrix_case/manual-result.md" <<'EOF'
+# Bag Mode Primitive Validation Result
+
+## Matrix Case
+- Case ID: validate-smoke
+- macOS: 15.0
+- CPU: Apple Silicon
+- Power: Battery
+- Display: internal-only
+- Lid path: reopen recovery
+- Lifecycle path: normal
+
+## Commands
+- Applied command: `/usr/bin/pmset disablesleep 1`
+- Prior disablesleep value: 0
+- Rollback command: `/usr/bin/pmset disablesleep 0`
+
+## Manual Observations
+- Lid-close sleep blocked: inconclusive
+- Reopen recovered cleanly: yes
+- Reboot state after held primitive: N/A - non-reboot case
+
+## Conclusion
+- Result: inconclusive
+EOF
+for snapshot_dir in before during-applied after-lid-window after-rollback; do
+    cat >"$bag_mode_matrix_case/$snapshot_dir/metadata.txt" <<'EOF'
+capturedAtUTC=2026-05-12T00:00:00Z
+host=<redacted>
+user=<redacted>
+EOF
+    printf '$ pmset -g custom\nBattery Power:\n' >"$bag_mode_matrix_case/$snapshot_dir/pmset-custom.txt"
+    printf '$ pmset -g assertions\nAssertion status system-wide:\n' >"$bag_mode_matrix_case/$snapshot_dir/pmset-assertions.txt"
+    printf '$ ioreg -r -c IOPMPowerSource -a\n<plist version=\"1.0\">\n' >"$bag_mode_matrix_case/$snapshot_dir/ioreg-power.txt"
+done
+scripts/bag-mode-primitive-matrix-verify.sh --evidence-root "$bag_mode_smoke_dir/matrix" >/dev/null
+cat >"$bag_mode_smoke_dir/matrix/matrix-manifest.tsv" <<'EOF'
+caseId	status	evidenceDir	naReason
+validate-smoke	evidence	validate-smoke	evidence attached
+macos-13-intel-deferred	deferred		Intel support not in current local hardware scope
+external-display-na	n/a		No external display physically available in this smoke
+EOF
+scripts/bag-mode-primitive-matrix-verify.sh --manifest "$bag_mode_smoke_dir/matrix/matrix-manifest.tsv" >/dev/null
+sed -i '' 's/- Result: inconclusive/- Result: pass | fail | inconclusive/' "$bag_mode_matrix_case/manual-result.md"
+if scripts/bag-mode-primitive-matrix-verify.sh --case-dir "$bag_mode_matrix_case" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix verifier accepted a placeholder result" >&2
+    exit 1
+fi
+if ! grep -q "Result" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+sed -i '' 's/- Result: pass | fail | inconclusive/- Result: inconclusive/' "$bag_mode_matrix_case/manual-result.md"
+: >"$bag_mode_matrix_case/after-rollback/pmset-custom.txt"
+if scripts/bag-mode-primitive-matrix-verify.sh --case-dir "$bag_mode_matrix_case" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix verifier accepted empty snapshot output" >&2
+    exit 1
+fi
+if ! grep -q "empty file" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+echo '$ pmset -g custom' >"$bag_mode_matrix_case/after-rollback/pmset-custom.txt"
+if scripts/bag-mode-primitive-matrix-verify.sh --case-dir "$bag_mode_matrix_case" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix verifier accepted header-only snapshot output" >&2
+    exit 1
+fi
+if ! grep -q "no captured command body" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+printf '$ pmset -g custom\nBattery Power:\n' >"$bag_mode_matrix_case/after-rollback/pmset-custom.txt"
+sed -i '' 's/- macOS: 15.0/- macOS: banana/' "$bag_mode_matrix_case/manual-result.md"
+if scripts/bag-mode-primitive-matrix-verify.sh --case-dir "$bag_mode_matrix_case" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix verifier accepted invalid macOS value" >&2
+    exit 1
+fi
+if ! grep -q "macOS" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+sed -i '' 's/- macOS: banana/- macOS: 15.0/' "$bag_mode_matrix_case/manual-result.md"
+mkdir -p "$bag_mode_matrix_case/post-reboot"
+cat >"$bag_mode_matrix_case/post-reboot/metadata.txt" <<'EOF'
+capturedAtUTC=2026-05-12T00:00:00Z
+host=<redacted>
+user=<redacted>
+EOF
+printf '$ pmset -g custom\nBattery Power:\n' >"$bag_mode_matrix_case/post-reboot/pmset-custom.txt"
+printf '$ pmset -g assertions\nAssertion status system-wide:\n' >"$bag_mode_matrix_case/post-reboot/pmset-assertions.txt"
+printf '$ ioreg -r -c IOPMPowerSource -a\n<plist version="1.0">\n' >"$bag_mode_matrix_case/post-reboot/ioreg-power.txt"
+sed -i '' 's/rebootHeld=0/rebootHeld=1/' "$bag_mode_matrix_case/validation-config.txt"
+sed -i '' 's/- Lifecycle path: normal/- Lifecycle path: reboot/' "$bag_mode_matrix_case/manual-result.md"
+if scripts/bag-mode-primitive-matrix-verify.sh --case-dir "$bag_mode_matrix_case" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix verifier accepted N/A reboot state for reboot-held case" >&2
+    exit 1
+fi
+if ! grep -q "reboot-held" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+sed -i '' 's/rebootHeld=1/rebootHeld=0/' "$bag_mode_matrix_case/validation-config.txt"
+sed -i '' 's/- Lifecycle path: reboot/- Lifecycle path: normal/' "$bag_mode_matrix_case/manual-result.md"
+sed -i '' 's/No external display physically available in this smoke/TODO/' "$bag_mode_smoke_dir/matrix/matrix-manifest.tsv"
+if scripts/bag-mode-primitive-matrix-verify.sh --manifest "$bag_mode_smoke_dir/matrix/matrix-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix verifier accepted placeholder N/A reason" >&2
+    exit 1
+fi
+if ! grep -q "external-display-na" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+
 echo "==> temperature provider harness smoke"
 temperature_smoke_dir="$bag_mode_smoke_dir/temperature-provider"
 scripts/temperature-provider-validation.sh --output-dir "$temperature_smoke_dir" >/dev/null
