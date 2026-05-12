@@ -525,6 +525,14 @@ if ! grep -q "status must be evidence, n/a, or deferred" "$bag_mode_smoke_error"
     cat "$bag_mode_smoke_error" >&2
     exit 1
 fi
+if zsh scripts/bag-mode-primitive-matrix-scaffold.sh --output-dir "$bag_mode_smoke_dir/matrix-scaffold-zsh" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Bag Mode primitive matrix scaffold unexpectedly ran under explicit zsh" >&2
+    exit 1
+fi
+if ! grep -q "requires bash" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
 bag_mode_matrix_test_only="$bag_mode_smoke_dir/matrix-test-only"
 cp -R "$bag_mode_matrix_case" "$bag_mode_matrix_test_only"
 sed -i '' 's/^testOnly=false$/testOnly=true/' "$bag_mode_matrix_test_only/validation-config.txt"

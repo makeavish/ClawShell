@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "This script requires bash. Run it as: bash scripts/bag-mode-primitive-matrix-scaffold.sh ..." >&2
+    exit 2
+fi
 set -euo pipefail
 
 usage() {
