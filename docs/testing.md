@@ -208,6 +208,18 @@ scripts/helper-service-prototype-verify.sh \
   --manifest .build/helper-service-prototype/<case-id>/prototype-manifest.tsv
 ```
 
+Use the non-mutating prototype scaffold when starting a new #27 evidence
+package:
+
+```sh
+scripts/helper-service-prototype-scaffold.sh \
+  --output-dir .build/helper-service-prototype/local-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+The scaffold is not evidence. It intentionally omits `validation-config.txt`
+and `manual-result.md`, and required manifest rows start as `TODO`, so it should
+fail the verifier until real signed-helper evidence is captured.
+
 The verifier checks `validation-config.txt`, `manual-result.md`, and the TSV
 manifest for the required app/helper signing, `SMAppService`, approval,
 bootstrap, reboot, update, uninstall, failure-case, `launchctl`, and log

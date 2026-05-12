@@ -1367,6 +1367,80 @@ helper_prototype_required_checks=(
 } >"$helper_prototype_manifest"
 scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_manifest" >/dev/null
 
+helper_prototype_scaffold="$bag_mode_smoke_dir/helper-prototype-scaffold"
+scripts/helper-service-prototype-scaffold.sh --output-dir "$helper_prototype_scaffold" >/dev/null
+for required_file in prototype-manifest.tsv README.md scaffold-config.txt; do
+    if [[ ! -f "$helper_prototype_scaffold/$required_file" ]]; then
+        echo "Helper service prototype scaffold did not write expected file: $required_file" >&2
+        exit 1
+    fi
+done
+if [[ -f "$helper_prototype_scaffold/validation-config.txt" || -f "$helper_prototype_scaffold/manual-result.md" ]]; then
+    echo "Helper service prototype scaffold wrote evidence-shaped files before real capture" >&2
+    exit 1
+fi
+if ! grep -q '^scaffoldFormat=smappservice-prototype-scaffold-v1$' "$helper_prototype_scaffold/scaffold-config.txt"; then
+    echo "Helper service prototype scaffold did not record expected scaffold format" >&2
+    exit 1
+fi
+for check_id in "${helper_prototype_required_checks[@]}"; do
+    if ! awk -F '\t' -v check_id="$check_id" '$1 == check_id && $2 == "TODO" { found = 1 } END { exit !found }' "$helper_prototype_scaffold/prototype-manifest.tsv"; then
+        echo "Helper service prototype scaffold missing required TODO row: $check_id" >&2
+        cat "$helper_prototype_scaffold/prototype-manifest.tsv" >&2
+        exit 1
+    fi
+done
+if ! awk -F '\t' '$1 == "package-installer-signing" && $2 == "n/a" { package = 1 } $1 == "homebrew-cask-semantics" && $2 == "n/a" { cask = 1 } END { exit !(package && cask) }' "$helper_prototype_scaffold/prototype-manifest.tsv"; then
+    echo "Helper service prototype scaffold missing optional n/a rows" >&2
+    cat "$helper_prototype_scaffold/prototype-manifest.tsv" >&2
+    exit 1
+fi
+if scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_scaffold/prototype-manifest.tsv" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype verifier accepted the TODO scaffold manifest" >&2
+    exit 1
+fi
+if ! grep -q "missing file: .*validation-config.txt" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+helper_prototype_scaffold_file="$bag_mode_smoke_dir/helper-prototype-scaffold-file"
+touch "$helper_prototype_scaffold_file"
+if scripts/helper-service-prototype-scaffold.sh --output-dir "$helper_prototype_scaffold_file" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype scaffold accepted an output path that is not a directory" >&2
+    exit 1
+fi
+if ! grep -q "not a directory" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+helper_prototype_scaffold_non_empty="$bag_mode_smoke_dir/helper-prototype-scaffold-non-empty"
+mkdir -p "$helper_prototype_scaffold_non_empty"
+touch "$helper_prototype_scaffold_non_empty/existing"
+if scripts/helper-service-prototype-scaffold.sh --output-dir "$helper_prototype_scaffold_non_empty" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype scaffold overwrote a non-empty output directory" >&2
+    exit 1
+fi
+if ! grep -q "Output directory is not empty" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if zsh scripts/helper-service-prototype-scaffold.sh --output-dir "$bag_mode_smoke_dir/helper-prototype-scaffold-zsh" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype scaffold unexpectedly ran under explicit zsh" >&2
+    exit 1
+fi
+if ! grep -q "requires bash" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if zsh scripts/helper-service-prototype-verify.sh --manifest "$helper_prototype_manifest" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper service prototype verifier unexpectedly ran under explicit zsh" >&2
+    exit 1
+fi
+if ! grep -q "requires bash" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+
 helper_prototype_placeholder_dir="$bag_mode_smoke_dir/helper-prototype-placeholder"
 cp -R "$helper_prototype_dir" "$helper_prototype_placeholder_dir"
 sed -i '' 's/- Result: pass/- Result: pass | fail | inconclusive/' "$helper_prototype_placeholder_dir/manual-result.md"
