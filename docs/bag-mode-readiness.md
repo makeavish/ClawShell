@@ -10,7 +10,7 @@ three evidence issues:
 | Issue | Current local state | Next operator action |
 |---|---|---|
 | [#29](https://github.com/makeavish/ClawShell/issues/29) primitive matrix | Real hardware `pmset disablesleep` matrix evidence is still missing. | Run the primitive matrix on target hardware, fill `manual-result.md`, verify the manifest, and attach pass/fail/inconclusive evidence. |
-| [#27](https://github.com/makeavish/ClawShell/issues/27) signed helper prototype | `.build/helper-service-readiness/recheck-20260512T100451Z` records full Xcode discovered, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. | Install/import valid Developer ID identities, rerun helper readiness, then capture signed `SMAppService` install/update/uninstall evidence. |
+| [#27](https://github.com/makeavish/ClawShell/issues/27) no-membership helper prototype | `.build/helper-service-readiness/recheck-20260512T105510Z` records full Xcode/tooling available, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. Developer ID membership is intentionally deferred. | Prototype a local/ad-hoc signed and hash/pairing-pinned helper path that does not require Apple Developer Program membership. Try `SMAppService` with the strongest local signing mode first; if macOS rejects it, prove a fallback LaunchDaemon install/update/uninstall path. |
 | [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | `.build/temperature-provider-helper-readiness/recheck-20260512T100451Z` records `powermetricsAvailable=true`, `sudoNonInteractiveAvailable=false`, `powermetricsHelperPermissionState=sudoPasswordRequired`, and `providerProofReady=false`. | Run helper/root-equivalent sampling that does not prompt during Bag Mode, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
 
 Readiness harnesses, scaffolds, and verifier success are support gates only.
@@ -99,27 +99,29 @@ Each case must record the exact command applied, rollback command, `pmset -g cus
 
 ## Helper Spike
 
-The helper proof must answer whether `SMAppService` LaunchDaemon is viable for the signed helper path. Homebrew cask install/upgrade/uninstall semantics are a related packaging gate unless the signed prototype is exercised through a cask-installed app.
+The helper proof must answer whether Bag Mode can use a local/admin-approved helper without Apple Developer Program membership. `SMAppService` LaunchDaemon remains the preferred first target, but the spike must record whether non-Developer-ID builds pass or fail its signature checks. Homebrew cask install/upgrade/uninstall semantics are a related packaging gate unless the prototype is exercised through a cask-installed app.
 
 Current artifact: [Helper Service Readiness](helper-service-readiness.md).
 
-The May 12, 2026 source/readiness check keeps `SMAppService` as the source-backed V1 target to prototype. Full Xcode is now detected from `/Applications/Xcode.app` even when the active `xcode-select` directory points at Command Line Tools, but this local environment still has no Developer ID signing identities, so the signed install/update/uninstall prototype is not complete. The signed prototype run is tracked in [#27](https://github.com/makeavish/ClawShell/issues/27).
+The May 12, 2026 source/readiness check keeps `SMAppService` as the source-backed first target to prototype. Full Xcode is now detected from `/Applications/Xcode.app` even when the active `xcode-select` directory points at Command Line Tools, but this local environment has no Developer ID signing identities and the product plan defers Apple Developer Program membership until traction or donations justify it. The required #27 prototype therefore shifts to a no-membership helper path.
 
-Before attaching the signed prototype package, run:
+Before attaching a helper prototype package, run:
 
 ```sh
 scripts/helper-service-prototype-verify.sh \
   --manifest .build/helper-service-prototype/<case-id>/prototype-manifest.tsv
 ```
 
-This verifies evidence structure only. The signed prototype still requires a real
-signed app/helper bundle, admin approval, helper bootstrap, reboot, update,
-uninstall, failure-case, `launchctl`, log, and optional cask/package evidence.
+This verifies evidence structure only. The prototype still requires a real
+app/helper bundle or fallback helper install package, admin approval or password
+flow, fixed command API, root-owned ledger, repair/uninstall commands, helper
+bootstrap, reboot, update, failure-case, `launchctl`, log, and optional
+cask/package evidence.
 
 Required notes:
 
 - Bundle layout and launchd label
-- App/helper signing identities and designated requirements
+- App/helper local signing/auth model, and Developer ID designated requirements only when available
 - XPC or Mach service name
 - Caller audit-token validation result
 - Install, update, uninstall, and repair commands tested
@@ -132,7 +134,7 @@ Required notes:
 - Helper upgrade mid-hold behavior
 - `clawshell helper status`, `clawshell helper repair`, and `clawshell uninstall --remove-helper --remove-integrations` outcomes
 
-Unsigned public builds must not expose production Bag Mode. Local helper experiments stay behind a development flag.
+Non-Developer-ID public builds may expose Bag Mode only after the local/ad-hoc signed and hash/pairing-pinned helper path passes real validation and the UI labels the local helper trust model clearly. Truly unsigned helper experiments stay development-only.
 
 ## Temperature Provider Spike
 
@@ -153,7 +155,7 @@ The preflight records whether helper-equivalent `powermetrics` sampling can run
 without a user-visible prompt. It does not prove provider freshness, cadence,
 closed-bag coverage, fail-closed behavior, or reliability.
 
-The mocked fail-closed safety contract is covered in `BagModeSafetyPolicy` and `ClawShellCoreChecks`: warning, cutoff, stale, unavailable, permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout, insufficient closed-bag coverage, missing/invalid battery, battery floor, and hysteresis transitions are executable checks. This does not select or validate the signed-helper temperature provider.
+The mocked fail-closed safety contract is covered in `BagModeSafetyPolicy` and `ClawShellCoreChecks`: warning, cutoff, stale, unavailable, permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout, insufficient closed-bag coverage, missing/invalid battery, battery floor, and hysteresis transitions are executable checks. This does not select or validate the no-membership helper temperature provider.
 
 Before attaching helper provider proof, run:
 

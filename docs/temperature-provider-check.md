@@ -119,7 +119,7 @@ No production Bag Mode temperature provider is selected from the non-root app-si
 
 `ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. `powermetrics` is installed, but this shell cannot run it through a non-interactive helper-equivalent path; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root output, freshness, cadence, timeout, and coverage.
 
-Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a signed-helper or equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
+Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a no-membership helper or helper-equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
 
 ## Helper Provider Proof Verifier
 

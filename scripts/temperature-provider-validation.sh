@@ -332,9 +332,9 @@ temperature fields are useful context when present, but they do not prove
 CPU/package or closed-bag thermal coverage and may not satisfy the 10 second
 freshness requirement.
 
-Production Bag Mode remains blocked until a signed helper or other validated
-provider supplies fresh, permission-compatible thermal evidence with fail-closed
-behavior.
+Production Bag Mode remains blocked until a no-membership helper or other
+validated provider supplies fresh, permission-compatible thermal evidence with
+fail-closed behavior.
 SUMMARY
     cat "$OUTPUT_DIR/summary-computed.md" >>"$OUTPUT_DIR/summary.md"
 fi

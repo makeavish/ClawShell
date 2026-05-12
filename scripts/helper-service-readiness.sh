@@ -346,9 +346,13 @@ or run any helper.
 
 ## Conclusion
 
-The signed SMAppService helper prototype is not complete unless
+The Developer ID signed SMAppService helper prototype is not complete unless
 \`signedPrototypeReady=true\` and a separate prototype run records register,
 approval, update, uninstall, and failure-case evidence.
+
+The no-membership helper prototype is tracked separately by #27 and must record
+its own local signing/auth model, admin approval or password flow, root ledger,
+repair, uninstall, and failure-case evidence.
 EOF
 
 echo "Helper service readiness written to $OUTPUT_DIR"
