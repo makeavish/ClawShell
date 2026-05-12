@@ -48,6 +48,27 @@ Do not claim clamshell-on-AC support from normal assertions until a real MacBook
 
 Attach generated harness directories to the relevant issue or PR when validating hardware behavior. Generated `.build/power-validation/` artifacts are local evidence and are not committed by default.
 
+## Bag Mode Primitive Spike
+
+Bag Mode uses a separate readiness workflow because it may require privileged power-setting changes and real lid-close hardware checks. Use the issue #7 checklist in `docs/bag-mode-readiness.md`.
+
+Baseline-only capture is non-mutating:
+
+```sh
+scripts/bag-mode-primitive-validation.sh --case-id apple-silicon-battery-internal
+```
+
+Mutating validation requires explicit acknowledgement:
+
+```sh
+sudo scripts/bag-mode-primitive-validation.sh \
+  --case-id apple-silicon-battery-internal \
+  --apply \
+  --i-understand-this-changes-power-settings
+```
+
+Mutating runs record and restore the pre-run `disablesleep` value rather than assuming rollback is always `disablesleep 0`.
+
 Latest local normal assertion smoke: `scripts/normal-assertion-validation.sh` was run for a short hold while the machine was on battery. The sanitized `during` snapshot showed a ClawShell-owned `PreventUserIdleSystemSleep` assertion, and the `after` snapshot no longer contained ClawShell-owned assertions.
 
 Sanitized excerpt:
