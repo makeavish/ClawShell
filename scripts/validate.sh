@@ -1128,8 +1128,22 @@ for check_id in "${temperature_proof_required_checks[@]}"; do
         exit 1
     fi
 done
-if ! awk -F '\t' '$1 == "combined-sensor-signal" && $2 == "n/a" { combined = 1 } $1 == "provider-update-or-restart" && $2 == "n/a" { restart = 1 } END { exit !(combined && restart) }' "$temperature_proof_scaffold/provider-manifest.tsv"; then
-    echo "Temperature provider proof scaffold missing optional n/a rows" >&2
+if ! awk -F '\t' '
+    function trim(value) {
+        gsub(/\r/, "", value)
+        sub(/^[[:space:]]*/, "", value)
+        sub(/[[:space:]]*$/, "", value)
+        return value
+    }
+    function usable_note(value) {
+        value = trim(value)
+        return value != "" && value != "TODO" && value != "TBD" && !(value ~ /</ && value ~ />/) && value !~ / \| /
+    }
+    $1 == "combined-sensor-signal" && $2 == "n/a" && usable_note($4) { combined = 1 }
+    $1 == "provider-update-or-restart" && $2 == "n/a" && usable_note($4) { restart = 1 }
+    END { exit !(combined && restart) }
+' "$temperature_proof_scaffold/provider-manifest.tsv"; then
+    echo "Temperature provider proof scaffold missing optional n/a rows with notes" >&2
     cat "$temperature_proof_scaffold/provider-manifest.tsv" >&2
     exit 1
 fi
