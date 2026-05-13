@@ -20,6 +20,10 @@ SMAppService provider artifacts:
 - `.build/temperature-provider-proof/bounded-ioreg-smc-local`
 - `.build/temperature-provider-proof/ioreg-smc-bounded-smappservice-20260513T071633Z`
 
+Alternate source probe artifacts:
+
+- `.build/temperature-provider-proof/alt-source-classified-20260513T082121Z`
+
 ## Question
 
 Which fresh, permission-compatible temperature source is reliable enough for Bag Mode cutoff decisions?
@@ -55,7 +59,7 @@ Reference:
 | AppleSmartBattery I/O Registry fields | Works without root when battery service exists | Returned within the 1s command timeout; update age was 12s in this run, above the 10s freshness target | Battery pack/virtual values were present | Battery temperature does not prove CPU/package or closed-bag thermal coverage | Context only |
 | SMAppService helper `powermetrics --samplers thermal` | Ad-hoc/no-membership helper launched as root | Timed out after partial output; captured thermal pressure only | No numeric temperature observed | Not validated; no cutoff signal captured | Helper path viable, command not proven |
 | SMAppService helper `powermetrics --samplers all` | Same no-membership helper launched as root | 1s run produced only the command header; 5s diagnostic emitted broad task/power output but still timed out | No trustworthy numeric temperature observed after detector correction | Not validated; no cutoff signal captured | Diagnostic only; command not viable as provider |
-| SMAppService helper `ioreg -r -c AppleSMCKeysEndpoint -l` | Same no-membership helper launched as root | 1s run timed out after partial I/O Registry output | Numeric-looking SMC/thermal candidates observed before timeout | Not validated; no freshness/cadence/coverage proof | Diagnostic candidate only |
+| SMAppService helper `ioreg -r -c AppleSMCKeysEndpoint -l` | Same no-membership helper launched as root | Early 1s run timed out after partial I/O Registry output; later bounded run completed before its timeout | Numeric-looking values were visible, but the accepted-provider detector rejects them as AppleSmartBattery context | Not validated; no freshness/cadence/coverage proof | Diagnostic only; no cutoff provider selected |
 
 Captured values from `validation-config.txt`:
 
@@ -281,13 +285,37 @@ candidate-source discovery, not proof of a production temperature provider. New
 cutoff evidence, so the next #25 work should capture freshness, cadence,
 closed-bag coverage, and fail-closed evidence for a better source.
 
+The refreshed alternate-source probe
+`.build/temperature-provider-proof/alt-source-classified-20260513T082121Z`
+applies the same battery-context classification to discovery evidence:
+
+```text
+smcEndpointPresent=true
+pmuTempSensorPresent=true
+ioreportTemperatureLegendPresent=true
+numericTemperatureObserved=false
+numericTemperatureCandidateCount=0
+numericTemperatureRawCandidateCount=2
+numericTemperatureRejectedBatteryContextCount=2
+numericTemperatureRejectionReason=ioreg-smc-battery-context-only
+numericCutoffSource=false
+providerProofReady=false
+```
+
+The rejected discovery candidates were the same battery-context
+`"Temperature"` and `"VirtualTemperature"` lines under `AppleSmartBattery`.
+The PMU temperature sensor inventory exposes named surfaces such as `PMU tdie*`
+and `PMU tdev*`, but it does not expose a current scalar reading through the
+non-mutating `ioreg` inventory. Treat those PMU nodes as future API/research
+surfaces, not selected provider output.
+
 ## Conclusion
 
 No production Bag Mode temperature provider is selected from the non-root
 sources, helper-owned `powermetrics` variants, or the helper-owned `ioreg-smc`
 diagnostic source tested.
 
-`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine. The tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source. The bounded `ioreg-smc` diagnostic path now runs as root through SMAppService without timing out, but its observed `AppleSmartBattery` values are rejected as production cutoff candidates and do not prove CPU/package or closed-bag thermal coverage; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root non-battery numeric output, freshness, cadence, timeout, and coverage.
+`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine. The tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source. The bounded `ioreg-smc` diagnostic path now runs as root through SMAppService without timing out, but its observed `AppleSmartBattery` values are rejected as production cutoff candidates and do not prove CPU/package or closed-bag thermal coverage. The refreshed alternate-source probe has no accepted non-battery numeric candidates; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root non-battery numeric output, freshness, cadence, timeout, and coverage.
 
 Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a no-membership helper or helper-equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
 
@@ -326,12 +354,14 @@ This captures local SMC, PMU temperature sensor, die temperature controller, and
 IOReport-style surfaces as discovery evidence. It also writes
 `evidence/numeric-temperature-candidates.txt`, a bounded list of captured lines
 that look like labeled numeric temperature values and should be reviewed before
-the next helper-owned provider attempt. Generic `die-id`, `die-count`, and
-`*-temp` table/interface identifiers are intentionally excluded from that
-candidate list. The probe does not select a provider or promote numeric cutoff
-proof; `providerProofReady=false` remains expected until helper-owned numeric
-output, freshness, cadence, timeout behavior, and closed-bag coverage are
-proven.
+the next helper-owned provider attempt, plus
+`evidence/rejected-temperature-candidates.txt` for battery-context lines that
+look numeric but are not production cutoff candidates. Generic `die-id`,
+`die-count`, and `*-temp` table/interface identifiers are intentionally
+excluded from the accepted candidate list. The probe does not select a provider
+or promote numeric cutoff proof; `providerProofReady=false` remains expected
+until helper-owned numeric output, freshness, cadence, timeout behavior, and
+closed-bag coverage are proven.
 
 To build the no-membership `SMAppService` provider candidate without changing
 helper registration state, run:

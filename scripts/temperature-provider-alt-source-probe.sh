@@ -191,7 +191,7 @@ capture "die-temperature-controller-inventory" "$TIMEOUT_SECONDS" "$IOREG_BIN" -
 capture "ioreport-temperature-legend-inventory" "$TIMEOUT_SECONDS" bash -c '
 set -euo pipefail
 "$1" -l -w0 2>/dev/null |
-grep -Ei '"'"'IOReport(GroupName|SubGroupName|Channels)|temperature|thermal|temp|die'"'"' |
+grep -Ei '"'"'^[[:space:]|]*\+-o|AppleSmartBattery|IOReport(GroupName|SubGroupName|Channels)|temperature|thermal|temp|die'"'"' |
 awk -v max_lines="$2" '"'"'
     {
         print
@@ -209,6 +209,9 @@ die_temp_controller_present=false
 ioreport_temperature_legend_present=false
 numeric_temperature_observed=false
 numeric_candidate_count=0
+numeric_raw_candidate_count=0
+numeric_rejected_battery_context_count=0
+numeric_rejection_reason="none"
 
 numeric_candidate_pattern='(^|[^[:alnum:]_-])([[:alnum:]]*temperature|temp)[^[:alnum:]_:=.-]*(=|:)[[:space:]]*-?[0-9]+([.][0-9]+)?([[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))?'
 
@@ -224,21 +227,86 @@ fi
 if grep -Eiq 'temperature|thermal|temp|die' "$EVIDENCE_DIR/ioreport-temperature-legend-inventory.txt"; then
     ioreport_temperature_legend_present=true
 fi
-grep -RniE "$numeric_candidate_pattern" "$EVIDENCE_DIR"/*.txt |
-    grep -Ev 'IOReportLegend|IOReportChannels' \
-        | awk 'length($0) <= 500' \
-        | head -n "$MAX_LINES" \
-        >"$EVIDENCE_DIR/numeric-temperature-candidates.txt" || true
+raw_candidates_tmp="$EVIDENCE_DIR/numeric-temperature-candidates.raw.tmp"
+accepted_candidates_tmp="$EVIDENCE_DIR/numeric-temperature-candidates.accepted.tmp"
+rejected_candidates_tmp="$EVIDENCE_DIR/rejected-temperature-candidates.tmp"
+: >"$raw_candidates_tmp"
+: >"$accepted_candidates_tmp"
+: >"$rejected_candidates_tmp"
+
+classify_tree_candidates() {
+    local source_file="$1"
+    awk -v source_file="$source_file" \
+        -v raw_file="$raw_candidates_tmp" \
+        -v accepted_file="$accepted_candidates_tmp" \
+        -v rejected_file="$rejected_candidates_tmp" '
+    function is_candidate(line) {
+        return line ~ /(^|[^[:alnum:]_-])([[:alnum:]]*[Tt]emperature|[Tt]emp)[^[:alnum:]_:=.-]*(=|:)[[:space:]]*-?[0-9]+([.][0-9]+)?/
+    }
+    BEGIN {
+        battery_depth = -1
+    }
+    /^[ \t|]*\+-o[ \t]+/ {
+        prefix = $0
+        sub(/\+-o.*/, "", prefix)
+        depth = length(prefix)
+        is_battery_node = ($0 ~ /\+-o[ \t]+AppleSmartBattery(Manager)?([ \t<]|$)/)
+        if (battery_depth >= 0 && depth <= battery_depth && !is_battery_node) {
+            battery_depth = -1
+        }
+        if (is_battery_node) {
+            battery_depth = depth
+        }
+    }
+    {
+        if (is_candidate($0) && length($0) <= 500) {
+            candidate = source_file ":" NR ":" $0
+            print candidate >> raw_file
+            if (battery_depth >= 0) {
+                print candidate >> rejected_file
+            } else {
+                print candidate >> accepted_file
+            }
+        }
+    }
+' "$source_file"
+}
+
+classify_tree_candidates "$EVIDENCE_DIR/smc-endpoint-inventory.txt"
+classify_tree_candidates "$EVIDENCE_DIR/ioreport-temperature-legend-inventory.txt"
+
+for candidate_file in \
+    "$EVIDENCE_DIR/pmu-temperature-sensor-inventory.txt" \
+    "$EVIDENCE_DIR/die-temperature-controller-inventory.txt"
+do
+    grep -HniE "$numeric_candidate_pattern" "$candidate_file" |
+        grep -Ev 'IOReportLegend|IOReportChannels' |
+        awk 'length($0) <= 500' \
+        >>"$accepted_candidates_tmp" || true
+done
+cat "$accepted_candidates_tmp" >>"$raw_candidates_tmp"
+head -n "$MAX_LINES" "$accepted_candidates_tmp" >"$EVIDENCE_DIR/numeric-temperature-candidates.txt"
+head -n "$MAX_LINES" "$rejected_candidates_tmp" >"$EVIDENCE_DIR/rejected-temperature-candidates.txt"
+rm -f "$raw_candidates_tmp" "$accepted_candidates_tmp" "$rejected_candidates_tmp"
+
 numeric_candidate_count="$(wc -l <"$EVIDENCE_DIR/numeric-temperature-candidates.txt" | tr -d '[:space:]')"
+numeric_raw_candidate_count=$(( numeric_candidate_count + $(wc -l <"$EVIDENCE_DIR/rejected-temperature-candidates.txt" | tr -d '[:space:]') ))
+numeric_rejected_battery_context_count="$(wc -l <"$EVIDENCE_DIR/rejected-temperature-candidates.txt" | tr -d '[:space:]')"
 if [[ "$numeric_candidate_count" -gt 0 ]]; then
     numeric_temperature_observed=true
 fi
+if [[ "$numeric_raw_candidate_count" -gt 0 && "$numeric_candidate_count" -eq 0 && "$numeric_rejected_battery_context_count" -gt 0 ]]; then
+    numeric_rejection_reason="ioreg-smc-battery-context-only"
+fi
 {
-    echo "command=grep -RniE numeric temperature candidate pattern evidence/*.txt excluding IOReportLegend/IOReportChannels metadata and long context lines"
+    echo "command=classify numeric temperature candidate pattern evidence/*.txt excluding IOReportLegend/IOReportChannels metadata, long context lines, and AppleSmartBattery context"
     echo "exitCode=0"
     echo "numericCandidatePattern=$numeric_candidate_pattern"
     echo "numericCandidateMaxLines=$MAX_LINES"
     echo "numericCandidateCount=$numeric_candidate_count"
+    echo "numericRawCandidateCount=$numeric_raw_candidate_count"
+    echo "numericRejectedBatteryContextCount=$numeric_rejected_battery_context_count"
+    echo "numericRejectionReason=$numeric_rejection_reason"
 } >"$EVIDENCE_DIR/numeric-temperature-candidates.status"
 
 candidate_surface_available=false
@@ -262,6 +330,9 @@ candidateSurfaceAvailable=$candidate_surface_available
 helperOwned=false
 numericTemperatureObserved=$numeric_temperature_observed
 numericTemperatureCandidateCount=$numeric_candidate_count
+numericTemperatureRawCandidateCount=$numeric_raw_candidate_count
+numericTemperatureRejectedBatteryContextCount=$numeric_rejected_battery_context_count
+numericTemperatureRejectionReason=$numeric_rejection_reason
 numericCutoffSource=false
 freshnessProven=false
 activeCadenceProven=false
@@ -277,6 +348,7 @@ $(manifest_row "pmu-temperature-sensor-inventory" "evidence" "evidence/pmu-tempe
 $(manifest_row "die-temperature-controller-inventory" "evidence" "evidence/die-temperature-controller-inventory.txt" "Die temperature controller inventory captured without sudo")
 $(manifest_row "ioreport-temperature-legend-inventory" "evidence" "evidence/ioreport-temperature-legend-inventory.txt" "IOReport-style temperature/thermal legend inventory captured without sudo")
 $(manifest_row "numeric-temperature-candidates" "evidence" "evidence/numeric-temperature-candidates.txt" "Bounded candidate lines for later provider review; not promoted to cutoff proof")
+$(manifest_row "rejected-temperature-candidates" "evidence" "evidence/rejected-temperature-candidates.txt" "Battery-context temperature lines rejected for production cutoff review")
 $(manifest_row "numeric-cutoff-source" "TODO" "" "Probe does not prove helper-owned numeric cutoff output")
 $(manifest_row "freshness-cadence-coverage" "TODO" "" "Probe does not prove freshness, active/idle cadence, or closed-bag coverage")
 EOF

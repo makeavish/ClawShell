@@ -208,9 +208,11 @@ This records local SMC, PMU temperature sensor, die temperature controller, and
 IOReport-style surfaces. It also writes
 `evidence/numeric-temperature-candidates.txt` so reviewers can see the exact
 labeled numeric temperature-like lines without promoting generic `die-id` or
-`*-temp` identifiers. It is discovery evidence only: `providerProofReady` and
-`numericCutoffSource` stay `false` until helper-owned numeric output, freshness,
-cadence, timeout behavior, and closed-bag coverage are proven.
+`*-temp` identifiers, and `evidence/rejected-temperature-candidates.txt` for
+battery-context lines that look numeric but are not cutoff candidates. It is
+discovery evidence only: `providerProofReady` and `numericCutoffSource` stay
+`false` until helper-owned numeric output, freshness, cadence, timeout behavior,
+and closed-bag coverage are proven.
 
 To build the no-membership `SMAppService` provider candidate without changing
 helper registration state:
