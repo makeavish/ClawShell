@@ -318,6 +318,14 @@ dry-run command parser smoke output for `status`, `enableBagMode`,
 `fixed-command-api`, registration, approval, reboot, update, uninstall, and
 failure-case rows as `TODO`. Registration requires an explicit acknowledgement flag:
 `--register --i-understand-this-registers-helper`.
+The current no-membership `SMAppService` helper register attempt is recorded at
+`.build/helper-service-prototype/smappservice-register-20260513T033434Z`.
+It returned `SMAppServiceErrorDomain Code=1` / `Operation not permitted` while
+moving status raw `3` (`notFound`) to `2` (`requiresApproval`). Treat that
+artifact as approval-pending evidence, not fallback-justifying rejection
+evidence by itself. Approve it in System Settings and run
+`--capture-post-approval` against the same artifact before deciding whether a
+`launchdaemon-fallback` package is needed.
 New artifacts derive a unique SMAppService bundle/helper identity from the
 output path, and write it to `appBundleIdentifier`, `helperLabel`, and
 `identitySuffix` in `validation-config.txt`. Set
