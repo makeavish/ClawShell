@@ -342,30 +342,24 @@ and a mirrored `bagModeHelperLedgerSample` JSON event. A later
 `unregisterResult=success`, status raw `1 -> 0`, follow-up status raw `0`, and
 `launchctl` service-not-found. Treat this as local SMAppService root-bootstrap
 and unregister evidence, not complete #27 evidence. The manifest still needs
-deliberate promotion only after reviewing the broader fixed-command API,
+deliberate promotion only after reviewing fixed-command API,
 admin-approval/password-flow, post-approval status/bootstrap/log/launchctl,
-root-ledger schema/ownership, reboot, update, repair, CLI command,
-failure-case, and helper-owned Bag Mode state cleanup captures.
-The latest fixed-command dispatch artifact is
-`.build/helper-service-prototype/smappservice-command-enableBagMode-pending-20260513T051953Z`.
-It records `daemonCommand=enableBagMode`, status raw `1`, launchd `runs = 1`,
-exit code `0`, helper stdout with `uid=0`, `euid=0`, `commandJson="enableBagMode"`,
-a mirrored `bagModeHelperLedgerSample`, and cleanup unregister to status raw
-`0` / launchctl service-not-found. Treat this as one approved non-`status`
-fixed-command dry-run dispatch, not as proof of the full command matrix or
-production Bag Mode state mutation.
-Follow-up approved command artifacts for `disableBagMode`, `repair`, and
-`uninstall` are recorded at:
+root-ledger schema/ownership, reboot, update, production repair/uninstall
+behavior, CLI command, failure-case, and helper-owned Bag Mode state cleanup
+captures.
+The fixed-command dispatch artifacts are recorded at:
 
+- `.build/helper-service-prototype/smappservice-command-enableBagMode-pending-20260513T051953Z`
 - `.build/helper-service-prototype/smappservice-command-disableBagMode-approved-20260513T060113Z`
 - `.build/helper-service-prototype/smappservice-command-repair-approved-20260513T060213Z`
 - `.build/helper-service-prototype/smappservice-command-uninstall-approved-20260513T060308Z`
 
-Those artifacts reached status raw `1` after waiting at least 15 seconds before
-post-approval capture, produced root helper stdout with the expected
-`commandJson`, and then unregistered cleanly back to raw `0`. Treat them as
-approved dry-run dispatch evidence only, not as proof of production Bag Mode
-state mutation or production repair/uninstall behavior.
+They record approved dry-run dispatch for `enableBagMode`, `disableBagMode`,
+`repair`, and `uninstall`. Each artifact reached status raw `1` after waiting
+at least 15 seconds before post-approval capture, produced root helper stdout
+with the expected `commandJson`, and then unregistered cleanly back to raw `0`.
+Treat them as fixed-command dispatch evidence only, not as proof of production
+Bag Mode state mutation or production repair/uninstall behavior.
 New artifacts derive a unique SMAppService bundle/helper identity from the
 output path, and write it to `appBundleIdentifier`, `helperLabel`, and
 `identitySuffix` in `validation-config.txt`. Set
