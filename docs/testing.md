@@ -228,7 +228,11 @@ approval. New artifacts default to `powermetrics --show-initial-usage -n 1 -i
 runs against the earlier command shape. Set
 `CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` before
 creating the artifact to compare root-owned sampler variants such as `all`,
-`default`, `cpu_power`, or `thermal,cpu_power`. New artifacts derive a unique
+`default`, `cpu_power`, or `thermal,cpu_power`. Set
+`CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc` to run the diagnostic
+`/usr/sbin/ioreg -r -c AppleSMCKeysEndpoint -l` source from the approved helper.
+That mode is candidate-source evidence only until it has bounded parsing,
+freshness, cadence, timeout, coverage, and fail-closed proof. New artifacts derive a unique
 SMAppService bundle/helper identity from the output path to avoid stale
 approval/code-signing state; set
 `CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX=<lettersAndDigits>` only when a
@@ -242,7 +246,8 @@ scripts/temperature-provider-smappservice-proof.sh \
   --i-understand-this-registers-provider
 ```
 
-After approval, append non-mutating provider output from the same artifact with:
+After approval, wait at least 15 seconds, then append non-mutating provider
+output from the same artifact with:
 
 ```sh
 scripts/temperature-provider-smappservice-proof.sh \
@@ -250,7 +255,7 @@ scripts/temperature-provider-smappservice-proof.sh \
   --capture-post-approval
 ```
 
-The append mode captures helper runtime context, powermetrics output/status,
+The append mode captures helper runtime context, provider output/status,
 `launchctl`, and unified logs. It does not promote manifest rows automatically;
 review the captured output before mapping it to provider proof rows.
 

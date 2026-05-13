@@ -11,7 +11,7 @@ three evidence issues:
 |---|---|---|
 | [#29](https://github.com/makeavish/ClawShell/issues/29) primitive matrix | Real hardware `pmset disablesleep` matrix evidence is still missing. | Run the primitive matrix on target hardware, fill `manual-result.md`, verify the manifest, and attach pass/fail/inconclusive evidence. |
 | [#27](https://github.com/makeavish/ClawShell/issues/27) no-membership helper prototype | `.build/helper-service-readiness/recheck-20260512T105510Z` records full Xcode/tooling available, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. `.build/helper-service-prototype/smappservice-register-stdout-20260513T040749Z` records a fresh ad-hoc `SMAppService` helper reaching enabled status, launchd `runs = 1`, root helper stdout with `uid=0`/`euid=0`, mirrored `bagModeHelperLedgerSample` JSON, root ledger `0600`, and unregister cleanup to status raw `0` / launchctl service-not-found. Command-specific artifacts now record approved dry-run dispatch for `enableBagMode`, `disableBagMode`, `repair`, and `uninstall`; each ran once as root, emitted mirrored ledger JSON, and unregistered cleanly. Developer ID membership is intentionally deferred. | Complete the remaining #27 verifier proof: admin approval/password flow, post-approval row promotion, root-ledger schema/ownership promotion, reboot, update, production repair/uninstall behavior, CLI helper commands, failure cases, and helper-owned Bag Mode state cleanup before deciding whether fallback LaunchDaemon evidence is needed. |
-| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | The unique no-membership `SMAppService` helper artifacts provide root-runtime evidence after approval, but are not verifier-accepted provider proof. `powermetrics --samplers thermal` captured only thermal pressure before timing out, `--samplers all` timed out at 1s, and the 5s `all` diagnostic has no trustworthy numeric temperature when interpreted with the hardened detector. | Test a different helper-owned source, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
+| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | The unique no-membership `SMAppService` helper artifacts provide root-runtime evidence after approval, but are not verifier-accepted provider proof. `powermetrics --samplers thermal` captured only thermal pressure before timing out, `--samplers all` timed out at 1s, and the 5s `all` diagnostic has no trustworthy numeric temperature when interpreted with the hardened detector. The `ioreg-smc` diagnostic source ran as root and found numeric-looking SMC/thermal candidates before timing out, but it is not bounded provider proof. | Bound the `ioreg-smc` source or test another helper-owned source, then capture provider freshness, cadence, timeout, coverage, and fail-closed evidence. |
 
 Readiness harnesses, scaffolds, and verifier success are support gates only.
 They do not close #7 without the real evidence above.
@@ -171,7 +171,7 @@ The provider proof must choose a fresh, permission-compatible temperature source
 
 Current artifact: [Temperature Provider Check](temperature-provider-check.md).
 
-The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine, but the tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source under the provider contract. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
+The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine. The tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source, and the `ioreg-smc` diagnostic source found numeric-looking SMC/thermal candidates but still timed out under the provider contract. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
 
 Before attempting helper/root sampling, run the non-mutating preflight:
 
@@ -225,8 +225,14 @@ numeric cutoff source under the provider contract, so treat further
 variants without hand-editing the helper, set
 `CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` before
 creating the artifact, for example `all`, `default`, `cpu_power`, or
-`thermal,cpu_power`. The next primary #25 source probe should target a different
-helper-owned source if one is available without Developer ID membership.
+`thermal,cpu_power`.
+
+To test the helper-owned I/O Registry SMC diagnostic source, create the artifact
+with `CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc`. That mode runs
+`/usr/sbin/ioreg -r -c AppleSMCKeysEndpoint -l` from the approved helper. The
+current local artifact found numeric-looking candidates before timeout, so the
+next #25 step is to make that source bounded enough for the 1 second provider
+contract or reject it deliberately.
 
 Each artifact also gets a unique SMAppService identity derived from its output
 path so repeated ad-hoc attempts do not reuse stale approval/code-signing state.
@@ -240,7 +246,8 @@ scripts/temperature-provider-smappservice-proof.sh \
   --i-understand-this-registers-provider
 ```
 
-After macOS approval, append helper-owned provider output to the same artifact with:
+After macOS approval, wait at least 15 seconds, then append helper-owned provider
+output to the same artifact with:
 
 ```sh
 scripts/temperature-provider-smappservice-proof.sh \
@@ -248,7 +255,7 @@ scripts/temperature-provider-smappservice-proof.sh \
   --capture-post-approval
 ```
 
-The append mode captures helper runtime context, `powermetrics` output/status,
+The append mode captures helper runtime context, provider output/status,
 `launchctl`, and unified logs without auto-promoting manifest rows.
 
 After cleanup approval, unregister the same prototype helper with:
@@ -277,7 +284,7 @@ permission behavior, fail-closed behavior, and closed-bag coverage.
 
 Required notes:
 
-- Numeric cutoff source tested: SMC, `powermetrics`, IOReport, or other helper-owned source
+- Numeric cutoff source tested: `ioreg-smc`, SMC, `powermetrics`, IOReport, or other helper-owned source
 - `ProcessInfo.thermalState` role: supplemental-only
 - Permission prompt or root requirement
 - Reading freshness and timeout behavior
