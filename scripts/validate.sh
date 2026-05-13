@@ -4778,6 +4778,183 @@ if [[ ! -s "$helper_smappservice_capture_unregister_fake/unregister-capture.md" 
     echo "SMAppService helper prototype unregister capture missing summary" >&2
     exit 1
 fi
+
+echo "==> helper service prototype capture review smoke"
+helper_prototype_review_dir="$bag_mode_smoke_dir/helper-prototype-review"
+helper_prototype_review_evidence="$helper_prototype_review_dir/evidence"
+mkdir -p "$helper_prototype_review_evidence"
+write_review_evidence() {
+    local check_id="$1"
+    shift
+    printf '$ %s\n' "$check_id" >"$helper_prototype_review_evidence/$check_id.txt"
+    printf '%s\n' "$@" >>"$helper_prototype_review_evidence/$check_id.txt"
+    printf 'exitCode=0\n' >"$helper_prototype_review_evidence/$check_id.status"
+}
+write_review_evidence helper-install-or-register \
+    'statusBeforeRaw=3' \
+    'statusAfterRaw=2'
+write_review_evidence helper-status-after-approval \
+    'statusBeforeRaw=1' \
+    'statusAfterRaw=1'
+write_review_evidence helper-stdout-after-approval \
+    'uid=0' \
+    'euid=0' \
+    'allowed=true' \
+    'approvalState="approved"' \
+    '{"schemaVersion":1,"event":"bagModeHelperLedgerSample","ownerTokenHash":"hash","helperGeneration":1}'
+write_review_evidence helper-stdout-post-reboot \
+    'uid=0' \
+    'euid=0' \
+    'allowed=true' \
+    'approvalState="approved"' \
+    '{"schemaVersion":1,"event":"bagModeHelperLedgerSample","ownerTokenHash":"hash","helperGeneration":1}'
+write_review_evidence helper-status-post-reboot \
+    'statusBeforeRaw=1' \
+    'statusAfterRaw=1'
+write_review_evidence post-reboot-helper-bootstrap \
+    'managed_by = com.apple.xpc.ServiceManagement' \
+    'runs = 1' \
+    'last exit code = 0'
+write_review_evidence root-ledger-schema-and-permissions \
+    'mode=-rw------- owner=root group=staff path=/tmp/helper-ledger.jsonl' \
+    'sed: /tmp/helper-ledger.jsonl: Permission denied'
+write_review_evidence root-ledger-ownership-sample \
+    'mode=-rw------- owner=root group=staff path=/tmp/helper-ledger.jsonl' \
+    'sed: /tmp/helper-ledger.jsonl: Permission denied'
+write_review_evidence launchctl-status \
+    'managed_by = com.apple.xpc.ServiceManagement' \
+    'runs = 1'
+write_review_evidence log-evidence \
+    'backgroundtaskmanagementd helper label entry'
+write_review_evidence helper-uninstall \
+    'statusBeforeRaw=1' \
+    'unregisterResult=success' \
+    'statusAfterRaw=0'
+write_review_evidence launchctl-status-after-unregister \
+    'Could not find service "com.example.Helper" in domain for system'
+for review_static_row in \
+    app-bundle-or-install-layout \
+    launchdaemon-plist \
+    app-signing-or-auth-model \
+    helper-signing-or-auth-model \
+    caller-auth-model \
+    spctl-or-gatekeeper-assessment
+do
+    write_review_evidence "$review_static_row" "captured evidence for $review_static_row"
+done
+write_review_evidence failure-unpaired-caller \
+    'allowed=false' \
+    'commandAllowed=true' \
+    'authFailuresJson=["unpaired-caller"]' \
+    'observedExitCode=77'
+write_review_evidence failure-wrong-bundle-id-or-label \
+    'allowed=false' \
+    'commandAllowed=true' \
+    'authFailuresJson=["wrong-bundle-id","wrong-helper-label"]' \
+    'observedExitCode=77'
+write_review_evidence failure-wrong-user \
+    'allowed=false' \
+    'commandAllowed=true' \
+    'authFailuresJson=["wrong-user"]' \
+    'observedExitCode=77'
+write_review_evidence failure-stale-app-version \
+    'allowed=false' \
+    'commandAllowed=true' \
+    'authFailuresJson=["stale-app-version"]' \
+    'observedExitCode=77'
+write_review_evidence failure-denied-or-revoked-approval \
+    'allowed=false' \
+    'commandAllowed=true' \
+    'authFailuresJson=["approval-denied"]' \
+    'observedExitCode[denied]=77' \
+    'allowed=false' \
+    'commandAllowed=true' \
+    'authFailuresJson=["approval-revoked"]' \
+    'observedExitCode[revoked]=77'
+helper_prototype_review_report="$helper_prototype_review_dir/review-candidates.tsv"
+scripts/helper-service-prototype-review-captures.sh \
+    --artifact-dir "$helper_prototype_review_dir" \
+    --output "$helper_prototype_review_report"
+if [[ "$(tail -n +2 "$helper_prototype_review_report" | wc -l | tr -d ' ')" != "30" ]]; then
+    echo "Helper prototype review did not report every required and optional verifier row" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "helper-status-after-approval" && $2 == "promote-candidate" && $3 == "evidence/helper-status-after-approval.txt" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review did not mark post-approval status as a promotion candidate" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "admin-approval-or-password-flow" && $2 == "review-needed" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review did not require human review for approval flow" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "post-reboot-helper-bootstrap" && $2 == "promote-candidate" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review did not mark post-reboot bootstrap as a promotion candidate" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "root-ledger-schema-and-permissions" && $2 == "review-needed" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review did not keep root-ledger promotion under human review" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "helper-uninstall-state-cleanup" && $2 == "keep-todo" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review over-promoted helper-owned Bag Mode state cleanup" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "failure-unpaired-caller" && $2 == "promote-candidate" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review omitted or failed to classify failure-case evidence" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "homebrew-cask-semantics" && $2 == "not-applicable" { found = 1 } END { exit !found }' "$helper_prototype_review_report"; then
+    echo "Helper prototype review did not classify unused optional cask row" >&2
+    cat "$helper_prototype_review_report" >&2
+    exit 1
+fi
+helper_prototype_review_failed_failure="$bag_mode_smoke_dir/helper-prototype-review-failed-failure"
+cp -R "$helper_prototype_review_dir" "$helper_prototype_review_failed_failure"
+printf 'exitCode=1\n' >"$helper_prototype_review_failed_failure/evidence/failure-unpaired-caller.status"
+scripts/helper-service-prototype-review-captures.sh \
+    --artifact-dir "$helper_prototype_review_failed_failure" \
+    --output "$helper_prototype_review_failed_failure/review-candidates.tsv"
+if ! awk -F '\t' '$1 == "failure-unpaired-caller" && $2 == "keep-todo" { found = 1 } END { exit !found }' "$helper_prototype_review_failed_failure/review-candidates.tsv"; then
+    echo "Helper prototype review over-promoted a failed failure-case capture" >&2
+    cat "$helper_prototype_review_failed_failure/review-candidates.tsv" >&2
+    exit 1
+fi
+helper_prototype_review_wrong_auth_failure="$bag_mode_smoke_dir/helper-prototype-review-wrong-auth-failure"
+cp -R "$helper_prototype_review_dir" "$helper_prototype_review_wrong_auth_failure"
+cat >"$helper_prototype_review_wrong_auth_failure/evidence/failure-unpaired-caller.txt" <<'EOF'
+$ failure-unpaired-caller
+scenario=unpaired-caller
+allowed=false
+commandAllowed=true
+authFailuresJson=["wrong-user"]
+observedExitCode=77
+EOF
+scripts/helper-service-prototype-review-captures.sh \
+    --artifact-dir "$helper_prototype_review_wrong_auth_failure" \
+    --output "$helper_prototype_review_wrong_auth_failure/review-candidates.tsv"
+if ! awk -F '\t' '$1 == "failure-unpaired-caller" && $2 == "keep-todo" { found = 1 } END { exit !found }' "$helper_prototype_review_wrong_auth_failure/review-candidates.tsv"; then
+    echo "Helper prototype review over-promoted a failure case without the expected authFailuresJson marker" >&2
+    cat "$helper_prototype_review_wrong_auth_failure/review-candidates.tsv" >&2
+    exit 1
+fi
+helper_prototype_review_missing="$bag_mode_smoke_dir/helper-prototype-review-missing"
+mkdir -p "$helper_prototype_review_missing"
+if scripts/helper-service-prototype-review-captures.sh --artifact-dir "$helper_prototype_review_missing" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper prototype review accepted an artifact without evidence directory" >&2
+    exit 1
+fi
+if ! grep -q "missing evidence directory" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+
 helper_smappservice_file="$bag_mode_smoke_dir/helper-smappservice-file"
 touch "$helper_smappservice_file"
 if scripts/helper-service-smappservice-prototype.sh --output-dir "$helper_smappservice_file" >/dev/null 2>"$bag_mode_smoke_error"; then
