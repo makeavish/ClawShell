@@ -16,6 +16,7 @@ SMAppService provider artifacts:
 - `.build/temperature-provider-proof/smappservice-unique-20260512T175157Z`
 - `.build/temperature-provider-proof/smappservice-all-20260512T181830Z`
 - `.build/temperature-provider-proof/smappservice-all-timeout5-20260512T182146Z`
+- `.build/temperature-provider-proof/ioreg-smc-prepare-20260513T061711Z`
 
 ## Question
 
@@ -52,6 +53,7 @@ Reference:
 | AppleSmartBattery I/O Registry fields | Works without root when battery service exists | Returned within the 1s command timeout; update age was 12s in this run, above the 10s freshness target | Battery pack/virtual values were present | Battery temperature does not prove CPU/package or closed-bag thermal coverage | Context only |
 | SMAppService helper `powermetrics --samplers thermal` | Ad-hoc/no-membership helper launched as root | Timed out after partial output; captured thermal pressure only | No numeric temperature observed | Not validated; no cutoff signal captured | Helper path viable, command not proven |
 | SMAppService helper `powermetrics --samplers all` | Same no-membership helper launched as root | 1s run produced only the command header; 5s diagnostic emitted broad task/power output but still timed out | No trustworthy numeric temperature observed after detector correction | Not validated; no cutoff signal captured | Diagnostic only; command not viable as provider |
+| SMAppService helper `ioreg -r -c AppleSMCKeysEndpoint -l` | Same no-membership helper launched as root | 1s run timed out after partial I/O Registry output | Numeric-looking SMC/thermal candidates observed before timeout | Not validated; no freshness/cadence/coverage proof | Diagnostic candidate only |
 
 Captured values from `validation-config.txt`:
 
@@ -183,18 +185,38 @@ output. The artifact still stores that old field value, so the corrected result
 is an interpretation from the hardened detector and captured output, not a
 promoted artifact row.
 
-These artifacts are useful evidence for the no-membership helper mechanism, not
-proof of a production temperature provider. The next #25 work should test a
-different helper-owned source, such as direct SMC/IOReport-style sampling if it
-is available without Developer ID membership, before attempting freshness,
-cadence, closed-bag coverage, and fail-closed evidence.
+The later `.build/temperature-provider-proof/ioreg-smc-prepare-20260513T061711Z`
+artifact used the same no-membership `SMAppService` path with
+`CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc`. After registration, approval,
+and a 15 second wait before post-approval capture, the helper ran as root and
+captured partial `AppleSMCKeysEndpoint` output:
+
+```text
+command=/usr/sbin/ioreg -r -c AppleSMCKeysEndpoint -l
+providerSource=ioreg-smc
+timeoutSeconds=1
+timedOut=true
+exitCode=15
+helperOwned=true
+numericTemperatureObserved=true
+```
+
+This is source-candidate evidence only. The command still timed out under the
+current 1 second contract, and the artifact does not prove freshness, cadence,
+closed-bag coverage, fail-closed behavior, or a bounded production parser.
+
+These artifacts are useful evidence for the no-membership helper mechanism and
+candidate-source discovery, not proof of a production temperature provider. The
+next #25 work should make the `ioreg-smc` path bounded enough to avoid timeout,
+then capture freshness, cadence, closed-bag coverage, and fail-closed evidence.
 
 ## Conclusion
 
-No production Bag Mode temperature provider is selected from the non-root or
-helper-owned `powermetrics` sources tested.
+No production Bag Mode temperature provider is selected from the non-root
+sources, helper-owned `powermetrics` variants, or the helper-owned `ioreg-smc`
+diagnostic source tested.
 
-`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine, but the tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source under the provider contract; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root numeric output, freshness, cadence, timeout, and coverage.
+`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine. The tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source, and the `ioreg-smc` diagnostic path found numeric-looking candidates but still timed out under the provider contract; [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove helper/root numeric output, freshness, cadence, timeout, and coverage.
 
 Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a no-membership helper or helper-equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
 
@@ -257,9 +279,21 @@ variants are not the primary path to a provider-ready numeric cutoff source.
 Use `CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE=false` or
 `CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=<samplers>` only for
 comparison runs, for example `all`, `default`, `cpu_power`, or
-`thermal,cpu_power`. The next primary #25 source probe should target a
-different helper-owned source if one is available without Developer ID
-membership.
+`thermal,cpu_power`.
+
+To generate the helper-owned I/O Registry SMC diagnostic source, create the
+artifact with:
+
+```bash
+CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc \
+  scripts/temperature-provider-smappservice-proof.sh \
+  --output-dir .build/temperature-provider-proof/ioreg-smc-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+That source runs `/usr/sbin/ioreg -r -c AppleSMCKeysEndpoint -l` from the
+approved helper. It is currently candidate-source evidence, not provider proof,
+because the local run timed out and still needs bounded parsing, freshness,
+cadence, timeout, coverage, and fail-closed evidence.
 
 Each new artifact also gets a unique SMAppService bundle/helper identity derived
 from its output path. This avoids reusing stale macOS approval/code-signing state
@@ -274,7 +308,8 @@ scripts/temperature-provider-smappservice-proof.sh \
   --i-understand-this-registers-provider
 ```
 
-After approval, append non-mutating provider output from the same artifact with:
+After approval, wait at least 15 seconds, then append non-mutating provider
+output from the same artifact with:
 
 ```bash
 scripts/temperature-provider-smappservice-proof.sh \
@@ -282,7 +317,7 @@ scripts/temperature-provider-smappservice-proof.sh \
   --capture-post-approval
 ```
 
-The append mode captures helper runtime context, `powermetrics` output/status,
+The append mode captures helper runtime context, provider output/status,
 `launchctl`, and unified logs. It does not promote manifest rows automatically;
 review the captured output before mapping it to provider proof rows.
 

@@ -14,15 +14,18 @@ Usage: scripts/temperature-provider-smappservice-proof.sh --output-dir DIR [--ca
 
 Builds a no-membership SMAppService temperature-provider proof-attempt package
 for #25. The default mode is non-mutating: it builds an ad-hoc signed app and
-LaunchDaemon helper that will run one timeout-bounded powermetrics sample when
-registered and approved.
+LaunchDaemon helper that will run one timeout-bounded provider sample when
+registered and approved. The default source is powermetrics; set
+CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc for the diagnostic I/O Registry
+SMC endpoint source.
 
 --register calls SMAppService and can change local helper state. Use it only
 during an intentional #25 prototype run.
 
 --capture-post-approval is non-mutating. Run it against the same existing
-artifact directory after any required System Settings approval to append helper
-runtime, powermetrics, status, launchctl, and log evidence.
+artifact directory after any required System Settings approval and a 15 second
+wait to append helper runtime, provider output, status, launchctl, and log
+evidence.
 
 --capture-unregister is mutating. Run it against the same existing artifact
 directory to call SMAppService unregister and append cleanup status evidence.
@@ -30,7 +33,7 @@ USAGE
 }
 
 OUTPUT_DIR=""
-CASE_ID="apple-silicon-powermetrics-smappservice"
+CASE_ID=""
 REGISTER=false
 CAPTURE_POST_APPROVAL=false
 CAPTURE_UNREGISTER=false
@@ -134,6 +137,7 @@ if [[ "$EXISTING_ARTIFACT_MODE" == true && "$OUTPUT_HAS_CONTENT" == false ]]; th
     exit 73
 fi
 
+PROVIDER_SOURCE=${CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE:-powermetrics}
 TIMEOUT_SECONDS=${CLAWSHELL_TEMPERATURE_PROVIDER_TIMEOUT_SECONDS:-1}
 SAMPLE_RATE_MS=${CLAWSHELL_TEMPERATURE_PROVIDER_SAMPLE_RATE_MS:-1000}
 SHOW_INITIAL_USAGE=${CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE:-true}
@@ -187,6 +191,18 @@ require_powermetrics_samplers() {
     done
 }
 
+require_provider_source() {
+    local name="$1"
+    local value="$2"
+    case "$value" in
+        powermetrics|ioreg-smc) ;;
+        *)
+            echo "$name must be one of: powermetrics, ioreg-smc" >&2
+            exit 64
+            ;;
+    esac
+}
+
 require_identity_suffix() {
     local name="$1"
     local value="$2"
@@ -205,16 +221,32 @@ require_helper_label() {
     fi
 }
 
+require_provider_source "CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE" "$PROVIDER_SOURCE"
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_TIMEOUT_SECONDS" "$TIMEOUT_SECONDS"
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_SAMPLE_RATE_MS" "$SAMPLE_RATE_MS"
 require_bool "CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE" "$SHOW_INITIAL_USAGE"
-require_powermetrics_samplers "CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS" "$POWERMETRICS_SAMPLERS"
+if [[ "$PROVIDER_SOURCE" == "powermetrics" ]]; then
+    require_powermetrics_samplers "CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS" "$POWERMETRICS_SAMPLERS"
+else
+    POWERMETRICS_SAMPLERS="not-used"
+fi
 if [[ -n "${CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX:-}" ]]; then
     require_identity_suffix "CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX" "$CLAWSHELL_TEMPERATURE_PROVIDER_ID_SUFFIX"
 fi
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_FRESHNESS_SECONDS" "$FRESHNESS_SECONDS"
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_ACTIVE_CADENCE_SECONDS" "$ACTIVE_CADENCE_SECONDS"
 require_positive_integer "CLAWSHELL_TEMPERATURE_PROVIDER_IDLE_CADENCE_SECONDS" "$IDLE_CADENCE_SECONDS"
+
+if [[ -z "$CASE_ID" ]]; then
+    case "$PROVIDER_SOURCE" in
+        ioreg-smc)
+            CASE_ID="apple-silicon-ioreg-smc-smappservice"
+            ;;
+        *)
+            CASE_ID="apple-silicon-powermetrics-smappservice"
+            ;;
+    esac
+fi
 
 if [[ "$EXISTING_ARTIFACT_MODE" == false ]]; then
     mkdir -p "$OUTPUT_DIR"
@@ -580,11 +612,12 @@ Captured files:
 - \`evidence/temperature-provider-status-after-register.txt\`
 
 This command does not promote manifest rows automatically. After macOS approval,
-run \`--capture-post-approval\` against the same artifact.
+wait at least 15 seconds, then run \`--capture-post-approval\` against the same
+artifact.
 EOF
 
     echo "Register provider evidence appended to $OUTPUT_DIR"
-    echo "Run --capture-post-approval against the same artifact after approval."
+    echo "After approval, wait at least 15 seconds, then run --capture-post-approval against the same artifact."
 }
 
 capture_unregister_status() {
@@ -767,14 +800,26 @@ func isoNow() -> String {
 let logPath = argumentValue(after: "--log")
 let outputPath = argumentValue(after: "--sample-output")
 let statusPath = argumentValue(after: "--sample-status")
+let providerSource = argumentValue(after: "--provider-source") ?? "powermetrics"
 let timeoutSeconds = Int(argumentValue(after: "--timeout-seconds") ?? "1") ?? 1
 let sampleRateMs = Int(argumentValue(after: "--sample-rate-ms") ?? "1000") ?? 1000
 let powermetricsSamplers = argumentValue(after: "--powermetrics-samplers") ?? "thermal"
 let showInitialUsage = CommandLine.arguments.contains("--show-initial-usage")
 let powermetricsPath = "/usr/bin/powermetrics"
-var powermetricsArguments = ["-n", "1", "-i", "\(sampleRateMs)", "--samplers", powermetricsSamplers]
-if showInitialUsage {
-    powermetricsArguments.insert("--show-initial-usage", at: 0)
+let ioregPath = "/usr/sbin/ioreg"
+let commandPath: String
+let commandArguments: [String]
+switch providerSource {
+case "ioreg-smc":
+    commandPath = ioregPath
+    commandArguments = ["-r", "-c", "AppleSMCKeysEndpoint", "-l"]
+default:
+    commandPath = powermetricsPath
+    var arguments = ["-n", "1", "-i", "\(sampleRateMs)", "--samplers", powermetricsSamplers]
+    if showInitialUsage {
+        arguments.insert("--show-initial-usage", at: 0)
+    }
+    commandArguments = arguments
 }
 let started = Date()
 var timedOut = false
@@ -783,10 +828,10 @@ var runError = ""
 var stdoutText = ""
 var stderrText = ""
 
-if FileManager.default.isExecutableFile(atPath: powermetricsPath) {
+if FileManager.default.isExecutableFile(atPath: commandPath) {
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: powermetricsPath)
-    process.arguments = powermetricsArguments
+    process.executableURL = URL(fileURLWithPath: commandPath)
+    process.arguments = commandArguments
     let stdoutPipe = Pipe()
     let stderrPipe = Pipe()
     process.standardOutput = stdoutPipe
@@ -818,14 +863,14 @@ if FileManager.default.isExecutableFile(atPath: powermetricsPath) {
     stdoutText = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
     stderrText = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 } else {
-    runError = "powermetrics missing at \(powermetricsPath)"
+    runError = "\(providerSource) command missing at \(commandPath)"
 }
 
 let finished = Date()
 let combinedOutput = stdoutText + "\n" + stderrText
 let numericTemperaturePatterns = [
-    #"-?\d+(\.\d+)?[ \t]*(°C|celsius|degrees?[ \t]*C|C\b)"#,
-    #"\b(temperature|temp)\b[^\r\n0-9-]*-?\d+(\.\d+)?"#,
+    #"-?\d+(\.\d+)?([ \t]*°C|[ \t]+(celsius|degrees?[ \t]*C|C\b))"#,
+    #"(^|[^A-Za-z0-9_-])([A-Za-z0-9]*temperature|temp)[^A-Za-z0-9_:=.-]*(=|:)[ \t]*-?\d+(\.\d+)?([ \t]*(°C|celsius|degrees?[ \t]*C|C\b))?"#,
 ]
 let numericObserved = numericTemperaturePatterns.contains { pattern in
     combinedOutput.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
@@ -833,7 +878,7 @@ let numericObserved = numericTemperaturePatterns.contains { pattern in
 let helperOwned = geteuid() == 0
 let durationSeconds = Int(finished.timeIntervalSince(started).rounded(.up))
 
-let commandLine = "\(powermetricsPath) \(powermetricsArguments.joined(separator: " "))"
+let commandLine = "\(commandPath) \(commandArguments.joined(separator: " "))"
 let sampleOutput = """
 $ \(commandLine)
 \(stdoutText)
@@ -847,6 +892,7 @@ if let outputPath {
 
 let status = """
 command=\(commandLine)
+providerSource=\(providerSource)
 startedAt=\(ISO8601DateFormatter().string(from: started))
 finishedAt=\(ISO8601DateFormatter().string(from: finished))
 durationSeconds=\(durationSeconds)
@@ -870,8 +916,10 @@ timestampUtc=\(isoNow())
 pid=\(getpid())
 uid=\(getuid())
 euid=\(geteuid())
-providerSource=powermetrics
+providerSource=\(providerSource)
+providerCommandPath=\(commandPath)
 powermetricsPath=\(powermetricsPath)
+ioregPath=\(ioregPath)
 sampleRateMs=\(sampleRateMs)
 timeoutSeconds=\(timeoutSeconds)
 showInitialUsage=\(showInitialUsage)
@@ -923,7 +971,7 @@ EOF
 }
 
 write_launchdaemon_plist() {
-    local helper_path helper_log sample_output sample_status stdout_log stderr_log powermetrics_samplers show_initial_usage_arg
+    local helper_path helper_log sample_output sample_status stdout_log stderr_log powermetrics_samplers provider_source show_initial_usage_arg
     helper_path="$(xml_escape "$MACOS_DIR/$HELPER_NAME")"
     helper_log="$(xml_escape "$RUNTIME_DIR/provider.log")"
     sample_output="$(xml_escape "$RUNTIME_DIR/numeric-temperature-output.txt")"
@@ -931,6 +979,7 @@ write_launchdaemon_plist() {
     stdout_log="$(xml_escape "$RUNTIME_DIR/provider.stdout.log")"
     stderr_log="$(xml_escape "$RUNTIME_DIR/provider.stderr.log")"
     powermetrics_samplers="$(xml_escape "$POWERMETRICS_SAMPLERS")"
+    provider_source="$(xml_escape "$PROVIDER_SOURCE")"
     show_initial_usage_arg=""
     if [[ "$SHOW_INITIAL_USAGE" == true ]]; then
         show_initial_usage_arg="    <string>--show-initial-usage</string>"
@@ -952,6 +1001,8 @@ write_launchdaemon_plist() {
     <string>$sample_output</string>
     <string>--sample-status</string>
     <string>$sample_status</string>
+    <string>--provider-source</string>
+    <string>$provider_source</string>
     <string>--timeout-seconds</string>
     <string>$TIMEOUT_SECONDS</string>
     <string>--sample-rate-ms</string>
@@ -1037,7 +1088,7 @@ cat >"$EVIDENCE_DIR/logs.txt" <<EOF
 capturedAtUtc=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 caseId=$CASE_ID
 mode=prepare-or-register
-providerSource=powermetrics
+providerSource=$PROVIDER_SOURCE
 helperLabel=$HELPER_LABEL
 identitySuffix=$IDENTITY_SUFFIX
 registerAttempted=$REGISTER
@@ -1053,7 +1104,7 @@ macOSVersion=$MACOS_VERSION
 cpu=$CPU
 hardwareClass=$HARDWARE_CLASS
 appBundleIdentifier=$BUNDLE_ID
-providerSource=powermetrics
+providerSource=$PROVIDER_SOURCE
 helperOwned=false
 processInfoSupplementalOnly=true
 numericCutoffSource=false
@@ -1083,10 +1134,10 @@ cat >"$OUTPUT_DIR/manual-result.md" <<EOF
 
 ## Provider Case
 - Case ID: $CASE_ID
-- Provider source: powermetrics
+- Provider source: $PROVIDER_SOURCE
 - Powermetrics samplers: $POWERMETRICS_SAMPLERS
-- Helper-owned provider: TODO - capture after SMAppService approval
-- Numeric cutoff source: TODO - capture helper powermetrics output, freshness, and cadence
+- Helper-owned provider: TODO - capture after SMAppService approval and at least a 15 second wait
+- Numeric cutoff source: TODO - capture helper provider output, freshness, and cadence
 - No user-visible prompts: yes
 - ProcessInfo role: supplemental-only
 
@@ -1114,9 +1165,9 @@ manifest_row() {
 
 {
     printf 'checkId\tstatus\tevidencePath\tnote\n'
-    manifest_row "provider-command-or-api" "evidence" "evidence/provider-command-or-api.txt" "SMAppService LaunchDaemon powermetrics command captured"
+    manifest_row "provider-command-or-api" "evidence" "evidence/provider-command-or-api.txt" "SMAppService LaunchDaemon provider command captured"
     manifest_row "helper-ownership-context" "TODO" "" "Capture root helper runtime context after approval"
-    manifest_row "numeric-temperature-output" "TODO" "" "Capture helper powermetrics output after approval"
+    manifest_row "numeric-temperature-output" "TODO" "" "Capture helper provider output after approval"
     manifest_row "freshness-samples" "TODO" "" "Capture repeated helper/root samples and compute max age"
     manifest_row "active-cadence-samples" "TODO" "" "Capture samples at active cadence"
     manifest_row "idle-cadence-samples" "TODO" "" "Capture samples at idle cadence"
@@ -1124,7 +1175,7 @@ manifest_row() {
     manifest_row "timeout-fail-closed" "TODO" "" "Attach policy evidence that timeout blocks/releases Bag Mode"
     manifest_row "permission-behavior" "TODO" "" "Capture helper/root permission behavior after approval"
     manifest_row "no-user-visible-prompts" "evidence" "evidence/no-user-visible-prompts.txt" "SMAppService approval path; no promptable sudo"
-    manifest_row "closed-bag-coverage-analysis" "TODO" "" "Analyze whether powermetrics reading covers closed-bag risk"
+    manifest_row "closed-bag-coverage-analysis" "TODO" "" "Analyze whether provider reading covers closed-bag risk"
     manifest_row "processinfo-supplemental-signal" "evidence" "evidence/processinfo-supplemental-signal.txt" "ProcessInfo thermalState captured as supplemental signal"
     manifest_row "safety-contract-tests" "TODO" "" "Attach mocked safety contract run for selected provider"
     manifest_row "unavailable-fail-closed" "TODO" "" "Attach unavailable provider fail-closed evidence"
@@ -1160,6 +1211,7 @@ SMAppService identity:
 - App bundle id: \`$BUNDLE_ID\`
 - Helper label: \`$HELPER_LABEL\`
 - Identity suffix: \`$IDENTITY_SUFFIX\`
+- Provider source: \`$PROVIDER_SOURCE\`
 
 Sampling:
 

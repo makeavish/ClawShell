@@ -138,13 +138,13 @@ if swift_test_unavailable_only "$swift_test_classifier_mixed"; then
 fi
 
 echo "==> temperature numeric detector smoke"
-temperature_numeric_grep_pattern='(-?[0-9]+([.][0-9]+)?[[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))|(\<(temperature|temp)\>[^0-9-]*-?[0-9]+([.][0-9]+)?)'
+temperature_numeric_grep_pattern='(-?[0-9]+([.][0-9]+)?([[:blank:]]*°C|[[:blank:]]+(celsius|degrees?[[:blank:]]*C|C\>)))|((^|[^A-Za-z0-9_-])([A-Za-z0-9]*temperature|temp)[^A-Za-z0-9_:=.-]*(=|:)[[:blank:]]*-?[0-9]+([.][0-9]+)?([[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))?)'
 swift - <<'SWIFT'
 import Foundation
 
 let numericTemperaturePatterns = [
-    #"-?\d+(\.\d+)?[ \t]*(°C|celsius|degrees?[ \t]*C|C\b)"#,
-    #"\b(temperature|temp)\b[^\r\n0-9-]*-?\d+(\.\d+)?"#,
+    #"-?\d+(\.\d+)?([ \t]*°C|[ \t]+(celsius|degrees?[ \t]*C|C\b))"#,
+    #"(^|[^A-Za-z0-9_-])([A-Za-z0-9]*temperature|temp)[^A-Za-z0-9_:=.-]*(=|:)[ \t]*-?\d+(\.\d+)?([ \t]*(°C|celsius|degrees?[ \t]*C|C\b))?"#,
 ]
 
 func detectsTemperature(_ text: String) -> Bool {
@@ -156,8 +156,9 @@ func detectsTemperature(_ text: String) -> Bool {
 let positiveFixtures = [
     "CPU die temperature: 42 C",
     "Battery Temperature = 31.5 Celsius",
+    "\"VirtualTemperature\" = 3279",
     "SoC sensor 47°C",
-    "temperature\t42",
+    "temperature: 42",
 ]
 let negativeFixtures = [
     "0.00               \nCodex Helper",
@@ -167,6 +168,7 @@ let negativeFixtures = [
     "attempt 3",
     "template 42",
     "temporary reading 31",
+    "\"Temperature\" = <02007c>",
 ]
 
 for fixture in positiveFixtures where !detectsTemperature(fixture) {
@@ -179,8 +181,9 @@ SWIFT
 for positive_fixture in \
     'CPU die temperature: 42 C' \
     'Battery Temperature = 31.5 Celsius' \
+    '"VirtualTemperature" = 3279' \
     'SoC sensor 47°C' \
-    $'temperature\t42'
+    'temperature: 42'
 do
     if ! printf '%s\n' "$positive_fixture" | grep -Eiq "$temperature_numeric_grep_pattern"; then
         echo "grep temperature detector missed positive fixture: $positive_fixture" >&2
@@ -194,7 +197,8 @@ for negative_fixture in \
     'Current pressure level: Nominal' \
     'attempt 3' \
     'template 42' \
-    'temporary reading 31'
+    'temporary reading 31' \
+    '"Temperature" = <02007c>'
 do
     if printf '%s\n' "$negative_fixture" | grep -Eiq "$temperature_numeric_grep_pattern"; then
         echo "grep temperature detector accepted negative fixture: $negative_fixture" >&2
@@ -1690,6 +1694,11 @@ if ! grep -q '^showInitialUsage=true$' "$temperature_smappservice_provider_prepa
     cat "$temperature_smappservice_provider_prepare/validation-config.txt" >&2
     exit 1
 fi
+if ! grep -q '^providerSource=powermetrics$' "$temperature_smappservice_provider_prepare/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not record default powermetrics provider source" >&2
+    cat "$temperature_smappservice_provider_prepare/validation-config.txt" >&2
+    exit 1
+fi
 if ! grep -q '^powermetricsSamplers=thermal$' "$temperature_smappservice_provider_prepare/validation-config.txt"; then
     echo "Temperature SMAppService provider harness did not record default powermetrics samplers" >&2
     cat "$temperature_smappservice_provider_prepare/validation-config.txt" >&2
@@ -1702,6 +1711,12 @@ if ! grep -q -- '--show-initial-usage' "$temperature_smappservice_provider_prepa
 fi
 if ! grep -q -- '--powermetrics-samplers' "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt"; then
     echo "Temperature SMAppService provider harness did not wire powermetrics sampler argument into the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt" >&2
+    exit 1
+fi
+if ! grep -q -- '--provider-source' "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt" || \
+    ! grep -q '"powermetrics"' "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not wire default provider source into the LaunchDaemon command" >&2
     cat "$temperature_smappservice_provider_prepare/evidence/provider-command-or-api.txt" >&2
     exit 1
 fi
@@ -1745,9 +1760,41 @@ if ! grep -q -- '--powermetrics-samplers' "$temperature_smappservice_provider_al
     exit 1
 fi
 if ! grep -q 'let powermetricsSamplers = argumentValue(after: "--powermetrics-samplers") ?? "thermal"' "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
-    ! grep -q 'var powermetricsArguments = \["-n", "1", "-i", "\\(sampleRateMs)", "--samplers", powermetricsSamplers\]' "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift"; then
+    ! grep -q 'let providerSource = argumentValue(after: "--provider-source") ?? "powermetrics"' "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'var arguments = \["-n", "1", "-i", "\\(sampleRateMs)", "--samplers", powermetricsSamplers\]' "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift"; then
     echo "Temperature SMAppService provider helper source did not consume the configured powermetrics sampler argument" >&2
     cat "$temperature_smappservice_provider_all_samplers/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" >&2
+    exit 1
+fi
+temperature_smappservice_provider_ioreg_smc="$bag_mode_smoke_dir/temperature-smappservice-provider-ioreg-smc"
+CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc \
+    CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=smc \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_ioreg_smc" >/dev/null
+if ! grep -q '^providerSource=ioreg-smc$' "$temperature_smappservice_provider_ioreg_smc/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not record ioreg-smc provider source" >&2
+    cat "$temperature_smappservice_provider_ioreg_smc/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^caseId=apple-silicon-ioreg-smc-smappservice$' "$temperature_smappservice_provider_ioreg_smc/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not use the ioreg-smc default case id" >&2
+    cat "$temperature_smappservice_provider_ioreg_smc/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^powermetricsSamplers=not-used$' "$temperature_smappservice_provider_ioreg_smc/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not ignore stale powermetrics sampler settings for ioreg-smc" >&2
+    cat "$temperature_smappservice_provider_ioreg_smc/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q -- '--provider-source' "$temperature_smappservice_provider_ioreg_smc/evidence/provider-command-or-api.txt" || \
+    ! grep -q '"ioreg-smc"' "$temperature_smappservice_provider_ioreg_smc/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not wire ioreg-smc source into the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_ioreg_smc/evidence/provider-command-or-api.txt" >&2
+    exit 1
+fi
+if ! grep -q 'case "ioreg-smc"' "$temperature_smappservice_provider_ioreg_smc/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'AppleSMCKeysEndpoint' "$temperature_smappservice_provider_ioreg_smc/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift"; then
+    echo "Temperature SMAppService provider helper source did not include ioreg-smc command path" >&2
+    cat "$temperature_smappservice_provider_ioreg_smc/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" >&2
     exit 1
 fi
 temperature_smappservice_provider_multi_samplers="$bag_mode_smoke_dir/temperature-smappservice-provider-multi-samplers"
@@ -2033,6 +2080,20 @@ if ! grep -q "CLAWSHELL_TEMPERATURE_PROVIDER_SHOW_INITIAL_USAGE must be true or 
 fi
 if [[ -e "$temperature_smappservice_provider_bad_bool" ]]; then
     echo "Temperature SMAppService provider harness created evidence for an invalid initial-usage flag" >&2
+    exit 1
+fi
+temperature_smappservice_provider_bad_source="$bag_mode_smoke_dir/temperature-smappservice-provider-bad-source"
+if CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=smc \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_bad_source" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature SMAppService provider harness accepted an invalid provider source" >&2
+    exit 1
+fi
+if ! grep -q "CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE must be one of: powermetrics, ioreg-smc" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if [[ -e "$temperature_smappservice_provider_bad_source" ]]; then
+    echo "Temperature SMAppService provider harness created evidence for an invalid provider source" >&2
     exit 1
 fi
 temperature_smappservice_provider_bad_suffix="$bag_mode_smoke_dir/temperature-smappservice-provider-bad-suffix"
@@ -2387,6 +2448,12 @@ temperature_proof_required_checks=(
 } >"$temperature_proof_manifest"
 printf '$ combined-sensor-signal\ncaptured combined thermal pressure and numeric data\n' >"$temperature_proof_evidence_dir/combined-sensor-signal.txt"
 scripts/temperature-provider-proof-verify.sh --manifest "$temperature_proof_manifest" >/dev/null
+
+temperature_proof_ioreg_smc="$bag_mode_smoke_dir/temperature-proof-ioreg-smc"
+cp -R "$temperature_proof_dir" "$temperature_proof_ioreg_smc"
+sed -i '' 's/providerSource=powermetrics/providerSource=ioreg-smc/' "$temperature_proof_ioreg_smc/validation-config.txt"
+sed -i '' 's/- Provider source: powermetrics/- Provider source: ioreg-smc/' "$temperature_proof_ioreg_smc/manual-result.md"
+scripts/temperature-provider-proof-verify.sh --manifest "$temperature_proof_ioreg_smc/provider-manifest.tsv" >/dev/null
 
 temperature_proof_scaffold="$bag_mode_smoke_dir/temperature-proof-scaffold"
 scripts/temperature-provider-proof-scaffold.sh --output-dir "$temperature_proof_scaffold" >/dev/null
