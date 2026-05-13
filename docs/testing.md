@@ -196,6 +196,19 @@ The proof-attempt harness is non-mutating and uses `sudo -n` only. On machines
 without helper/root-equivalent authorization, it records permission evidence and
 leaves the real proof rows as `TODO`, so verifier failure is expected.
 
+To inventory non-`powermetrics` source candidates for future helper-owned
+sampling without sudo:
+
+```sh
+scripts/temperature-provider-alt-source-probe.sh \
+  --output-dir .build/temperature-provider-proof/alt-source-probe-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+This records local SMC, PMU temperature sensor, die temperature controller, and
+IOReport-style surfaces. It is discovery evidence only: `providerProofReady`
+and `numericCutoffSource` stay `false` until helper-owned numeric output,
+freshness, cadence, timeout behavior, and closed-bag coverage are proven.
+
 To build the no-membership `SMAppService` provider candidate without changing
 helper registration state:
 

@@ -169,6 +169,17 @@ artifact is intentionally incomplete and should fail the structural verifier
 until real helper/root samples, cadence, coverage, and fail-closed evidence are
 attached.
 
+To inventory non-`powermetrics` source candidates without sudo, run:
+
+```sh
+scripts/temperature-provider-alt-source-probe.sh \
+  --output-dir .build/temperature-provider-proof/alt-source-probe-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+This captures SMC, PMU temperature sensor, die temperature controller, and
+IOReport-style discovery evidence. It does not prove helper ownership or select
+a numeric cutoff source.
+
 To build the no-membership `SMAppService` provider candidate without changing
 helper registration state, run:
 
