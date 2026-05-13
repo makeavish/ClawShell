@@ -208,6 +208,9 @@ pmu_temp_sensor_present=false
 die_temp_controller_present=false
 ioreport_temperature_legend_present=false
 numeric_temperature_observed=false
+numeric_candidate_count=0
+
+numeric_candidate_pattern='(^|[^[:alnum:]_-])([[:alnum:]]*temperature|temp)[^[:alnum:]_:=.-]*(=|:)[[:space:]]*-?[0-9]+([.][0-9]+)?([[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))?'
 
 if grep -Fq 'AppleSMCKeysEndpoint' "$EVIDENCE_DIR/smc-endpoint-inventory.txt"; then
     smc_endpoint_present=true
@@ -221,9 +224,22 @@ fi
 if grep -Eiq 'temperature|thermal|temp|die' "$EVIDENCE_DIR/ioreport-temperature-legend-inventory.txt"; then
     ioreport_temperature_legend_present=true
 fi
-if grep -Eiq '\<(temperature|temp|die)\>[^[:cntrl:]]*-?[0-9]+([.][0-9]+)?([[:blank:]]*(°C|celsius|degrees?[[:blank:]]*C|C\>))?' "$EVIDENCE_DIR"/*.txt; then
+grep -RniE "$numeric_candidate_pattern" "$EVIDENCE_DIR"/*.txt |
+    grep -Ev 'IOReportLegend|IOReportChannels' \
+        | awk 'length($0) <= 500' \
+        | head -n "$MAX_LINES" \
+        >"$EVIDENCE_DIR/numeric-temperature-candidates.txt" || true
+numeric_candidate_count="$(wc -l <"$EVIDENCE_DIR/numeric-temperature-candidates.txt" | tr -d '[:space:]')"
+if [[ "$numeric_candidate_count" -gt 0 ]]; then
     numeric_temperature_observed=true
 fi
+{
+    echo "command=grep -RniE numeric temperature candidate pattern evidence/*.txt excluding IOReportLegend/IOReportChannels metadata and long context lines"
+    echo "exitCode=0"
+    echo "numericCandidatePattern=$numeric_candidate_pattern"
+    echo "numericCandidateMaxLines=$MAX_LINES"
+    echo "numericCandidateCount=$numeric_candidate_count"
+} >"$EVIDENCE_DIR/numeric-temperature-candidates.status"
 
 candidate_surface_available=false
 if [[ "$smc_endpoint_present" == true || "$pmu_temp_sensor_present" == true || "$die_temp_controller_present" == true || "$ioreport_temperature_legend_present" == true ]]; then
@@ -245,6 +261,7 @@ ioreportTemperatureLegendPresent=$ioreport_temperature_legend_present
 candidateSurfaceAvailable=$candidate_surface_available
 helperOwned=false
 numericTemperatureObserved=$numeric_temperature_observed
+numericTemperatureCandidateCount=$numeric_candidate_count
 numericCutoffSource=false
 freshnessProven=false
 activeCadenceProven=false
@@ -259,6 +276,7 @@ $(manifest_row "smc-endpoint-inventory" "evidence" "evidence/smc-endpoint-invent
 $(manifest_row "pmu-temperature-sensor-inventory" "evidence" "evidence/pmu-temperature-sensor-inventory.txt" "PMU temperature sensor inventory captured without sudo")
 $(manifest_row "die-temperature-controller-inventory" "evidence" "evidence/die-temperature-controller-inventory.txt" "Die temperature controller inventory captured without sudo")
 $(manifest_row "ioreport-temperature-legend-inventory" "evidence" "evidence/ioreport-temperature-legend-inventory.txt" "IOReport-style temperature/thermal legend inventory captured without sudo")
+$(manifest_row "numeric-temperature-candidates" "evidence" "evidence/numeric-temperature-candidates.txt" "Bounded candidate lines for later provider review; not promoted to cutoff proof")
 $(manifest_row "numeric-cutoff-source" "TODO" "" "Probe does not prove helper-owned numeric cutoff output")
 $(manifest_row "freshness-cadence-coverage" "TODO" "" "Probe does not prove freshness, active/idle cadence, or closed-bag coverage")
 EOF
