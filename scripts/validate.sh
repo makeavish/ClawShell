@@ -929,6 +929,151 @@ if ! grep -q '^batteryFreshWithin10Seconds=true$' "$temperature_fake_dir/validat
     exit 1
 fi
 
+echo "==> temperature provider alternate source probe smoke"
+temperature_alt_source_dir="$bag_mode_smoke_dir/temperature-alt-source"
+scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_dir" >/dev/null
+for required_file in \
+    validation-config.txt \
+    source-probe-manifest.tsv \
+    README.md \
+    evidence/smc-endpoint-inventory.txt \
+    evidence/smc-endpoint-inventory.status \
+    evidence/pmu-temperature-sensor-inventory.txt \
+    evidence/pmu-temperature-sensor-inventory.status \
+    evidence/die-temperature-controller-inventory.txt \
+    evidence/die-temperature-controller-inventory.status \
+    evidence/ioreport-temperature-legend-inventory.txt \
+    evidence/ioreport-temperature-legend-inventory.status
+do
+    if [[ ! -f "$temperature_alt_source_dir/$required_file" ]]; then
+        echo "Temperature alternate source probe did not write expected file: $required_file" >&2
+        exit 1
+    fi
+done
+if ! grep -q '^providerProofReady=false$' "$temperature_alt_source_dir/validation-config.txt"; then
+    echo "Temperature alternate source probe overclaimed provider proof readiness" >&2
+    cat "$temperature_alt_source_dir/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^numericCutoffSource=false$' "$temperature_alt_source_dir/validation-config.txt"; then
+    echo "Temperature alternate source probe promoted discovery output to cutoff source" >&2
+    cat "$temperature_alt_source_dir/validation-config.txt" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "numeric-cutoff-source" && $2 == "TODO" { found = 1 } END { exit !found }' "$temperature_alt_source_dir/source-probe-manifest.tsv"; then
+    echo "Temperature alternate source probe should leave numeric cutoff source as TODO" >&2
+    cat "$temperature_alt_source_dir/source-probe-manifest.tsv" >&2
+    exit 1
+fi
+temperature_alt_source_file="$bag_mode_smoke_dir/temperature-alt-source-file"
+touch "$temperature_alt_source_file"
+if scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_file" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature alternate source probe accepted an output path that is not a directory" >&2
+    exit 1
+fi
+if ! grep -q 'not a directory' "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+temperature_alt_source_non_empty="$bag_mode_smoke_dir/temperature-alt-source-non-empty"
+mkdir -p "$temperature_alt_source_non_empty"
+touch "$temperature_alt_source_non_empty/existing"
+if scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_non_empty" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature alternate source probe overwrote a non-empty output directory" >&2
+    exit 1
+fi
+if ! grep -q 'Output directory is not empty' "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+temperature_alt_source_bad_env="$bag_mode_smoke_dir/temperature-alt-source-bad-env"
+if CLAWSHELL_TEMPERATURE_ALT_SOURCE_TIMEOUT_SECONDS=abc \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_bad_env" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature alternate source probe accepted an invalid timeout value" >&2
+    exit 1
+fi
+if [[ -e "$temperature_alt_source_bad_env" ]]; then
+    echo "Temperature alternate source probe created evidence for an invalid timeout value" >&2
+    exit 1
+fi
+temperature_alt_source_bad_lines="$bag_mode_smoke_dir/temperature-alt-source-bad-lines"
+if CLAWSHELL_TEMPERATURE_ALT_SOURCE_MAX_LINES=abc \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_bad_lines" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature alternate source probe accepted an invalid max-lines value" >&2
+    exit 1
+fi
+if [[ -e "$temperature_alt_source_bad_lines" ]]; then
+    echo "Temperature alternate source probe created evidence for an invalid max-lines value" >&2
+    exit 1
+fi
+temperature_alt_source_symlink="$bag_mode_smoke_dir/temperature-alt-source-symlink"
+temperature_alt_source_symlink_target="$bag_mode_smoke_dir/temperature-alt-source-symlink-target"
+mkdir -p "$temperature_alt_source_symlink_target"
+ln -s "$temperature_alt_source_symlink_target" "$temperature_alt_source_symlink"
+if scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_symlink" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature alternate source probe accepted a symlinked output directory" >&2
+    exit 1
+fi
+if ! grep -q 'must not be a symlink' "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+if find "$temperature_alt_source_symlink_target" -mindepth 1 -print -quit | grep -q .; then
+    echo "Temperature alternate source probe wrote through symlinked output directory" >&2
+    find "$temperature_alt_source_symlink_target" -mindepth 1 -maxdepth 2 -print >&2
+    exit 1
+fi
+if zsh scripts/temperature-provider-alt-source-probe.sh --output-dir "$bag_mode_smoke_dir/temperature-alt-source-zsh" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Temperature alternate source probe unexpectedly ran under explicit zsh" >&2
+    exit 1
+fi
+if ! grep -q "requires bash" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+temperature_alt_source_fake_bin="$bag_mode_smoke_dir/temperature-alt-source-fakes"
+mkdir -p "$temperature_alt_source_fake_bin"
+cat >"$temperature_alt_source_fake_bin/ioreg" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+  *AppleSMCKeysEndpoint*)
+    echo '+-o AppleSMCKeysEndpoint  <class AppleSMCKeysEndpoint>'
+    ;;
+  *AppleARMPMUTempSensor*)
+    echo '+-o AppleARMPMUTempSensor  <class AppleARMPMUTempSensor>'
+    ;;
+  *AppleDieTempController*)
+    echo '+-o AppleDieTempController  <class AppleDieTempController>'
+    ;;
+  *)
+    echo '"IOReportGroupName"="Thermal"'
+    echo '"Temperature" = 3046'
+    ;;
+esac
+EOF
+chmod +x "$temperature_alt_source_fake_bin/ioreg"
+temperature_alt_source_fake="$bag_mode_smoke_dir/temperature-alt-source-fake"
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_TIMEOUT_SECONDS=5 \
+PATH="$temperature_alt_source_fake_bin:$PATH" \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_fake" >/dev/null
+for expected_key in \
+    smcEndpointPresent=true \
+    pmuTempSensorPresent=true \
+    dieTempControllerPresent=true \
+    ioreportTemperatureLegendPresent=true \
+    candidateSurfaceAvailable=true \
+    numericTemperatureObserved=true \
+    helperOwned=false \
+    numericCutoffSource=false \
+    providerProofReady=false
+do
+    if ! grep -q "^$expected_key$" "$temperature_alt_source_fake/validation-config.txt"; then
+        echo "Temperature alternate source probe missing fake field: $expected_key" >&2
+        cat "$temperature_alt_source_fake/validation-config.txt" >&2
+        exit 1
+    fi
+done
+
 echo "==> temperature helper readiness harness smoke"
 temperature_helper_readiness_dir="$bag_mode_smoke_dir/temperature-helper-readiness"
 scripts/temperature-provider-helper-readiness.sh --output-dir "$temperature_helper_readiness_dir" >/dev/null

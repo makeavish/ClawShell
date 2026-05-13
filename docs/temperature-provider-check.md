@@ -221,6 +221,20 @@ available. On the current machine, non-interactive sampling still records
 `sudoPasswordRequired`, so the package remains incomplete proof until helper or
 root-equivalent sampling is available.
 
+To inventory non-`powermetrics` source candidates for future helper-owned
+sampling without sudo, run:
+
+```bash
+scripts/temperature-provider-alt-source-probe.sh \
+  --output-dir .build/temperature-provider-proof/alt-source-probe-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+This captures local SMC, PMU temperature sensor, die temperature controller, and
+IOReport-style surfaces as discovery evidence. It does not select a provider or
+promote numeric cutoff proof; `providerProofReady=false` remains expected until
+helper-owned numeric output, freshness, cadence, timeout behavior, and
+closed-bag coverage are proven.
+
 To build the no-membership `SMAppService` provider candidate without changing
 helper registration state, run:
 
