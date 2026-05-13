@@ -1167,6 +1167,8 @@ for required_file in \
     evidence/pmu-temperature-sensor-inventory.status \
     evidence/die-temperature-controller-inventory.txt \
     evidence/die-temperature-controller-inventory.status \
+    evidence/hidutil-service-inventory.txt \
+    evidence/hidutil-service-inventory.status \
     evidence/ioreport-temperature-legend-inventory.txt \
     evidence/ioreport-temperature-legend-inventory.status \
     evidence/numeric-temperature-candidates.txt \
@@ -1299,6 +1301,21 @@ case "$*" in
 esac
 EOF
 chmod +x "$temperature_alt_source_fake_bin/ioreg"
+cat >"$temperature_alt_source_fake_bin/hidutil" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "list" ]]; then
+    cat <<'SERVICES'
+Services:
+VendorID ProductID LocationID UsagePage Usage RegistryID  Transport            Class                                Product                            UserClass               Built-In
+0x0      0x0       0x54503164 65280     5     0x1000008b8 (null)               AppleSMCKeysEndpoint                 PMU tdev1                          (null)                  1
+0x0      0x0       0x54503762 65280     5     0x100000a5e (null)               AppleSMCKeysEndpoint                 PMU tdie7                          (null)                  1
+SERVICES
+else
+    echo "unexpected hidutil arguments: $*" >&2
+    exit 64
+fi
+EOF
+chmod +x "$temperature_alt_source_fake_bin/hidutil"
 temperature_alt_source_fake="$bag_mode_smoke_dir/temperature-alt-source-fake"
 CLAWSHELL_TEMPERATURE_ALT_SOURCE_TIMEOUT_SECONDS=5 \
 PATH="$temperature_alt_source_fake_bin:$PATH" \
@@ -1307,6 +1324,8 @@ for expected_key in \
     smcEndpointPresent=true \
     pmuTempSensorPresent=true \
     dieTempControllerPresent=true \
+    hidutilAvailable=true \
+    hidPmuTemperatureInventoryPresent=true \
     ioreportTemperatureLegendPresent=true \
     candidateSurfaceAvailable=true \
     numericTemperatureObserved=true \
@@ -1363,6 +1382,11 @@ if grep -Eq '3044|3119' "$temperature_alt_source_fake/evidence/numeric-temperatu
 fi
 if ! awk -F '\t' '$1 == "numeric-temperature-candidates" && $2 == "evidence" && $3 == "evidence/numeric-temperature-candidates.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
     echo "Temperature alternate source probe manifest did not attach numeric candidate evidence" >&2
+    cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "hidutil-service-inventory" && $2 == "evidence" && $3 == "evidence/hidutil-service-inventory.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
+    echo "Temperature alternate source probe manifest did not attach hidutil service inventory evidence" >&2
     cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
     exit 1
 fi
