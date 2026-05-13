@@ -8,7 +8,10 @@ Follow-up: [#29](https://github.com/makeavish/ClawShell/issues/29)
 
 Harness artifact: [PR #22](https://github.com/makeavish/ClawShell/pull/22)
 
-Latest local apply artifact: `.build/power-validation/bag-mode-matrix/apple-silicon-ac-internal-20260513T115058Z`
+Latest local apply artifacts:
+
+- `.build/power-validation/bag-mode-matrix/apple-silicon-ac-internal-20260513T115058Z`
+- `.build/power-validation/bag-mode-matrix/apple-silicon-battery-internal-20260513T162945Z`
 
 ## Question
 
@@ -29,7 +32,7 @@ PR #22 added `scripts/bag-mode-primitive-validation.sh`, a dedicated harness for
 
 This proves the evidence workflow exists. It does not prove the primitive is reliable.
 
-The latest local apply artifact records an Apple Silicon, AC, internal-display,
+The first local apply artifact records an Apple Silicon, AC, internal-display,
 normal lifecycle run on macOS 26.5:
 
 ```text
@@ -50,16 +53,40 @@ result as `inconclusive` and reopen recovery as `yes`; the verifier passed for
 this single case. Treat this as verified inconclusive matrix evidence for the
 AC/internal/reopen-recovery case, not as a primitive pass.
 
+The follow-up battery/internal artifact records an Apple Silicon, battery,
+internal-display, normal lifecycle run on macOS 26.5:
+
+```text
+artifact=.build/power-validation/bag-mode-matrix/apple-silicon-battery-internal-20260513T162945Z
+mode=apply
+testOnly=false
+rebootHeld=0
+candidateCommand=/usr/bin/pmset disablesleep 1
+previousDisablesleep=0
+rollbackCommand=/usr/bin/pmset disablesleep 0
+```
+
+This artifact also contains `before/`, `during-applied/`,
+`after-lid-window/`, and `after-rollback/` snapshots. The `before` snapshot
+shows `Battery Power`; the `during-applied` and `after-lid-window`
+`pmset -g live` snapshots both showed `SleepDisabled 1`; rollback restored
+the prior value `0`. The operator reported that the initial closed-lid battery
+window stayed blocked, reopening during the applied window recovered cleanly,
+and the laptop later slept after the script completed. Treat the later sleep as
+expected post-rollback behavior because the harness restored `SleepDisabled=0`.
+The verifier passed for this single battery/internal case, so this is verified
+pass evidence for the battery/internal/reopen-recovery normal lifecycle case.
+
 ## Missing Evidence
 
-Only one primitive-only case has verified evidence so far, and that case is
-inconclusive. Missing matrix coverage still includes:
+Two primitive-only cases have verified evidence so far: AC/internal is
+inconclusive, and battery/internal reopen-recovery passed for the normal
+lifecycle. Missing matrix coverage still includes:
 
 - macOS 13, 14, and 15+ where available
 - Apple Silicon, and Intel if Intel support remains in scope
-- battery
 - external display and no-external-display cases where physically available
-- open and closed lid paths beyond the current inconclusive reopen-recovery run
+- open and closed lid paths beyond the current reopen-recovery runs
 - app quit, app crash, and reboot while held lifecycle cases
 
 Helper-dependent cases, such as helper restart and helper upgrade mid-hold, are deferred until #27 produces a validated no-membership helper prototype. Until then, each helper-only lifecycle row must be marked `N/A` or `deferred until #27` in `manual-result.md`.
@@ -96,7 +123,9 @@ The verifier fails missing files, baseline-only captures, test-only fake-`pmset`
 
 ## Conclusion
 
-The primitive remains unproven. The first real Apple Silicon AC/internal apply
-case is structurally verified but inconclusive. Production Bag Mode must stay
-blocked until [#29](https://github.com/makeavish/ClawShell/issues/29) records a
-reliable hardware matrix or the TDD switches to a different proven primitive.
+The primitive remains unproven. The Apple Silicon battery/internal normal
+reopen-recovery case now has verified pass evidence, but the AC/internal case
+is still inconclusive and broader display/lifecycle coverage is missing.
+Production Bag Mode must stay blocked until
+[#29](https://github.com/makeavish/ClawShell/issues/29) records a reliable
+hardware matrix or the TDD switches to a different proven primitive.
