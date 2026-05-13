@@ -1091,7 +1091,8 @@ for required_file in \
     evidence/ioreport-temperature-legend-inventory.txt \
     evidence/ioreport-temperature-legend-inventory.status \
     evidence/numeric-temperature-candidates.txt \
-    evidence/numeric-temperature-candidates.status
+    evidence/numeric-temperature-candidates.status \
+    evidence/rejected-temperature-candidates.txt
 do
     if [[ ! -f "$temperature_alt_source_dir/$required_file" ]]; then
         echo "Temperature alternate source probe did not write expected file: $required_file" >&2
@@ -1186,6 +1187,10 @@ cat >"$temperature_alt_source_fake_bin/ioreg" <<'EOF'
 case "$*" in
   *AppleSMCKeysEndpoint*)
     echo '+-o AppleSMCKeysEndpoint  <class AppleSMCKeysEndpoint>'
+    echo '  | +-o AppleSmartBatteryManager  <class AppleSmartBatteryManager>'
+    echo '  | | +-o AppleSmartBattery  <class AppleSmartBattery>'
+    echo '  | |   "Temperature" = 3044'
+    echo '  | |   "VirtualTemperature" = 3119'
     ;;
   *AppleARMPMUTempSensor*)
     echo '+-o AppleARMPMUTempSensor  <class AppleARMPMUTempSensor>'
@@ -1194,6 +1199,11 @@ case "$*" in
     echo '+-o AppleDieTempController  <class AppleDieTempController>'
     ;;
   *)
+    echo '+-o AppleSmartBatteryManager  <class AppleSmartBatteryManager>'
+    echo '  | +-o AppleSmartBattery  <class AppleSmartBattery>'
+    echo '  |   "Temperature" = 3044'
+    echo '  |   "VirtualTemperature" = 3119'
+    echo '+-o AppleARMIODevice  <class AppleARMIODevice>'
     echo '    | | |   "die-id" = <00000000>'
     echo '    | |   |       |     |   "gyro-temp-table" = <02007c185400d3ff1a000000>'
     echo '    | |   |       |   +-o als-temp  <class AppleSPUHIDInterface, id 0x10000085f>'
@@ -1222,6 +1232,9 @@ for expected_key in \
     candidateSurfaceAvailable=true \
     numericTemperatureObserved=true \
     numericTemperatureCandidateCount=4 \
+    numericTemperatureRawCandidateCount=8 \
+    numericTemperatureRejectedBatteryContextCount=4 \
+    numericTemperatureRejectionReason=none \
     helperOwned=false \
     numericCutoffSource=false \
     providerProofReady=false
@@ -1249,8 +1262,33 @@ if grep -Eq 'die-id|gyro-temp-table|als-temp|02007c|BatteryData|AverageTemperatu
     cat "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt" >&2
     exit 1
 fi
+for rejected_candidate in \
+    '"Temperature" = 3044' \
+    '"VirtualTemperature" = 3119'
+do
+    if ! grep -q "$rejected_candidate" "$temperature_alt_source_fake/evidence/rejected-temperature-candidates.txt"; then
+        echo "Temperature alternate source probe did not retain rejected battery-context candidate line: $rejected_candidate" >&2
+        cat "$temperature_alt_source_fake/evidence/rejected-temperature-candidates.txt" >&2
+        exit 1
+    fi
+done
+if [[ "$(grep -Ec '3044|3119' "$temperature_alt_source_fake/evidence/rejected-temperature-candidates.txt")" -ne 4 ]]; then
+    echo "Temperature alternate source probe did not reject battery-context candidates from both tree inventories" >&2
+    cat "$temperature_alt_source_fake/evidence/rejected-temperature-candidates.txt" >&2
+    exit 1
+fi
+if grep -Eq '3044|3119' "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt"; then
+    echo "Temperature alternate source probe promoted battery-context candidates" >&2
+    cat "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt" >&2
+    exit 1
+fi
 if ! awk -F '\t' '$1 == "numeric-temperature-candidates" && $2 == "evidence" && $3 == "evidence/numeric-temperature-candidates.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
     echo "Temperature alternate source probe manifest did not attach numeric candidate evidence" >&2
+    cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "rejected-temperature-candidates" && $2 == "evidence" && $3 == "evidence/rejected-temperature-candidates.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
+    echo "Temperature alternate source probe manifest did not attach rejected candidate evidence" >&2
     cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
     exit 1
 fi
