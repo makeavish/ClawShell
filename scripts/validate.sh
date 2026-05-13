@@ -943,7 +943,9 @@ for required_file in \
     evidence/die-temperature-controller-inventory.txt \
     evidence/die-temperature-controller-inventory.status \
     evidence/ioreport-temperature-legend-inventory.txt \
-    evidence/ioreport-temperature-legend-inventory.status
+    evidence/ioreport-temperature-legend-inventory.status \
+    evidence/numeric-temperature-candidates.txt \
+    evidence/numeric-temperature-candidates.status
 do
     if [[ ! -f "$temperature_alt_source_dir/$required_file" ]]; then
         echo "Temperature alternate source probe did not write expected file: $required_file" >&2
@@ -1046,8 +1048,18 @@ case "$*" in
     echo '+-o AppleDieTempController  <class AppleDieTempController>'
     ;;
   *)
+    echo '    | | |   "die-id" = <00000000>'
+    echo '    | |   |       |     |   "gyro-temp-table" = <02007c185400d3ff1a000000>'
+    echo '    | |   |       |   +-o als-temp  <class AppleSPUHIDInterface, id 0x10000085f>'
+    printf '    | |       "BatteryData" = {"Raw"=<'
+    printf 'aa%.0s' {1..260}
+    printf '>,"AverageTemperature"=264,"MaximumTemperature"=40}\n'
+    echo '    | |   |       |     |   "Temperature" = <02007c185400d3ff1a000000>'
     echo '"IOReportGroupName"="Thermal"'
     echo '"Temperature" = 3046'
+    echo '"VirtualTemperature" = 3139'
+    echo 'CPU die temperature: 42 C'
+    echo 'temp: 41'
     ;;
 esac
 EOF
@@ -1063,6 +1075,7 @@ for expected_key in \
     ioreportTemperatureLegendPresent=true \
     candidateSurfaceAvailable=true \
     numericTemperatureObserved=true \
+    numericTemperatureCandidateCount=4 \
     helperOwned=false \
     numericCutoffSource=false \
     providerProofReady=false
@@ -1073,6 +1086,28 @@ do
         exit 1
     fi
 done
+for expected_candidate in \
+    '"Temperature" = 3046' \
+    '"VirtualTemperature" = 3139' \
+    'CPU die temperature: 42 C' \
+    'temp: 41'
+do
+    if ! grep -q "$expected_candidate" "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt"; then
+        echo "Temperature alternate source probe did not retain fake numeric candidate line: $expected_candidate" >&2
+        cat "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt" >&2
+        exit 1
+    fi
+done
+if grep -Eq 'die-id|gyro-temp-table|als-temp|02007c|BatteryData|AverageTemperature|MaximumTemperature' "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt"; then
+    echo "Temperature alternate source probe retained non-scalar ID/table/blob candidates" >&2
+    cat "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "numeric-temperature-candidates" && $2 == "evidence" && $3 == "evidence/numeric-temperature-candidates.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
+    echo "Temperature alternate source probe manifest did not attach numeric candidate evidence" >&2
+    cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
+    exit 1
+fi
 
 echo "==> temperature helper readiness harness smoke"
 temperature_helper_readiness_dir="$bag_mode_smoke_dir/temperature-helper-readiness"

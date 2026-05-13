@@ -230,10 +230,15 @@ scripts/temperature-provider-alt-source-probe.sh \
 ```
 
 This captures local SMC, PMU temperature sensor, die temperature controller, and
-IOReport-style surfaces as discovery evidence. It does not select a provider or
-promote numeric cutoff proof; `providerProofReady=false` remains expected until
-helper-owned numeric output, freshness, cadence, timeout behavior, and
-closed-bag coverage are proven.
+IOReport-style surfaces as discovery evidence. It also writes
+`evidence/numeric-temperature-candidates.txt`, a bounded list of captured lines
+that look like labeled numeric temperature values and should be reviewed before
+the next helper-owned provider attempt. Generic `die-id`, `die-count`, and
+`*-temp` table/interface identifiers are intentionally excluded from that
+candidate list. The probe does not select a provider or promote numeric cutoff
+proof; `providerProofReady=false` remains expected until helper-owned numeric
+output, freshness, cadence, timeout behavior, and closed-bag coverage are
+proven.
 
 To build the no-membership `SMAppService` provider candidate without changing
 helper registration state, run:
