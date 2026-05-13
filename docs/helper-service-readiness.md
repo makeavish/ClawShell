@@ -407,6 +407,22 @@ manifest rows automatically; review the captured output, update the manifest
 and manual result deliberately, then run the verifier before attaching the
 artifact to #27.
 
+Use the review helper to produce a non-mutating promotion map before editing a
+captured package:
+
+```bash
+scripts/helper-service-prototype-review-captures.sh \
+  --artifact-dir .build/helper-service-prototype/<same-smappservice-register-artifact> \
+  --output .build/helper-service-prototype/<same-smappservice-register-artifact>/review-candidates.tsv
+```
+
+The report is intentionally advisory and emits every required verifier row plus
+optional package/fallback rows. `promote-candidate` means the captured files
+match the local mechanical checks for that row, `review-needed` means the
+evidence exists but still needs an operator judgment such as confirming the
+approval/password flow, `keep-todo` means the row is not proven by the artifact,
+and `not-applicable` marks unused optional rows.
+
 After rebooting the machine with the same helper approval state, append
 non-mutating reboot-lifecycle evidence to that same artifact:
 

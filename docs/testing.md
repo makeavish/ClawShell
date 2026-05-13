@@ -434,6 +434,21 @@ logs, helper stdout/stderr, and unified logs. It does not call `register()` or
 `unregister()`, and it does not promote manifest rows automatically; review the
 captured output before turning any `TODO` row into evidence.
 
+To make that review repeatable without editing the evidence package, generate a
+promotion-candidate report:
+
+```sh
+scripts/helper-service-prototype-review-captures.sh \
+  --artifact-dir .build/helper-service-prototype/<same-smappservice-register-artifact> \
+  --output .build/helper-service-prototype/<same-smappservice-register-artifact>/review-candidates.tsv
+```
+
+The report emits every required verifier row plus optional package/fallback
+rows. It marks mechanically recognizable rows as `promote-candidate`, rows that
+still need human confirmation as `review-needed`, rows that must stay
+incomplete as `keep-todo`, and unused optional rows as `not-applicable`. It
+never edits `prototype-manifest.tsv` or `manual-result.md`.
+
 After rebooting the machine with the same approved helper artifact, append
 non-mutating reboot evidence to that artifact:
 
