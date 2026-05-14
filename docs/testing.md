@@ -215,6 +215,22 @@ The scaffold intentionally contains `TODO` manifest rows and should fail the
 verifier until the rows are replaced with evidence, concrete N/A reasons, or
 concrete deferrals.
 
+To record whether external-display Bag Mode rows are physically available on the
+current machine:
+
+```sh
+scripts/display-topology-proof.sh \
+  --output-dir .build/display-topology-proof/local-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+The artifact writes `validation-config.txt`, `display-topology.tsv`,
+`external-display-manifest.tsv`, and `summary.md`. It avoids serial/vendor
+metadata by storing stable display labels, connection/display type, online/main
+state, and resolution. If no external display is attached in
+`SPDisplaysDataType`, the manifest marks AC and battery external-display rows
+`n/a` with a concrete unavailable-hardware reason. This is availability/N/A
+evidence only; it does not exercise lid-close or Bag Mode lifecycle behavior.
+
 Before attaching a matrix evidence root, run:
 
 ```sh
