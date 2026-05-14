@@ -108,10 +108,12 @@ public final class AgentMonitor: AppLifecycleComponent {
 
     public func applyIntegrationEvent(_ event: HookAdapterEvent, at now: Date) {
         queue.sync {
+            let settings = settingsProvider()
+            stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
+            stateMachine.applyManualOverrides(settings.manualOverrides, at: now)
+
             do {
                 let snapshots = try snapshotProvider.snapshots()
-                let settings = settingsProvider()
-                stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
                 let detector = AgentProcessDetector(settings: settings)
                 let observations = detector.observations(in: snapshots)
                 stateMachine.applyIntegrationEvent(event, at: now, fallbackObservations: observations)
@@ -123,11 +125,12 @@ public final class AgentMonitor: AppLifecycleComponent {
 
     private func pollOnQueue() {
         let timestamp = now()
+        let settings = settingsProvider()
+        stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
+        stateMachine.applyManualOverrides(settings.manualOverrides, at: timestamp)
 
         do {
             let snapshots = try snapshotProvider.snapshots()
-            let settings = settingsProvider()
-            stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
             let detector = AgentProcessDetector(settings: settings)
             let observations = detector.observations(in: snapshots)
             stateMachine.applyProcessObservations(observations, at: timestamp)
