@@ -436,6 +436,202 @@ test_list_error=""
 temperature_validation_before=""
 trap '[[ -n "$test_list_output" ]] && rm -f "$test_list_output"; [[ -n "$test_list_error" ]] && rm -f "$test_list_error"; [[ -n "$temperature_validation_before" ]] && rm -f "$temperature_validation_before"; rm -f "$timed_idle_guidance_error" "$bag_mode_smoke_error"; rm -rf "$timed_idle_guidance_dir" "$bag_mode_smoke_dir"' EXIT
 
+echo "==> packaging consent audit smoke"
+packaging_audit_fixture="$bag_mode_smoke_dir/packaging-consent-audit"
+packaging_audit_app="$packaging_audit_fixture/ClawShell.app"
+mkdir -p "$packaging_audit_app/Contents/MacOS"
+cat >"$packaging_audit_app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>ClawShell</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.clawshell.app</string>
+  <key>CFBundleName</key>
+  <string>ClawShell</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+</dict>
+</plist>
+EOF
+printf '#!/usr/bin/env bash\n' >"$packaging_audit_app/Contents/MacOS/ClawShell"
+chmod +x "$packaging_audit_app/Contents/MacOS/ClawShell"
+packaging_audit_pass="$packaging_audit_fixture/pass"
+scripts/packaging-consent-audit.sh \
+    --output-dir "$packaging_audit_pass" \
+    --app-bundle "$packaging_audit_app" >/dev/null
+if ! grep -q '^result=pass$' "$packaging_audit_pass/validation-config.txt"; then
+    echo "Packaging consent audit did not pass the clean fixture" >&2
+    cat "$packaging_audit_pass/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_no_rg="$packaging_audit_fixture/pass-no-rg"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin" scripts/packaging-consent-audit.sh \
+    --output-dir "$packaging_audit_no_rg" \
+    --app-bundle "$packaging_audit_app" >/dev/null
+if ! grep -q '^result=pass$' "$packaging_audit_no_rg/validation-config.txt"; then
+    echo "Packaging consent audit did not pass the clean fixture without rg in PATH" >&2
+    cat "$packaging_audit_no_rg/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_review_app="$packaging_audit_fixture/ClawShell-review.app"
+cp -R "$packaging_audit_app" "$packaging_audit_review_app"
+mkdir -p "$packaging_audit_review_app/Contents/Library/LaunchDaemons"
+printf 'helper plist fixture\n' >"$packaging_audit_review_app/Contents/Library/LaunchDaemons/com.example.helper.plist"
+packaging_audit_review="$packaging_audit_fixture/review"
+if scripts/packaging-consent-audit.sh \
+    --output-dir "$packaging_audit_review" \
+    --app-bundle "$packaging_audit_review_app" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Packaging consent audit accepted helper LaunchDaemon assets without review" >&2
+    cat "$packaging_audit_review/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^result=needs-review$' "$packaging_audit_review/validation-config.txt"; then
+    echo "Packaging consent audit did not mark helper LaunchDaemon fixture for review" >&2
+    cat "$packaging_audit_review/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_privileged_app="$packaging_audit_fixture/ClawShell-privileged.app"
+mkdir -p "$packaging_audit_privileged_app/Contents/MacOS"
+cat >"$packaging_audit_privileged_app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>ClawShell</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.clawshell.app</string>
+  <key>CFBundleName</key>
+  <string>ClawShell</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>SMPrivilegedExecutables</key>
+  <dict>
+    <key>com.example.helper</key>
+    <string>identifier com.example.helper</string>
+  </dict>
+</dict>
+</plist>
+EOF
+printf '#!/usr/bin/env bash\n' >"$packaging_audit_privileged_app/Contents/MacOS/ClawShell"
+chmod +x "$packaging_audit_privileged_app/Contents/MacOS/ClawShell"
+packaging_audit_privileged="$packaging_audit_fixture/privileged"
+if scripts/packaging-consent-audit.sh \
+    --output-dir "$packaging_audit_privileged" \
+    --app-bundle "$packaging_audit_privileged_app" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Packaging consent audit accepted SMPrivilegedExecutables without review" >&2
+    cat "$packaging_audit_privileged/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^smPrivilegedExecutablesPresent=true$' "$packaging_audit_privileged/validation-config.txt"; then
+    echo "Packaging consent audit did not detect SMPrivilegedExecutables" >&2
+    cat "$packaging_audit_privileged/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_invalid_plist_app="$packaging_audit_fixture/ClawShell-invalid-plist.app"
+mkdir -p "$packaging_audit_invalid_plist_app/Contents/MacOS"
+printf 'not a plist\n' >"$packaging_audit_invalid_plist_app/Contents/Info.plist"
+printf '#!/usr/bin/env bash\n' >"$packaging_audit_invalid_plist_app/Contents/MacOS/ClawShell"
+chmod +x "$packaging_audit_invalid_plist_app/Contents/MacOS/ClawShell"
+packaging_audit_invalid_plist="$packaging_audit_fixture/invalid-plist"
+if scripts/packaging-consent-audit.sh \
+    --output-dir "$packaging_audit_invalid_plist" \
+    --app-bundle "$packaging_audit_invalid_plist_app" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Packaging consent audit accepted an unparseable Info.plist" >&2
+    cat "$packaging_audit_invalid_plist/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^infoPlistParseable=false$' "$packaging_audit_invalid_plist/validation-config.txt" ||
+   ! grep -q '^result=needs-review$' "$packaging_audit_invalid_plist/validation-config.txt"; then
+    echo "Packaging consent audit did not mark unparseable Info.plist for review" >&2
+    cat "$packaging_audit_invalid_plist/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_fake_root="$packaging_audit_fixture/fake-root"
+mkdir -p "$packaging_audit_fake_root/Sources" "$packaging_audit_fake_root/script"
+printf '// no package\n' >"$packaging_audit_fake_root/Package.swift"
+printf 'SMAppService.daemon(plistName: "com.example.helper.plist").register()\n' >"$packaging_audit_fake_root/Sources/App.swift"
+packaging_audit_source="$packaging_audit_fixture/source-match"
+if CLAWSHELL_PACKAGING_AUDIT_ROOT_DIR="$packaging_audit_fake_root" \
+    scripts/packaging-consent-audit.sh \
+        --output-dir "$packaging_audit_source" \
+        --app-bundle "$packaging_audit_app" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Packaging consent audit accepted production helper activation source without review" >&2
+    cat "$packaging_audit_source/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^productionActivationSourceMatches=true$' "$packaging_audit_source/validation-config.txt"; then
+    echo "Packaging consent audit did not detect production activation source matches" >&2
+    cat "$packaging_audit_source/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_artifact_root="$packaging_audit_fixture/artifact-root"
+mkdir -p "$packaging_audit_artifact_root/Sources" "$packaging_audit_artifact_root/script" "$packaging_audit_artifact_root/Casks"
+printf '// no package\n' >"$packaging_audit_artifact_root/Package.swift"
+printf '# cask fixture\n' >"$packaging_audit_artifact_root/Casks/clawshell.rb"
+packaging_audit_artifact="$packaging_audit_fixture/release-artifact"
+if CLAWSHELL_PACKAGING_AUDIT_ROOT_DIR="$packaging_audit_artifact_root" \
+    scripts/packaging-consent-audit.sh \
+        --output-dir "$packaging_audit_artifact" \
+        --app-bundle "$packaging_audit_app" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Packaging consent audit accepted release artifact matches without review" >&2
+    cat "$packaging_audit_artifact/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^releaseAutomationArtifactMatches=true$' "$packaging_audit_artifact/validation-config.txt"; then
+    echo "Packaging consent audit did not detect release automation artifact matches" >&2
+    cat "$packaging_audit_artifact/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_content_root="$packaging_audit_fixture/content-root"
+mkdir -p "$packaging_audit_content_root/Sources" "$packaging_audit_content_root/script" "$packaging_audit_content_root/.github/workflows"
+printf '// no package\n' >"$packaging_audit_content_root/Package.swift"
+printf 'steps:\n  - run: brew install --cask clawshell\n' >"$packaging_audit_content_root/.github/workflows/release.yml"
+packaging_audit_content="$packaging_audit_fixture/release-content"
+if CLAWSHELL_PACKAGING_AUDIT_ROOT_DIR="$packaging_audit_content_root" \
+    scripts/packaging-consent-audit.sh \
+        --output-dir "$packaging_audit_content" \
+        --app-bundle "$packaging_audit_app" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Packaging consent audit accepted release automation content matches without review" >&2
+    cat "$packaging_audit_content/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^releaseAutomationContentMatches=true$' "$packaging_audit_content/validation-config.txt"; then
+    echo "Packaging consent audit did not detect release automation content matches" >&2
+    cat "$packaging_audit_content/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_stage="$packaging_audit_fixture/stage"
+scripts/packaging-consent-audit.sh \
+    --output-dir "$packaging_audit_stage" \
+    --stage-app >/dev/null
+if ! grep -q '^result=pass$' "$packaging_audit_stage/validation-config.txt"; then
+    echo "Packaging consent audit did not pass isolated --stage-app audit" >&2
+    cat "$packaging_audit_stage/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q 'appBundle=.*/staged/ClawShell.app$' "$packaging_audit_stage/validation-config.txt"; then
+    echo "Packaging consent audit --stage-app did not audit the isolated staged bundle" >&2
+    cat "$packaging_audit_stage/validation-config.txt" >&2
+    exit 1
+fi
+packaging_audit_external_cwd="$bag_mode_smoke_dir/packaging-consent-external-cwd"
+mkdir -p "$packaging_audit_external_cwd"
+(
+    cd "$packaging_audit_external_cwd"
+    "$ROOT_DIR/scripts/packaging-consent-audit.sh" \
+        --output-dir "$bag_mode_smoke_dir/packaging-consent-audit-stage-external" \
+        --stage-app >/dev/null
+)
+if ! grep -q '^result=pass$' "$bag_mode_smoke_dir/packaging-consent-audit-stage-external/validation-config.txt"; then
+    echo "Packaging consent audit --stage-app did not work from outside repo cwd" >&2
+    cat "$bag_mode_smoke_dir/packaging-consent-audit-stage-external/validation-config.txt" >&2
+    exit 1
+fi
+
 if scripts/bag-mode-primitive-validation.sh --output-dir "$bag_mode_smoke_dir/missing-ack" --apply >"$bag_mode_smoke_error" 2>&1; then
     echo "Bag Mode primitive harness allowed --apply without acknowledgement" >&2
     exit 1
