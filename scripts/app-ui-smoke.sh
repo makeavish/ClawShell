@@ -1,0 +1,250 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OUTPUT_DIR=""
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+    cat <<'EOF'
+Usage: scripts/app-ui-smoke.sh --output-dir DIR
+
+Builds and launches the staged ClawShell app bundle, then captures local
+accessibility evidence for the menu bar item. This is a live UI smoke: it opens
+ClawShell and may require Accessibility permission for System Events.
+EOF
+}
+
+strip_trailing_slashes() {
+    local path="$1"
+    while [[ "$path" != "/" && "$path" == */ ]]; do
+        path="${path%/}"
+    done
+    printf '%s\n' "$path"
+}
+
+redact_metadata() {
+    REDACT_HOME="${HOME:-}" REDACT_ROOT="$ROOT_DIR" perl -pe '
+        BEGIN {
+            $home = $ENV{"REDACT_HOME"} // "";
+            $root = $ENV{"REDACT_ROOT"} // "";
+        }
+        s/\Q$root\E/<repo-root>/g if length($root);
+        s/\Q$home\E/<home>/g if length($home);
+        s#/Users/[^/\s:]+#/Users/<user>#g;
+    '
+}
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --output-dir)
+            if [[ "$#" -lt 2 ]]; then
+                echo "--output-dir requires a value" >&2
+                exit 2
+            fi
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ -z "$OUTPUT_DIR" ]]; then
+    echo "Provide --output-dir." >&2
+    usage >&2
+    exit 2
+fi
+
+OUTPUT_DIR_SYMLINK_CHECK="$(strip_trailing_slashes "$OUTPUT_DIR")"
+if [[ -L "$OUTPUT_DIR_SYMLINK_CHECK" ]]; then
+    echo "Output path must not be a symlink: $OUTPUT_DIR" >&2
+    exit 2
+fi
+if [[ -e "$OUTPUT_DIR" && ! -d "$OUTPUT_DIR" ]]; then
+    echo "Output path exists and is not a directory: $OUTPUT_DIR" >&2
+    exit 2
+fi
+if [[ -d "$OUTPUT_DIR" && -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    echo "Output directory is not empty: $OUTPUT_DIR" >&2
+    exit 2
+fi
+
+mkdir -p "$OUTPUT_DIR/evidence"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
+EVIDENCE_DIR="$OUTPUT_DIR/evidence"
+APP_BINARY="$ROOT_DIR/dist/ClawShell.app/Contents/MacOS/ClawShell"
+
+build_output="$(mktemp "$EVIDENCE_DIR/.build.XXXXXX")"
+if "$ROOT_DIR/script/build_and_run.sh" --verify >"$build_output" 2>&1; then
+    build_exit=0
+else
+    build_exit=$?
+fi
+redact_metadata <"$build_output" >"$EVIDENCE_DIR/build-and-run.txt"
+rm -f "$build_output"
+printf 'exitCode=%s\n' "$build_exit" >"$EVIDENCE_DIR/build-and-run.status"
+if [[ "$build_exit" != "0" ]]; then
+    echo "ClawShell app bundle launch verification failed; inspect $EVIDENCE_DIR/build-and-run.txt" >&2
+    exit 1
+fi
+
+expected_pid=""
+matching_count=0
+while read -r candidate_pid; do
+    [[ -n "$candidate_pid" ]] || continue
+    candidate_command="$(ps -p "$candidate_pid" -o command= 2>/dev/null || true)"
+    case "$candidate_command" in
+        "$APP_BINARY"*)
+            expected_pid="$candidate_pid"
+            matching_count=$((matching_count + 1))
+            ;;
+    esac
+done < <(pgrep -x ClawShell || true)
+
+{
+    printf 'appBinary=%s\n' "$APP_BINARY"
+    printf 'matchingStagedProcessCount=%s\n' "$matching_count"
+    printf 'expectedPID=%s\n' "$expected_pid"
+} | redact_metadata >"$EVIDENCE_DIR/staged-process.txt"
+
+if [[ "$matching_count" != "1" || -z "$expected_pid" ]]; then
+    echo "Expected exactly one staged ClawShell process; inspect $EVIDENCE_DIR/staged-process.txt" >&2
+    exit 1
+fi
+
+cli_output="$(mktemp "$EVIDENCE_DIR/.cli.XXXXXX")"
+if swift run --package-path "$ROOT_DIR" ClawShellCLI status >"$cli_output" 2>&1; then
+    cli_exit=0
+else
+    cli_exit=$?
+fi
+redact_metadata <"$cli_output" >"$EVIDENCE_DIR/cli-status.txt"
+rm -f "$cli_output"
+printf 'exitCode=%s\n' "$cli_exit" >"$EVIDENCE_DIR/cli-status.status"
+if [[ "$cli_exit" != "0" ]]; then
+    echo "ClawShell CLI status failed; inspect $EVIDENCE_DIR/cli-status.txt" >&2
+    exit 1
+fi
+
+ui_output="$(mktemp "$EVIDENCE_DIR/.ui.XXXXXX")"
+if CLAWSHELL_EXPECTED_PID="$expected_pid" osascript >"$ui_output" 2>&1 <<'APPLESCRIPT'
+set outputLines to {}
+set expectedPID to system attribute "CLAWSHELL_EXPECTED_PID"
+tell application "System Events"
+    set targetProcess to missing value
+    repeat with candidateProcess in (processes whose name is "ClawShell")
+        if ((unix id of candidateProcess) as text) is expectedPID then
+            set targetProcess to candidateProcess
+            exit repeat
+        end if
+    end repeat
+
+    if targetProcess is missing value then
+        set outputLines to outputLines & {"processExists=false"}
+    else
+        tell targetProcess
+            set outputLines to outputLines & {"processExists=true"}
+            set outputLines to outputLines & {"unixID=" & ((unix id) as text)}
+            set outputLines to outputLines & {"backgroundOnly=" & ((background only) as text)}
+            set outputLines to outputLines & {"visible=" & (visible as text)}
+            set outputLines to outputLines & {"menuBarCount=" & ((count of menu bars) as text)}
+            set statusItemFound to false
+            repeat with menuBarRef in menu bars
+                repeat with itemRef in menu bar items of menuBarRef
+                    set itemName to ""
+                    set itemDescription to ""
+                    try
+                        set itemName to name of itemRef as text
+                    end try
+                    try
+                        set itemDescription to description of itemRef as text
+                    end try
+                    if itemName is "ClawShell" then
+                        set statusItemFound to true
+                        set outputLines to outputLines & {"statusItemName=" & itemName}
+                        set outputLines to outputLines & {"statusItemDescription=" & itemDescription}
+                    end if
+                end repeat
+            end repeat
+            set outputLines to outputLines & {"statusItemFound=" & (statusItemFound as text)}
+        end tell
+    end if
+end tell
+set AppleScript's text item delimiters to linefeed
+return outputLines as text
+APPLESCRIPT
+then
+    ui_exit=0
+else
+    ui_exit=$?
+fi
+redact_metadata <"$ui_output" >"$EVIDENCE_DIR/accessibility-menu-bar.txt"
+rm -f "$ui_output"
+printf 'exitCode=%s\n' "$ui_exit" >"$EVIDENCE_DIR/accessibility-menu-bar.status"
+if [[ "$ui_exit" != "0" ]]; then
+    echo "ClawShell accessibility menu bar capture failed; inspect $EVIDENCE_DIR/accessibility-menu-bar.txt" >&2
+    exit 1
+fi
+
+status_item_found=false
+if grep -q '^statusItemFound=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &&
+   grep -q "^unixID=$expected_pid$" "$EVIDENCE_DIR/accessibility-menu-bar.txt" &&
+   grep -q '^statusItemName=ClawShell$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &&
+   grep -q '^statusItemDescription=ClawShell status:' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
+    status_item_found=true
+fi
+
+cli_reachable=false
+if grep -q '^ClawShell ' "$EVIDENCE_DIR/cli-status.txt"; then
+    cli_reachable=true
+fi
+
+result="pass"
+if [[ "$status_item_found" != true || "$cli_reachable" != true ]]; then
+    result="fail"
+fi
+
+cat >"$OUTPUT_DIR/validation-config.txt" <<EOF
+evidenceFormat=app-ui-smoke-v1
+metadataRedacted=true
+launchVerification=pass
+expectedPID=$expected_pid
+cliReachable=$cli_reachable
+accessibilityStatusItemFound=$status_item_found
+result=$result
+EOF
+redact_metadata <"$OUTPUT_DIR/validation-config.txt" >"$OUTPUT_DIR/validation-config.redacted"
+mv "$OUTPUT_DIR/validation-config.redacted" "$OUTPUT_DIR/validation-config.txt"
+
+cat >"$OUTPUT_DIR/README.md" <<EOF
+# App UI Smoke
+
+This package captures live local evidence that the staged ClawShell app bundle
+launches, the CLI can reach it, and macOS Accessibility exposes a ClawShell menu
+bar item.
+
+Evidence files:
+
+- \`evidence/build-and-run.txt\`
+- \`evidence/staged-process.txt\`
+- \`evidence/cli-status.txt\`
+- \`evidence/accessibility-menu-bar.txt\`
+
+This smoke does not prove a human can visually see the menu bar item on every
+display configuration. It proves the app bundle process is running and the menu
+bar item exists in the macOS accessibility tree.
+EOF
+
+if [[ "$result" != "pass" ]]; then
+    echo "ClawShell app UI smoke failed; inspect $OUTPUT_DIR" >&2
+    exit 1
+fi
+
+echo "App UI smoke written to $OUTPUT_DIR"
