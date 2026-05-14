@@ -1629,6 +1629,23 @@ struct ClawShellCoreChecks {
         try check(!removed.contains(#""Codex"][profiles.work]"#), "Expected Codex removal not to glue restored notify to next table")
         try check(!removed.contains(CodexConfigPatcher.manifest.ownerMarker), "Expected Codex removal to remove owned block")
         try check(!removed.contains("[[hooks.UserPromptSubmit]]"), "Expected Codex removal to remove owned native hooks")
+        let reinstall = try patcher.installPlan(currentData: install.patchedData, adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter")
+        let reinstalled = String(data: reinstall.patchedData, encoding: .utf8) ?? ""
+        try patcher.validate(reinstall.patchedData)
+        try check(!reinstalled.contains("\(CodexConfigPatcher.manifest.ownerMarker)[profiles.work]"), "Expected Codex reinstall not to glue owned marker to next table")
+        let endMarkerLine = "# END \(CodexConfigPatcher.manifest.ownerMarker)"
+        let gluedEndMarker = installed
+            .replacingOccurrences(of: "\(endMarkerLine)\n\n[profiles.work]", with: "\(endMarkerLine)[profiles.work]")
+            .replacingOccurrences(of: "\(endMarkerLine)\n[profiles.work]", with: "\(endMarkerLine)[profiles.work]")
+        try check(gluedEndMarker != installed, "Expected portable check fixture to contain a glueable owned end marker")
+        let recoveredInstall = try patcher.installPlan(
+            currentData: Data(gluedEndMarker.utf8),
+            adapterPath: "/Applications/ClawShell.app/Contents/MacOS/ClawShellHookAdapter"
+        )
+        let recoveredInstalled = String(data: recoveredInstall.patchedData, encoding: .utf8) ?? ""
+        try patcher.validate(recoveredInstall.patchedData)
+        try check(recoveredInstalled.contains("[profiles.work]"), "Expected Codex reinstall to preserve table glued to old end marker")
+        try check(!recoveredInstalled.contains("\(CodexConfigPatcher.manifest.ownerMarker)[profiles.work]"), "Expected Codex reinstall to repair glued old end marker")
 
         let withUserHook = """
         [hooks.state."/tmp/user-hook:pre_tool_use:0:0"]
