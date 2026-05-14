@@ -113,6 +113,9 @@ echo "==> shell script syntax"
 for script in scripts/*.sh; do
     bash -n "$script"
 done
+for script in script/*.sh; do
+    bash -n "$script"
+done
 
 echo "==> swift test unavailable classifier smoke"
 swift_test_classifier_dir="$(mktemp -d)"
