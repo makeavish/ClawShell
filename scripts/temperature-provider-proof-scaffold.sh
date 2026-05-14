@@ -82,6 +82,7 @@ EOF
     write_required_row "provider-command-or-api"
     write_required_row "helper-ownership-context"
     write_required_row "numeric-temperature-output"
+    write_required_row "scale-validation"
     write_required_row "freshness-samples"
     write_required_row "active-cadence-samples"
     write_required_row "idle-cadence-samples"
