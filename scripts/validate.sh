@@ -711,6 +711,55 @@ EOF
     printf '$ pmset -g assertions\nAssertion status system-wide:\n' >"$bag_mode_matrix_case/$snapshot_dir/pmset-assertions.txt"
     printf '$ ioreg -r -c IOPMPowerSource -a\n<plist version=\"1.0\">\n' >"$bag_mode_matrix_case/$snapshot_dir/ioreg-power.txt"
 done
+bag_mode_matrix_intel_case="$bag_mode_smoke_dir/matrix/validate-intel-smoke"
+mkdir -p \
+    "$bag_mode_matrix_intel_case/before" \
+    "$bag_mode_matrix_intel_case/during-applied" \
+    "$bag_mode_matrix_intel_case/after-lid-window" \
+    "$bag_mode_matrix_intel_case/after-rollback"
+cat >"$bag_mode_matrix_intel_case/validation-config.txt" <<'EOF'
+caseId=validate-intel-smoke
+capturedAtUTC=2026-05-12T00:00:00Z
+mode=apply
+testOnly=false
+rebootHeld=0
+holdSeconds=1
+candidateCommand=/usr/bin/pmset disablesleep 1
+previousDisablesleep=0
+rollbackCommand=/usr/bin/pmset disablesleep 0
+metadataRedacted=true
+EOF
+cat >"$bag_mode_matrix_intel_case/manual-result.md" <<'EOF'
+# Bag Mode Primitive Validation Result
+
+## Matrix Case
+- Case ID: validate-intel-smoke
+- macOS: 14.0
+- CPU: Intel
+- Power: AC
+- Display: internal-only
+- Lid path: reopen recovery
+- Lifecycle path: normal
+
+## Commands
+- Applied command: `/usr/bin/pmset disablesleep 1`
+- Prior disablesleep value: 0
+- Rollback command: `/usr/bin/pmset disablesleep 0`
+
+## Manual Observations
+- Lid-close sleep blocked: inconclusive
+- Reopen recovered cleanly: yes
+- Reboot state after held primitive: N/A - non-reboot case
+
+## Conclusion
+- Result: inconclusive
+EOF
+for snapshot_dir in before during-applied after-lid-window after-rollback; do
+    cp "$bag_mode_matrix_case/$snapshot_dir/metadata.txt" "$bag_mode_matrix_intel_case/$snapshot_dir/metadata.txt"
+    cp "$bag_mode_matrix_case/$snapshot_dir/pmset-custom.txt" "$bag_mode_matrix_intel_case/$snapshot_dir/pmset-custom.txt"
+    cp "$bag_mode_matrix_case/$snapshot_dir/pmset-assertions.txt" "$bag_mode_matrix_intel_case/$snapshot_dir/pmset-assertions.txt"
+    cp "$bag_mode_matrix_case/$snapshot_dir/ioreg-power.txt" "$bag_mode_matrix_intel_case/$snapshot_dir/ioreg-power.txt"
+done
 scripts/bag-mode-primitive-matrix-verify.sh --evidence-root "$bag_mode_smoke_dir/matrix" >/dev/null
 cat >"$bag_mode_smoke_dir/matrix/matrix-manifest.tsv" <<'EOF'
 caseId	status	evidenceDir	naReason
@@ -719,6 +768,35 @@ macos-13-intel-deferred	deferred		Intel support not in current local hardware sc
 external-display-na	n/a		No external display physically available in this smoke
 EOF
 scripts/bag-mode-primitive-matrix-verify.sh --manifest "$bag_mode_smoke_dir/matrix/matrix-manifest.tsv" >/dev/null
+bag_mode_matrix_review_report="$bag_mode_smoke_dir/matrix/review-candidates.tsv"
+scripts/bag-mode-primitive-matrix-review.sh \
+    --evidence-root "$bag_mode_smoke_dir/matrix" \
+    --output "$bag_mode_matrix_review_report"
+if ! awk -F '\t' '$1 == "apple-silicon-battery-internal-reopen-normal" && $2 == "promote-candidate" && $3 == "validate-smoke" { found = 1 } END { exit !found }' "$bag_mode_matrix_review_report"; then
+    echo "Bag Mode primitive matrix review did not map verified battery/internal reopen evidence" >&2
+    cat "$bag_mode_matrix_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "macos-15plus-host" && $2 == "promote-candidate" && $3 == "validate-smoke" { found = 1 } END { exit !found }' "$bag_mode_matrix_review_report"; then
+    echo "Bag Mode primitive matrix review did not mark macOS 15+ host coverage" >&2
+    cat "$bag_mode_matrix_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "intel-host" && $2 == "promote-candidate" && $3 == "validate-intel-smoke" { found = 1 } END { exit !found }' "$bag_mode_matrix_review_report"; then
+    echo "Bag Mode primitive matrix review did not preserve Intel host coverage" >&2
+    cat "$bag_mode_matrix_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "apple-silicon-battery-internal-open-normal" && $2 == "keep-todo" { found = 1 } END { exit !found }' "$bag_mode_matrix_review_report"; then
+    echo "Bag Mode primitive matrix review over-promoted missing open-path evidence" >&2
+    cat "$bag_mode_matrix_review_report" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "helper-restart-after-27" && $2 == "deferred" { found = 1 } END { exit !found }' "$bag_mode_matrix_review_report"; then
+    echo "Bag Mode primitive matrix review did not preserve helper restart deferral" >&2
+    cat "$bag_mode_matrix_review_report" >&2
+    exit 1
+fi
 cat >"$bag_mode_smoke_dir/matrix/all-deferred-manifest.tsv" <<'EOF'
 caseId	status	evidenceDir	naReason
 macos-13-intel	deferred		No Intel host available for this smoke
