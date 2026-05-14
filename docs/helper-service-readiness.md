@@ -507,6 +507,17 @@ control-routing behavior only. Production helper-backed repair, uninstall,
 restore conflict handling, and helper-owned Bag Mode cleanup remain separate
 #27 evidence rows.
 
+The CLI outcome proof harness captures that boundary in an attachable package:
+
+```bash
+scripts/helper-service-cli-outcome-proof.sh \
+  --output-dir .build/helper-service-prototype/cli-outcome-proof-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+It runs `swift test --filter controlRouterSurfacesHelperCommandOutcomes` with
+the full Xcode developer directory and records
+`helperCliOutcomeProofReady=true` only when the focused CLI-routing test passes.
+
 New prepare artifacts also include local helper-auth failure probes. The
 generated helper accepts optional expected/actual values for pairing token,
 bundle id, helper label, effective user, helper generation, and approval state.
