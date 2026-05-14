@@ -35,6 +35,7 @@ Alternate source probe artifacts:
 - `.build/temperature-provider-proof/alt-source-iohid-20260513T150045Z`
 - `.build/temperature-provider-proof/alt-source-smc-dispatcher-20260513T154345Z`
 - `.build/temperature-provider-proof/alt-source-ioreport-20260514T052351Z`
+- `.build/temperature-provider-proof/alt-source-ioreport-scale-20260514T072430Z`
 
 ## Question
 
@@ -393,17 +394,25 @@ as `NAND CH0 temp`, but not a current scalar reading in the non-mutating local
 inventory. They do not change the provider conclusion.
 
 Newer alternate-source probe artifacts use
-`evidenceFormat=temperature-alt-source-probe-v5` and add bounded HID
+`evidenceFormat=temperature-alt-source-probe-v6` and add bounded HID
 temperature-service NDJSON, filtered `hidutil dump services` evidence, the
 local `smctempsensor0` / `AppleSMCSensorDispatcher` surface, and a native
-`libIOReport` sampler for ANS2/MSP temperature-like channels. The additional
+`libIOReport` sampler for ANS2/MSP temperature-like channels. The sampler now
+prints `IOReportChannelGetUnit` quantity/scale metadata next to each numeric
+sample, plus aggregate `temperatureScaleVerified` fields. The additional
 fields (`hidPmuTemperatureServiceCount`, `hidNvmeTemperatureInventoryPresent`,
 `hidTemperatureServiceDumpPresent`, `smcTempSensorNodePresent`,
 `smcSensorDispatcherPresent`, `smcSensorDispatcherUserClientPresent`,
-`ioreportProbeAvailable`, and `ioreportTemperatureSampleCount`) make the
-PMU/NVMe/HID/SMC-dispatcher/IOReport surfaces easier to audit. The discovery
-probe still keeps `numericCutoffSource=false` until helper-owned scale,
-freshness, cadence, coverage, and fail-closed proof are captured.
+`ioreportProbeAvailable`, `ioreportTemperatureSampleCount`,
+`ioreportTemperatureScaleVerified`, and
+`ioreportTemperatureScaleVerifiedCount`) make the
+PMU/NVMe/HID/SMC-dispatcher/IOReport surfaces easier to audit. The local
+`.build/temperature-provider-proof/alt-source-ioreport-scale-20260514T072430Z`
+artifact captured four ANS2/MSP samples but reported
+`ioreportTemperatureScaleVerified=false`, `ioreportTemperatureScaleVerifiedCount=0`,
+and undefined IOReport unit metadata (`unitQuantity=0`), so the discovery probe still keeps
+`numericCutoffSource=false` until helper-owned scale, freshness, cadence,
+coverage, and fail-closed proof are captured.
 
 The `.build/temperature-provider-proof/alt-source-iohid-20260513T150045Z`
 artifact adds a native `IOHIDEventSystemClient` / `IOHIDServiceClient` property
@@ -564,7 +573,10 @@ numericTemperatureRejectionReason=none
 ```
 
 The captured samples were four ANS2/MSP `Temperature(0)` channels with
-`temperature=35` and `scale=unverified`. Cleanup succeeded:
+`temperature=35` and `scale=unverified`. A later direct probe refresh added
+unit metadata and observed `unitQuantity=0`, `unitScale=0x0`, and empty
+`unitLabel`, so IOReport does not currently prove the values are Celsius on
+this machine. Cleanup succeeded:
 `unregister()` moved status from raw `1` to `0`. This is the first helper-owned,
 non-battery numeric candidate under the 1 second provider deadline. It still is
 not verifier-ready provider proof because freshness, active/idle cadence, scale

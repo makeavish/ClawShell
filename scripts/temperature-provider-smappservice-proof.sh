@@ -1015,8 +1015,42 @@ func value(for key: String, in text: String) -> String? {
         .map(String.init)
 }
 
+func ioreportTemperatureLineCounts(in text: String) -> (sampleCount: Int, scaleVerifiedCount: Int) {
+    var sampleCount = 0
+    var scaleVerifiedCount = 0
+    for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+        guard line.hasPrefix("temperature=") else {
+            continue
+        }
+        sampleCount += 1
+        if line.contains(" unitQuantity=10 ") &&
+            line.contains(" unitScale=0x0 ") &&
+            line.contains(" scaleVerified=true ") {
+            scaleVerifiedCount += 1
+        }
+    }
+    return (sampleCount, scaleVerifiedCount)
+}
+
 let ioreportSampleCount = Int(value(for: "temperatureSampleCount", in: combinedOutput) ?? "") ?? 0
+let ioreportReportedScaleVerified = value(for: "temperatureScaleVerified", in: combinedOutput) == "true"
+let ioreportReportedScaleVerifiedCount = Int(value(for: "temperatureScaleVerifiedCount", in: combinedOutput) ?? "") ?? 0
+let ioreportLineCounts = ioreportTemperatureLineCounts(in: combinedOutput)
 let ioreportProbeFormatObserved = combinedOutput.contains("ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1")
+let ioreportSampleAccepted = providerSource == "ioreport-ans2" &&
+    !timedOut &&
+    exitCode == 0 &&
+    ioreportProbeFormatObserved &&
+    ioreportLineCounts.sampleCount == ioreportSampleCount &&
+    !stdoutTruncated &&
+    !stderrTruncated &&
+    stderrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+let ioreportScaleVerifiedCount = ioreportSampleAccepted ? ioreportLineCounts.scaleVerifiedCount : 0
+let ioreportScaleVerified = ioreportSampleAccepted &&
+    ioreportReportedScaleVerified &&
+    ioreportSampleCount > 0 &&
+    ioreportReportedScaleVerifiedCount == ioreportSampleCount &&
+    ioreportLineCounts.scaleVerifiedCount == ioreportSampleCount
 let numericTemperatureCandidateCount: Int
 let numericTemperatureAcceptedCount: Int
 let numericTemperatureRejectedBatteryContextCount: Int
@@ -1025,12 +1059,6 @@ if providerSource == "ioreg-smc" {
     numericTemperatureAcceptedCount = ioregSMCAnalysis.acceptedCount
     numericTemperatureRejectedBatteryContextCount = ioregSMCAnalysis.rejectedBatteryContextCount
 } else if providerSource == "ioreport-ans2" {
-    let ioreportSampleAccepted = !timedOut &&
-        exitCode == 0 &&
-        ioreportProbeFormatObserved &&
-        !stdoutTruncated &&
-        !stderrTruncated &&
-        stderrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     numericTemperatureCandidateCount = ioreportSampleAccepted ? ioreportSampleCount : 0
     numericTemperatureAcceptedCount = ioreportSampleAccepted ? ioreportSampleCount : 0
     numericTemperatureRejectedBatteryContextCount = 0
@@ -1078,6 +1106,8 @@ numericTemperatureCandidateCount=\(numericTemperatureCandidateCount)
 numericTemperatureAcceptedCount=\(numericTemperatureAcceptedCount)
 numericTemperatureRejectedBatteryContextCount=\(numericTemperatureRejectedBatteryContextCount)
 numericTemperatureRejectionReason=\(numericTemperatureRejectionReason)
+ioreportTemperatureScaleVerified=\(ioreportScaleVerified)
+ioreportTemperatureScaleVerifiedCount=\(ioreportScaleVerifiedCount)
 runError=\(runError.isEmpty ? "none" : runError)
 """
 
@@ -1113,6 +1143,8 @@ numericTemperatureCandidateCount=\(numericTemperatureCandidateCount)
 numericTemperatureAcceptedCount=\(numericTemperatureAcceptedCount)
 numericTemperatureRejectedBatteryContextCount=\(numericTemperatureRejectedBatteryContextCount)
 numericTemperatureRejectionReason=\(numericTemperatureRejectionReason)
+ioreportTemperatureScaleVerified=\(ioreportScaleVerified)
+ioreportTemperatureScaleVerifiedCount=\(ioreportScaleVerifiedCount)
 effect=single-sample-proof-attempt
 
 """
