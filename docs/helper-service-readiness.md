@@ -2,9 +2,9 @@
 
 Check date: May 14, 2026
 
-Issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
+Original issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
 
-Follow-up: [#27](https://github.com/makeavish/ClawShell/issues/27)
+Final E2E follow-up: [#120](https://github.com/makeavish/ClawShell/issues/120)
 
 Local readiness artifact: `.build/helper-service-readiness/recheck-20260512T105510Z`
 
@@ -86,7 +86,7 @@ The local environment now has full Xcode installed under `/Applications/Xcode.ap
 
 This still is not enough to complete a Developer ID signed prototype: the keychain has no Developer ID Application identity and no Developer ID Installer identity. The harness records only redacted identity counts: app-signing identities come from the `codesigning` policy, while installer identities come from a separate `basic` identity query.
 
-The product plan now treats Apple Developer Program membership as deferred until traction or donations justify the cost, so #27 must first prove a no-membership helper path instead of waiting on Developer ID identities.
+The product plan now treats Apple Developer Program membership as deferred until traction or donations justify the cost, so final E2E must prove a no-membership helper path instead of waiting on Developer ID identities.
 
 ## Provisional Design Verdict
 
@@ -117,12 +117,12 @@ to the generation 2 binary, but the daemon failed to spawn with
 `last exit reason = OS_REASON_CODESIGNING` and produced no root stdout or
 ledger sample. Cleanup returned the helper label to raw status `0`.
 
-#7 still cannot claim the helper path is complete: #27 still needs
-admin-approval/password-flow evidence, final manifest/manual promotion of
-remaining rows, update, production restore conflict behavior, production
-repair/uninstall behavior, installed-helper/fallback failure behavior, and
-helper-owned Bag Mode state cleanup evidence before production Bag Mode can
-depend on it. New prepare artifacts also record local dry-run failure-case
+#7 now carries the helper path forward into final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120): admin
+approval/password-flow evidence, final manifest/manual promotion of remaining
+rows, update, production restore conflict behavior, production repair/uninstall
+behavior, installed-helper/fallback failure behavior, and helper-owned Bag Mode
+state cleanup evidence. New prepare artifacts also record local dry-run failure-case
 evidence for unpaired caller, bundle/label mismatch, wrong effective user,
 stale helper generation, and denied/revoked approval state. The CLI
 helper-command contract is now covered as a control-socket outcome boundary,
@@ -140,7 +140,7 @@ The design should keep these constraints:
 
 ## Required Prototype Notes
 
-Follow-up [#27](https://github.com/makeavish/ClawShell/issues/27) must produce no-membership helper evidence:
+Final app E2E issue [#120](https://github.com/makeavish/ClawShell/issues/120) must carry forward no-membership helper evidence:
 
 - `codesign -dvvv --entitlements :-` for app and helper
 - local signing/auth model for app and helper; Developer ID designated requirements only when available
@@ -158,7 +158,7 @@ Follow-up [#27](https://github.com/makeavish/ClawShell/issues/27) must produce n
 - local dry-run failure cases for unpaired caller, wrong bundle id, wrong label/plist path, wrong user, stale app version, denied approval, and revoked approval; production/fallback failure behavior remains open until exercised through the installed helper path
 - Homebrew cask behavior if the prototype is exercised through `brew install --cask`, `brew upgrade --cask`, or `brew uninstall --cask`; otherwise track cask semantics separately from the helper prototype
 
-Before attaching a helper prototype evidence package to #27, run the structural
+Before attaching or summarizing a helper prototype evidence package in #120, run the structural
 verifier:
 
 ```bash
@@ -270,7 +270,7 @@ launchctl no longer finds the daemon. The artifact does not prove which System
 Settings UI, if any, was shown before the status became enabled; it only proves
 the observed `requiresApproval`/`enabled`/`notRegistered` state transitions,
 root runtime behavior, and ServiceManagement cleanup. Treat this as successful
-local bootstrap and unregister evidence, not a complete #27 proof: the status,
+local bootstrap and unregister evidence, not complete final E2E proof: the status,
 launchctl, stdout-log, and unified-log captures cover the local post-approval
 bootstrap boundary, and the mirrored ledger sample plus root-owned `0600` file
 evidence cover the dry-run root-ledger schema/ownership boundary. The verifier
@@ -467,7 +467,7 @@ The append mode captures `SMAppService` status, `launchctl` state, helper
 runtime logs, helper stdout/stderr, and unified log output. It does not promote
 manifest rows automatically; review the captured output, update the manifest
 and manual result deliberately, then run the verifier before attaching the
-artifact to #27.
+artifact in #120.
 
 Use the review helper to produce a non-mutating promotion map before editing a
 captured package:
@@ -567,7 +567,7 @@ uninstall messages. The current app reports helper status and repair as
 unavailable because no production helper is installed yet; this proves CLI and
 control-routing behavior only. Production helper-backed repair, uninstall,
 restore conflict handling, and helper-owned Bag Mode cleanup remain separate
-#27 evidence rows.
+#120 evidence rows.
 
 The CLI outcome proof harness captures that boundary in an attachable package:
 
@@ -687,11 +687,11 @@ verifier requires package-relative `smappservice-rejection` evidence, such as
 package. The current SMAppService register artifact reached enabled status and
 bootstrapped the helper, so it does not justify fallback by itself; fallback
 evidence would need a later post-approval denial, lifecycle failure, or other
-captured reason that the `SMAppService` path cannot satisfy #27. The
+captured reason that the `SMAppService` path cannot satisfy final E2E. The
 `launchDaemonPlist` config value must point to the installed
 `/Library/LaunchDaemons/<label>.plist` artifact. Verifier success means the
 evidence package is structurally complete only. It does not prove the helper
-prototype passed or close #27 by itself.
+prototype passed final E2E by itself.
 
 Required manifest `checkId` rows:
 
@@ -723,7 +723,7 @@ Required manifest `checkId` rows:
 - `launchctl-status`
 - `log-evidence`
 
-To keep the remaining #27 gap auditable after running the advisory review
+To keep the remaining #120 helper gap auditable after running the advisory review
 scripts, consolidate their results with:
 
 ```bash
@@ -761,9 +761,10 @@ dispatch, and the post-approval status/bootstrap/launchctl/stdout-log/unified-lo
 boundary is reviewed for the local SMAppService bootstrap path. The root-ledger
 schema/ownership boundary is reviewed for dry-run evidence via the stdout mirror
 and root-owned `0600` ledger file. The local ad-hoc SMAppService path remains
-viable before Developer ID funding. Bag Mode still remains blocked until #27
-records the rest of the verifier-required helper proof: admin approval/password
-flow, final post-reboot manifest/manual promotion, update, production restore
-conflict behavior, production repair/uninstall behavior, installed-helper/fallback
-failure cases, and helper-owned Bag Mode state cleanup. Developer ID signing remains a later
-distribution/trust milestone.
+viable before Developer ID funding. The remaining production helper lifecycle
+rows now live in final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120): admin
+approval/password flow, final post-reboot manifest/manual promotion, update,
+production restore conflict behavior, production repair/uninstall behavior,
+installed-helper/fallback failure cases, and helper-owned Bag Mode state
+cleanup. Developer ID signing remains a later distribution/trust milestone.

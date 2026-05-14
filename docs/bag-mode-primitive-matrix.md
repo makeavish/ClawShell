@@ -2,9 +2,9 @@
 
 Check date: May 13, 2026
 
-Issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
+Original issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
 
-Follow-up: [#29](https://github.com/makeavish/ClawShell/issues/29)
+Final E2E follow-up: [#120](https://github.com/makeavish/ClawShell/issues/120)
 
 Harness artifact: [PR #22](https://github.com/makeavish/ClawShell/pull/22)
 
@@ -28,7 +28,7 @@ PR #22 added `scripts/bag-mode-primitive-validation.sh`, a dedicated harness for
 - write rollback instructions before reboot-held validation
 - restore and verify the pre-run `disablesleep` value in non-reboot mutating runs
 - preserve the baseline `before/` snapshot when continuing into apply mode
-- refresh apply-mode metadata so baseline captures are not mistaken for #29 evidence
+- refresh apply-mode metadata so baseline captures are not mistaken for final E2E evidence
 
 This proves the evidence workflow exists. It does not prove the primitive is reliable.
 
@@ -89,9 +89,13 @@ lifecycle. Missing matrix coverage still includes:
 - open and closed lid paths beyond the current reopen-recovery runs
 - app quit, app crash, and reboot while held lifecycle cases
 
-Helper-dependent cases, such as helper restart and helper upgrade mid-hold, are deferred until #27 produces a validated no-membership helper prototype. Until then, each helper-only lifecycle row must be marked `N/A` or `deferred until #27` in `manual-result.md`.
+Helper-dependent cases, such as helper restart and helper upgrade mid-hold, are
+carried forward to final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120). Until then, each
+helper-only lifecycle row must be marked `N/A` or `deferred to #120` in
+`manual-result.md`.
 
-Each case still needs the exact command applied, rollback command, `pmset -g custom`, `pmset -g assertions`, relevant IORegistry state, lid-close result, reboot state or explicit `N/A`, and a pass/fail/inconclusive conclusion in `manual-result.md`. Attach evidence directories to #29 and summarize or cross-link the result on #7.
+Each case still needs the exact command applied, rollback command, `pmset -g custom`, `pmset -g assertions`, relevant IORegistry state, lid-close result, reboot state or explicit `N/A`, and a pass/fail/inconclusive conclusion in `manual-result.md`. Attach or summarize new evidence in #120.
 
 Before attaching evidence, run:
 
@@ -108,7 +112,7 @@ scripts/bag-mode-primitive-matrix-review.sh \
 ```
 
 The review report is advisory and does not edit `matrix-manifest.tsv`. It calls
-the strict case verifier first, maps verified artifacts onto known #29 rows,
+the strict case verifier first, maps verified artifacts onto known matrix rows,
 and leaves missing physical/lifecycle rows as `keep-todo`. Inconclusive cases
 can still be evidence candidates, but they are not primitive passes.
 
@@ -130,15 +134,14 @@ The manifest is a tab-separated file with this header:
 caseId	status	evidenceDir	naReason
 ```
 
-Use `status=evidence` for rows with a completed evidence directory, `status=n/a` for physically unavailable rows, and `status=deferred` for helper-dependent rows blocked on #27. `n/a` and `deferred` rows must include a concrete reason in `naReason`.
+Use `status=evidence` for rows with a completed evidence directory, `status=n/a` for physically unavailable rows, and `status=deferred` for helper-dependent rows carried forward to final app E2E issue [#120](https://github.com/makeavish/ClawShell/issues/120). `n/a` and `deferred` rows must include a concrete reason in `naReason`.
 
 The verifier fails missing files, baseline-only captures, test-only fake-`pmset` captures, placeholder manual fields, placeholder snapshot output, unredacted snapshot metadata, missing reboot state, missing IORegistry snapshots, incomplete snapshot directories, placeholder N/A/deferred reasons, and manifests with no evidence rows. Passing the verifier only means the manifest and evidence package are structurally complete; it does not mean the primitive passed the hardware matrix.
 
 ## Conclusion
 
-The primitive remains unproven. The Apple Silicon battery/internal normal
-reopen-recovery case now has verified pass evidence, but the AC/internal case
-is still inconclusive and broader display/lifecycle coverage is missing.
-Production Bag Mode must stay blocked until
-[#29](https://github.com/makeavish/ClawShell/issues/29) records a reliable
-hardware matrix or the TDD switches to a different proven primitive.
+The primitive remains unproven across the full app matrix. The Apple Silicon
+battery/internal normal reopen-recovery case now has verified pass evidence,
+but the AC/internal case is still inconclusive and broader display/lifecycle
+coverage is missing. Remaining hardware/app lifecycle validation is tracked in
+final app E2E issue [#120](https://github.com/makeavish/ClawShell/issues/120).
