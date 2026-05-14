@@ -98,15 +98,21 @@ public final class AgentSessionStateMachine {
         }
 
         if let index = firstIntegrationSessionIndex(matching: event) {
-            guard shouldAcceptTrustedEvent(event.sessionEventKind, forSessionAt: index, at: now) else {
+            guard shouldAcceptTrustedEvent(event.sessionEventKind, forSessionAt: index, at: now),
+                  shouldAcceptIntegrationEvent(event, forSessionAt: index) else {
                 return
             }
 
+            adoptIntegrationIdentity(from: event, forSessionAt: index)
             applyTrustedEvent(event.sessionEventKind, toSessionAt: index, at: now)
             return
         }
 
         guard event.createsSession else {
+            return
+        }
+
+        guard !hasFinishedIntegrationSession(matching: event) else {
             return
         }
 
@@ -257,6 +263,12 @@ public final class AgentSessionStateMachine {
                    return false
                }
 
+               if let sessionIntegrationId = $0.key.integrationSessionId,
+                  let eventIntegrationId = event.integrationSessionId,
+                  sessionIntegrationId != eventIntegrationId {
+                   return false
+               }
+
                guard eventProcessEvidenceMatches(session: $0, event: event) else {
                    return false
                }
@@ -271,6 +283,51 @@ public final class AgentSessionStateMachine {
         }
 
         return nil
+    }
+
+    private func adoptIntegrationIdentity(
+        from event: HookAdapterEvent,
+        forSessionAt index: Array<AgentSession>.Index
+    ) {
+        if sessions[index].key.integrationSessionId == nil {
+            sessions[index].key.integrationSessionId = event.integrationSessionId
+        }
+
+        if sessions[index].key.cwdHash == nil {
+            sessions[index].key.cwdHash = event.cwdHash
+        }
+    }
+
+    private func shouldAcceptIntegrationEvent(
+        _ event: HookAdapterEvent,
+        forSessionAt index: Array<AgentSession>.Index
+    ) -> Bool {
+        if sessions[index].state == .standingBy,
+           sessions[index].lastEvent?.kind == .turnFinished {
+            switch event.event {
+            case .toolStarted, .toolFinishedContinuing:
+                return false
+            case .turnStarted where event.agent == .codexCLI:
+                return false
+            default:
+                break
+            }
+        }
+
+        return true
+    }
+
+    private func hasFinishedIntegrationSession(matching event: HookAdapterEvent) -> Bool {
+        guard let integrationSessionId = event.integrationSessionId else {
+            return false
+        }
+
+        return sessions.contains {
+            $0.agent == event.agent
+                && $0.key.integrationSessionId == integrationSessionId
+                && $0.lastEvent?.kind == .sessionFinished
+                && eventProcessEvidenceMatches(session: $0, event: event)
+        }
     }
 
     private func eventProcessEvidenceMatches(session: AgentSession, event: HookAdapterEvent) -> Bool {

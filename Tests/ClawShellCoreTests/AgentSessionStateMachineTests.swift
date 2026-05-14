@@ -48,6 +48,10 @@ struct AgentSessionStateMachineTests {
     @Test func trustedEventsAreMonotonic() throws {
         try runTrustedEventsAreMonotonic()
     }
+
+    @Test func outOfOrderHookEventsAreIgnored() throws {
+        try runOutOfOrderHookEventsAreIgnored()
+    }
 }
 
 #elseif canImport(XCTest)
@@ -97,6 +101,10 @@ final class AgentSessionStateMachineTests: XCTestCase {
 
     func testTrustedEventsAreMonotonic() throws {
         try runTrustedEventsAreMonotonic()
+    }
+
+    func testOutOfOrderHookEventsAreIgnored() throws {
+        try runOutOfOrderHookEventsAreIgnored()
     }
 }
 
@@ -405,6 +413,138 @@ private func runTrustedEventsAreMonotonic() throws {
     try check(machine.sessions[0].state == .finished, "Expected terminal finished session not to reactivate from later stale lifecycle activity")
 }
 
+private func runOutOfOrderHookEventsAreIgnored() throws {
+    let machine = AgentSessionStateMachine(graceInterval: 900)
+    let processStart = baseline.addingTimeInterval(-60)
+    let sessionID = "codex-turn-1"
+
+    machine.applyIntegrationEvent(
+        hookEvent(.turnStarted, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(20)
+    )
+    try check(machine.sessions.count == 1, "Expected hook start to create one integration session")
+    try check(machine.sessions[0].state == .active, "Expected hook start to make the session active")
+
+    machine.applyIntegrationEvent(
+        hookEvent(.turnFinished, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(10)
+    )
+    try check(machine.sessions[0].state == .active, "Expected stale turnFinished hook not to move active session backward")
+
+    machine.applyIntegrationEvent(
+        hookEvent(.turnFinished, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(30)
+    )
+    try check(machine.sessions[0].state == .standingBy, "Expected current turnFinished hook to enter standing by")
+    try check(
+        machine.sessions[0].standingByExpiresAt == baseline.addingTimeInterval(930),
+        "Expected standing-by expiry from the accepted turnFinished hook"
+    )
+
+    machine.applyIntegrationEvent(
+        hookEvent(.toolStarted, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(25)
+    )
+    try check(machine.sessions[0].state == .standingBy, "Expected stale toolStarted hook not to reactivate standing-by session")
+    try check(
+        machine.sessions[0].standingByExpiresAt == baseline.addingTimeInterval(930),
+        "Expected stale toolStarted hook not to alter standing-by expiry"
+    )
+
+    machine.applyIntegrationEvent(
+        hookEvent(.toolStarted, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(40)
+    )
+    try check(machine.sessions[0].state == .standingBy, "Expected late toolStarted hook after turnFinished not to reactivate the session")
+
+    machine.applyIntegrationEvent(
+        hookEvent(.turnStarted, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(45)
+    )
+    try check(machine.sessions[0].state == .standingBy, "Expected late same-turn Codex UserPromptSubmit not to reactivate after Stop")
+
+    machine.applyIntegrationEvent(
+        hookEvent(.turnStarted, integrationSessionId: "codex-turn-2", pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(46)
+    )
+    try check(machine.sessions.count == 2, "Expected a new Codex turn id to create a separate active session")
+    try check(machine.sessions[1].state == .active, "Expected the new Codex turn to become active")
+
+    let processBackedMachine = AgentSessionStateMachine(graceInterval: 900)
+    processBackedMachine.applyProcessObservations([observation(pid: 102, start: processStart)], at: baseline)
+    processBackedMachine.applyIntegrationEvent(
+        hookEvent(.turnFinished, integrationSessionId: "codex-turn-1", pid: 102, processStartTime: processStart),
+        at: baseline.addingTimeInterval(1)
+    )
+    try check(processBackedMachine.sessions[0].state == .standingBy, "Expected Stop to move the process-backed Codex turn to standing by")
+    try check(
+        processBackedMachine.sessions[0].key.integrationSessionId == "codex-turn-1",
+        "Expected matched process-backed session to adopt the first Codex turn id"
+    )
+    processBackedMachine.applyIntegrationEvent(
+        hookEvent(.turnStarted, integrationSessionId: "codex-turn-2", pid: 102, processStartTime: processStart),
+        at: baseline.addingTimeInterval(2)
+    )
+    try check(processBackedMachine.sessions.count == 2, "Expected a different Codex turn id not to be swallowed by PID fallback")
+    try check(processBackedMachine.sessions[1].state == .active, "Expected the new process-backed Codex turn to become active")
+
+    let terminalMachine = AgentSessionStateMachine(graceInterval: 900)
+    terminalMachine.applyIntegrationEvent(
+        hookEvent(.turnStarted, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(20)
+    )
+    terminalMachine.applyIntegrationEvent(
+        hookEvent(.sessionFinished, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(50)
+    )
+    try check(terminalMachine.sessions[0].state == .finished, "Expected terminal hook to finish the session")
+
+    terminalMachine.applyIntegrationEvent(
+        hookEvent(.toolStarted, integrationSessionId: sessionID, pid: 100, processStartTime: processStart),
+        at: baseline.addingTimeInterval(60)
+    )
+    try check(terminalMachine.sessions.count == 1, "Expected post-terminal hook not to create a replacement session with the same integration id")
+    try check(terminalMachine.sessions[0].state == .finished, "Expected post-terminal hook not to reactivate a finished integration session")
+
+    let multiTurnMachine = AgentSessionStateMachine(graceInterval: 5)
+    let claudeSessionID = "claude-session-1"
+    multiTurnMachine.applyIntegrationEvent(
+        hookEvent(
+            .turnStarted,
+            integrationSessionId: claudeSessionID,
+            pid: 101,
+            processStartTime: processStart,
+            agent: .claudeCode
+        ),
+        at: baseline
+    )
+    multiTurnMachine.applyIntegrationEvent(
+        hookEvent(
+            .turnFinished,
+            integrationSessionId: claudeSessionID,
+            pid: 101,
+            processStartTime: processStart,
+            agent: .claudeCode
+        ),
+        at: baseline.addingTimeInterval(1)
+    )
+    multiTurnMachine.refreshExpirations(at: baseline.addingTimeInterval(7))
+    try check(multiTurnMachine.sessions[0].state == .finished, "Expected grace expiry to finish the first Claude turn")
+
+    multiTurnMachine.applyIntegrationEvent(
+        hookEvent(
+            .turnStarted,
+            integrationSessionId: claudeSessionID,
+            pid: 101,
+            processStartTime: processStart,
+            agent: .claudeCode
+        ),
+        at: baseline.addingTimeInterval(8)
+    )
+    try check(multiTurnMachine.sessions.count == 2, "Expected a later Claude prompt with the same session id to create a new turn after grace expiry")
+    try check(multiTurnMachine.sessions[1].state == .active, "Expected the later same-session Claude prompt to become active")
+}
+
 private func observation(
     pid: Int32,
     start: Date,
@@ -447,6 +587,23 @@ private func observationWithMissingPath(pid: Int32, start: Date) -> AgentProcess
             executablePathHash: StablePathHash.sha256("process:codex"),
             executablePathHashIsVerified: false
         )
+    )
+}
+
+private func hookEvent(
+    _ event: HookAdapterEventKind,
+    integrationSessionId: String,
+    pid: Int32,
+    processStartTime: Date,
+    agent: AgentKind = .codexCLI
+) -> HookAdapterEvent {
+    HookAdapterEvent(
+        agent: agent,
+        host: agent.rawValue,
+        event: event,
+        pid: pid,
+        processStartTime: processStartTime,
+        integrationSessionId: integrationSessionId
     )
 }
 
