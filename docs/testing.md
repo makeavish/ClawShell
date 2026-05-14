@@ -150,6 +150,16 @@ scripts/bag-mode-primitive-matrix-verify.sh --manifest .build/power-validation/b
 
 This checks manifest and evidence completeness only. The verifier also rejects
 manifests with no evidence rows. It does not prove the primitive is reliable.
+To generate an advisory row-by-row review before editing the manifest, run:
+
+```sh
+scripts/bag-mode-primitive-matrix-review.sh \
+  --evidence-root .build/power-validation/bag-mode-matrix \
+  --output .build/power-validation/bag-mode-matrix-review-candidates.tsv
+```
+
+The review report maps only structurally verified case directories and leaves
+missing physical/lifecycle rows as `keep-todo`.
 After the matrix is attached to #29, update the readiness docs with the
 pass/fail/inconclusive result before production Bag Mode implementation begins.
 

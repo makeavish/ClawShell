@@ -99,6 +99,19 @@ Before attaching evidence, run:
 scripts/bag-mode-primitive-matrix-verify.sh --manifest <matrix-evidence-root>/matrix-manifest.tsv
 ```
 
+To review current case directories before editing the manifest, run:
+
+```sh
+scripts/bag-mode-primitive-matrix-review.sh \
+  --evidence-root .build/power-validation/bag-mode-matrix \
+  --output .build/power-validation/bag-mode-matrix-review-candidates.tsv
+```
+
+The review report is advisory and does not edit `matrix-manifest.tsv`. It calls
+the strict case verifier first, maps verified artifacts onto known #29 rows,
+and leaves missing physical/lifecycle rows as `keep-todo`. Inconclusive cases
+can still be evidence candidates, but they are not primitive passes.
+
 To start a local matrix directory without inventing rows by hand, generate a
 non-mutating scaffold:
 
