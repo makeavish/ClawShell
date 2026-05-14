@@ -440,6 +440,126 @@ test_list_error=""
 temperature_validation_before=""
 trap '[[ -n "$test_list_output" ]] && rm -f "$test_list_output"; [[ -n "$test_list_error" ]] && rm -f "$test_list_error"; [[ -n "$temperature_validation_before" ]] && rm -f "$temperature_validation_before"; rm -f "$timed_idle_guidance_error" "$bag_mode_smoke_error"; rm -rf "$timed_idle_guidance_dir" "$bag_mode_smoke_dir"' EXIT
 
+echo "==> display topology proof smoke"
+cat >"$bag_mode_smoke_dir/display-topology-internal-only.json" <<'EOF'
+{
+  "SPDisplaysDataType": [
+    {
+      "_name": "Apple GPU",
+      "spdisplays_ndrvs": [
+        {
+          "_name": "Color LCD",
+          "_spdisplays_resolution": "1512 x 982 @ 120.00Hz",
+          "spdisplays_connection_type": "spdisplays_internal",
+          "spdisplays_display_type": "spdisplays_built-in-liquid-retina-xdr",
+          "spdisplays_main": "spdisplays_yes",
+          "spdisplays_online": "spdisplays_yes"
+        }
+      ]
+    }
+  ]
+}
+EOF
+scripts/display-topology-proof.sh \
+    --output-dir "$bag_mode_smoke_dir/display-topology-proof" \
+    --input-json "$bag_mode_smoke_dir/display-topology-internal-only.json"
+if ! grep -qx 'displayTopology=internal-only' "$bag_mode_smoke_dir/display-topology-proof/validation-config.txt"; then
+    echo "Display topology proof did not classify internal-only fixture" >&2
+    exit 1
+fi
+if ! grep -qx 'externalDisplayRowsNA=true' "$bag_mode_smoke_dir/display-topology-proof/validation-config.txt"; then
+    echo "Display topology proof did not mark external rows N/A for internal-only fixture" >&2
+    exit 1
+fi
+if grep -q 'Color LCD' "$bag_mode_smoke_dir/display-topology-proof/display-topology.tsv"; then
+    echo "Display topology proof leaked raw display name" >&2
+    exit 1
+fi
+(
+    cd "$bag_mode_smoke_dir"
+    "$ROOT_DIR/scripts/display-topology-proof.sh" \
+        --output-dir display-topology-relative-input-proof \
+        --input-json display-topology-internal-only.json
+)
+if ! grep -qx 'result=pass' "$bag_mode_smoke_dir/display-topology-relative-input-proof/validation-config.txt"; then
+    echo "Display topology proof did not handle caller-relative input JSON" >&2
+    exit 1
+fi
+cat >"$bag_mode_smoke_dir/display-topology-external.json" <<'EOF'
+{
+  "SPDisplaysDataType": [
+    {
+      "_name": "Apple GPU",
+      "spdisplays_ndrvs": [
+        {
+          "_name": "Color LCD",
+          "_spdisplays_resolution": "1512 x 982 @ 120.00Hz",
+          "spdisplays_connection_type": "spdisplays_internal",
+          "spdisplays_display_type": "spdisplays_built-in-liquid-retina-xdr",
+          "spdisplays_main": "spdisplays_yes",
+          "spdisplays_online": "spdisplays_yes"
+        },
+        {
+          "_name": "Vendor Model Display",
+          "_spdisplays_resolution": "1920 x 1080 @ 60.00Hz",
+          "spdisplays_connection_type": "spdisplays_displayport",
+          "spdisplays_display_type": "spdisplays_display",
+          "spdisplays_main": "spdisplays_no",
+          "spdisplays_online": "spdisplays_yes"
+        }
+      ]
+    }
+  ]
+}
+EOF
+scripts/display-topology-proof.sh \
+    --output-dir "$bag_mode_smoke_dir/display-topology-external-proof" \
+    --input-json "$bag_mode_smoke_dir/display-topology-external.json"
+if ! grep -qx 'displayTopology=external-display' "$bag_mode_smoke_dir/display-topology-external-proof/validation-config.txt"; then
+    echo "Display topology proof did not classify external-display fixture" >&2
+    exit 1
+fi
+if ! awk -F '\t' 'NR > 1 && $2 == "deferred" { found = 1 } END { exit !found }' "$bag_mode_smoke_dir/display-topology-external-proof/external-display-manifest.tsv"; then
+    echo "Display topology proof did not defer external rows when hardware is present" >&2
+    exit 1
+fi
+if grep -q 'Vendor Model Display' "$bag_mode_smoke_dir/display-topology-external-proof/display-topology.tsv"; then
+    echo "Display topology proof leaked external display name" >&2
+    exit 1
+fi
+display_topology_dirty="$bag_mode_smoke_dir/display-topology-dirty"
+mkdir -p "$display_topology_dirty"
+touch "$display_topology_dirty/unexpected.txt"
+if scripts/display-topology-proof.sh \
+    --output-dir "$display_topology_dirty" \
+    --input-json "$bag_mode_smoke_dir/display-topology-internal-only.json" >/dev/null 2>&1; then
+    echo "Display topology proof accepted dirty output directory" >&2
+    exit 1
+fi
+display_topology_empty="$bag_mode_smoke_dir/display-topology-empty"
+mkdir -p "$display_topology_empty"
+scripts/display-topology-proof.sh \
+    --output-dir "$display_topology_empty" \
+    --input-json "$bag_mode_smoke_dir/display-topology-internal-only.json"
+if ! grep -qx 'result=pass' "$display_topology_empty/validation-config.txt"; then
+    echo "Display topology proof did not accept clean empty output directory" >&2
+    exit 1
+fi
+display_topology_link="$bag_mode_smoke_dir/display-topology-link"
+ln -s "$bag_mode_smoke_dir/display-topology-proof" "$display_topology_link"
+if scripts/display-topology-proof.sh \
+    --output-dir "$display_topology_link" \
+    --input-json "$bag_mode_smoke_dir/display-topology-internal-only.json" >/dev/null 2>&1; then
+    echo "Display topology proof accepted symlink output directory" >&2
+    exit 1
+fi
+if scripts/display-topology-proof.sh \
+    --output-dir "$display_topology_link/" \
+    --input-json "$bag_mode_smoke_dir/display-topology-internal-only.json" >/dev/null 2>&1; then
+    echo "Display topology proof accepted symlink output directory with trailing slash" >&2
+    exit 1
+fi
+
 echo "==> packaging consent audit smoke"
 packaging_audit_fixture="$bag_mode_smoke_dir/packaging-consent-audit"
 packaging_audit_app="$packaging_audit_fixture/ClawShell.app"
