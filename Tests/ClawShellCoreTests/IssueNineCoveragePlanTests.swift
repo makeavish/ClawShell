@@ -134,7 +134,7 @@ private enum CoverageStatus: String, Equatable {
 private let issueNineCoveragePlan: [CoverageRequirement] = [
     CoverageRequirement(id: "session-transition-matrix", area: .unit, status: .automated),
     CoverageRequirement(id: "pid-reuse-restart-dedupe", area: .unit, status: .automated),
-    CoverageRequirement(id: "out-of-order-hook-events", area: .unit, status: .pendingImplementation),
+    CoverageRequirement(id: "out-of-order-hook-events", area: .unit, status: .automated),
     CoverageRequirement(id: "grace-reset-rules", area: .unit, status: .automated),
     CoverageRequirement(id: "manual-override-precedence", area: .unit, status: .pendingImplementation),
     CoverageRequirement(id: "safety-transition-matrix", area: .unit, status: .automated),
