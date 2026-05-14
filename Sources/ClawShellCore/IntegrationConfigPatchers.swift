@@ -375,7 +375,7 @@ public struct CodexConfigPatcher {
         let withNotify: String
         if let notifyLine {
             var next = content
-            next.replaceSubrange(notifyLine.range, with: notifyBlock)
+            next.replaceSubrange(notifyLine.range, with: ensureTrailingNewline(notifyBlock))
             withNotify = next
         } else {
             withNotify = notifyBlock + (content.isEmpty ? "" : "\n" + content)
@@ -510,7 +510,7 @@ public struct CodexConfigPatcher {
 
     private static func ownedBlockRanges(in content: String) throws -> [Range<String.Index>] {
         let begins = lineRanges(equalTo: beginMarker, in: content)
-        let ends = lineRanges(equalTo: endMarker, in: content)
+        let ends = endMarkerRanges(in: content)
         guard begins.count == ends.count else {
             throw IntegrationPatcherError.invalidTOML("owned block markers are unbalanced")
         }
@@ -534,6 +534,33 @@ public struct CodexConfigPatcher {
 
             ranges.append(begin.lowerBound..<end.upperBound)
             endCursor = ends.index(after: endCursor)
+        }
+
+        return ranges
+    }
+
+    private static func endMarkerRanges(in content: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var cursor = content.startIndex
+
+        while cursor < content.endIndex {
+            let lineEnd = content[cursor...].firstIndex(of: "\n") ?? content.endIndex
+            let rangeEnd = lineEnd < content.endIndex ? content.index(after: lineEnd) : lineEnd
+            let rawLine = content[cursor..<lineEnd]
+            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+
+            if line == endMarker {
+                ranges.append(cursor..<rangeEnd)
+            } else if line.hasPrefix(endMarker) {
+                let suffix = line.dropFirst(endMarker.count)
+                if suffix.first == "[",
+                   let markerRange = rawLine.range(of: endMarker),
+                   rawLine[..<markerRange.lowerBound].allSatisfy({ $0.isWhitespace }) {
+                    ranges.append(cursor..<markerRange.upperBound)
+                }
+            }
+
+            cursor = rangeEnd
         }
 
         return ranges
