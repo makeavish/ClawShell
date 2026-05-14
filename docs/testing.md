@@ -81,6 +81,19 @@ executable and is reserved for smoke tests such as:
 swift run ClawShell --smoke-test
 ```
 
+For repeatable local evidence that the staged app exposes a menu bar item to
+macOS Accessibility, run:
+
+```sh
+scripts/app-ui-smoke.sh \
+  --output-dir .build/app-ui-smoke/local-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+The smoke opens the staged app bundle, verifies the CLI can reach it, and
+captures the `ClawShell` status item from the accessibility tree. This is still
+a local UI smoke, not a substitute for a human visual pass on the target display
+configuration.
+
 ## Packaging Consent Audit
 
 Run the packaging consent audit before treating package/cask semantics as
