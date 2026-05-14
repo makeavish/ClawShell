@@ -422,6 +422,7 @@ fi
     manifest_row "provider-command-or-api" "evidence" "evidence/provider-command-or-api.txt" "powermetrics command path captured"
     manifest_row "helper-ownership-context" "evidence" "evidence/helper-ownership-context.txt" "root/helper-equivalent context captured"
     manifest_row "numeric-temperature-output" "$numeric_status" "$numeric_path" "$numeric_note"
+    manifest_row "scale-validation" "TODO" "" "Validate provider numeric scale before production cutoff use"
     manifest_row "freshness-samples" "TODO" "" "Capture repeated helper/root samples and compute max age"
     manifest_row "active-cadence-samples" "TODO" "" "Capture samples at active cadence"
     manifest_row "idle-cadence-samples" "TODO" "" "Capture samples at idle cadence"

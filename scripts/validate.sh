@@ -1261,6 +1261,10 @@ for required_file in \
     evidence/iohid-service-probe-build.status \
     evidence/iohid-temperature-service-properties.txt \
     evidence/iohid-temperature-service-properties.status \
+    evidence/ioreport-temperature-probe-build.txt \
+    evidence/ioreport-temperature-probe-build.status \
+    evidence/ioreport-temperature-samples.txt \
+    evidence/ioreport-temperature-samples.status \
     evidence/ioreport-temperature-legend-inventory.txt \
     evidence/ioreport-temperature-legend-inventory.status \
     evidence/numeric-temperature-candidates.txt \
@@ -1277,8 +1281,8 @@ if ! grep -q '^providerProofReady=false$' "$temperature_alt_source_dir/validatio
     cat "$temperature_alt_source_dir/validation-config.txt" >&2
     exit 1
 fi
-if ! grep -q '^evidenceFormat=temperature-alt-source-probe-v4$' "$temperature_alt_source_dir/validation-config.txt"; then
-    echo "Temperature alternate source probe did not record v4 evidence format" >&2
+if ! grep -q '^evidenceFormat=temperature-alt-source-probe-v5$' "$temperature_alt_source_dir/validation-config.txt"; then
+    echo "Temperature alternate source probe did not record v5 evidence format" >&2
     cat "$temperature_alt_source_dir/validation-config.txt" >&2
     exit 1
 fi
@@ -1298,6 +1302,18 @@ if [[ "$(uname -s)" == "Darwin" && -n "$(command -v clang 2>/dev/null || true)" 
         echo "Temperature alternate source native IOHID probe did not run in default smoke" >&2
         cat "$temperature_alt_source_dir/evidence/iohid-temperature-service-properties.status" >&2
         cat "$temperature_alt_source_dir/evidence/iohid-temperature-service-properties.txt" >&2
+        exit 1
+    fi
+    if ! grep -q '^exitCode=0$' "$temperature_alt_source_dir/evidence/ioreport-temperature-probe-build.status"; then
+        echo "Temperature alternate source native IOReport probe did not compile in default smoke" >&2
+        cat "$temperature_alt_source_dir/evidence/ioreport-temperature-probe-build.status" >&2
+        cat "$temperature_alt_source_dir/evidence/ioreport-temperature-probe-build.txt" >&2
+        exit 1
+    fi
+    if ! grep -q '^ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1$' "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.txt"; then
+        echo "Temperature alternate source native IOReport probe did not run in default smoke" >&2
+        cat "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.status" >&2
+        cat "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.txt" >&2
         exit 1
     fi
 fi
@@ -1481,9 +1497,23 @@ numericValuePropertyCount=0
 PROBE
 EOF
 chmod +x "$temperature_alt_source_fake_bin/iohid-probe"
+cat >"$temperature_alt_source_fake_bin/ioreport-probe" <<'EOF'
+#!/usr/bin/env bash
+cat <<'PROBE'
+ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
+temperatureScaleVerified=false
+temperature=34 group=ANS2 subgroup=MSP0 channel=Temperature(0) scale=unverified source=libIOReport
+temperature=35 group=ANS2 subgroup=MSP1 channel=Temperature(0) scale=unverified source=libIOReport
+temperatureSampleCount=2
+numericTemperatureCandidateCount=2
+numericTemperatureAcceptedCount=2
+PROBE
+EOF
+chmod +x "$temperature_alt_source_fake_bin/ioreport-probe"
 temperature_alt_source_fake="$bag_mode_smoke_dir/temperature-alt-source-fake"
 CLAWSHELL_TEMPERATURE_ALT_SOURCE_TIMEOUT_SECONDS=5 \
 CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOHID_PROBE="$temperature_alt_source_fake_bin/iohid-probe" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREPORT_PROBE="$temperature_alt_source_fake_bin/ioreport-probe" \
 PATH="$temperature_alt_source_fake_bin:$PATH" \
     scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_fake" >/dev/null
 for expected_key in \
@@ -1505,10 +1535,12 @@ for expected_key in \
     iohidValuePropertyCount=0 \
     iohidNumericValuePropertyCount=0 \
     ioreportTemperatureLegendPresent=true \
+    ioreportProbeAvailable=true \
+    ioreportTemperatureSampleCount=2 \
     candidateSurfaceAvailable=true \
     numericTemperatureObserved=true \
-    numericTemperatureCandidateCount=4 \
-    numericTemperatureRawCandidateCount=8 \
+    numericTemperatureCandidateCount=6 \
+    numericTemperatureRawCandidateCount=10 \
     numericTemperatureRejectedBatteryContextCount=4 \
     numericTemperatureRejectionReason=none \
     helperOwned=false \
@@ -1525,7 +1557,9 @@ for expected_candidate in \
     '"Temperature" = 3046' \
     '"VirtualTemperature" = 3139' \
     'CPU die temperature: 42 C' \
-    'temp: 41'
+    'temp: 41' \
+    'temperature=34' \
+    'temperature=35'
 do
     if ! grep -q "$expected_candidate" "$temperature_alt_source_fake/evidence/numeric-temperature-candidates.txt"; then
         echo "Temperature alternate source probe did not retain fake numeric candidate line: $expected_candidate" >&2
@@ -1598,6 +1632,16 @@ if ! awk -F '\t' '$1 == "iohid-temperature-service-properties" && $2 == "evidenc
     cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
     exit 1
 fi
+if ! awk -F '\t' '$1 == "ioreport-temperature-probe-build" && $2 == "evidence" && $3 == "evidence/ioreport-temperature-probe-build.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
+    echo "Temperature alternate source probe manifest did not attach IOReport probe build evidence" >&2
+    cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
+    exit 1
+fi
+if ! awk -F '\t' '$1 == "ioreport-temperature-samples" && $2 == "evidence" && $3 == "evidence/ioreport-temperature-samples.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
+    echo "Temperature alternate source probe manifest did not attach IOReport sample evidence" >&2
+    cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
+    exit 1
+fi
 if ! awk -F '\t' '$1 == "nvme-temperature-sensor-inventory" && $2 == "evidence" && $3 == "evidence/nvme-temperature-sensor-inventory.txt" { found = 1 } END { exit !found }' "$temperature_alt_source_fake/source-probe-manifest.tsv"; then
     echo "Temperature alternate source probe manifest did not attach NVMe temperature sensor inventory evidence" >&2
     cat "$temperature_alt_source_fake/source-probe-manifest.tsv" >&2
@@ -1622,6 +1666,16 @@ valuePropertyCount=0
 numericValuePropertyCount=0
 PROBE
 EOF
+cat >"$temperature_alt_source_zero_bin/ioreport-probe-zero" <<'EOF'
+#!/usr/bin/env bash
+cat <<'PROBE'
+ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
+temperatureScaleVerified=false
+temperatureSampleCount=0
+numericTemperatureCandidateCount=0
+numericTemperatureAcceptedCount=0
+PROBE
+EOF
 cat >"$temperature_alt_source_zero_bin/ioreg" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -1630,9 +1684,10 @@ cat >"$temperature_alt_source_zero_bin/hidutil" <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod +x "$temperature_alt_source_zero_bin/iohid-probe-zero" "$temperature_alt_source_zero_bin/ioreg" "$temperature_alt_source_zero_bin/hidutil"
+chmod +x "$temperature_alt_source_zero_bin/iohid-probe-zero" "$temperature_alt_source_zero_bin/ioreport-probe-zero" "$temperature_alt_source_zero_bin/ioreg" "$temperature_alt_source_zero_bin/hidutil"
 temperature_alt_source_fake_zero="$bag_mode_smoke_dir/temperature-alt-source-fake-zero-iohid"
 CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOHID_PROBE="$temperature_alt_source_zero_bin/iohid-probe-zero" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREPORT_PROBE="$temperature_alt_source_zero_bin/ioreport-probe-zero" \
 CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREG="$temperature_alt_source_zero_bin/ioreg" \
 CLAWSHELL_TEMPERATURE_ALT_SOURCE_HIDUTIL="$temperature_alt_source_zero_bin/hidutil" \
     scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_fake_zero" >/dev/null
@@ -1649,6 +1704,46 @@ fi
 if ! grep -q '^candidateSurfaceAvailable=false$' "$temperature_alt_source_fake_zero/validation-config.txt"; then
     echo "Temperature alternate source probe treated zero-match IOHID availability as candidate-surface evidence" >&2
     cat "$temperature_alt_source_fake_zero/validation-config.txt" >&2
+    exit 1
+fi
+temperature_alt_source_failed_ioreport_bin="$bag_mode_smoke_dir/temperature-alt-source-failed-ioreport-fakes"
+mkdir -p "$temperature_alt_source_failed_ioreport_bin"
+cat >"$temperature_alt_source_failed_ioreport_bin/ioreport-probe-failed" <<'EOF'
+#!/usr/bin/env bash
+cat <<'PROBE'
+ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
+temperatureScaleVerified=false
+temperature=99 group=ANS2 subgroup=MSP0 channel=Temperature(0) scale=unverified source=libIOReport
+temperatureSampleCount=1
+numericTemperatureCandidateCount=1
+numericTemperatureAcceptedCount=1
+PROBE
+exit 42
+EOF
+chmod +x "$temperature_alt_source_failed_ioreport_bin/ioreport-probe-failed"
+temperature_alt_source_failed_ioreport="$bag_mode_smoke_dir/temperature-alt-source-failed-ioreport"
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOHID_PROBE="$temperature_alt_source_zero_bin/iohid-probe-zero" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREPORT_PROBE="$temperature_alt_source_failed_ioreport_bin/ioreport-probe-failed" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREG="$temperature_alt_source_zero_bin/ioreg" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_HIDUTIL="$temperature_alt_source_zero_bin/hidutil" \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_failed_ioreport" >/dev/null
+for expected_key in \
+    ioreportProbeAvailable=false \
+    ioreportTemperatureSampleCount=0 \
+    candidateSurfaceAvailable=false \
+    numericTemperatureObserved=false \
+    numericTemperatureCandidateCount=0
+do
+    if ! grep -q "^$expected_key$" "$temperature_alt_source_failed_ioreport/validation-config.txt"; then
+        echo "Temperature alternate source probe promoted failed IOReport output: $expected_key" >&2
+        cat "$temperature_alt_source_failed_ioreport/validation-config.txt" >&2
+        cat "$temperature_alt_source_failed_ioreport/evidence/ioreport-temperature-samples.status" >&2
+        exit 1
+    fi
+done
+if grep -q 'temperature=99' "$temperature_alt_source_failed_ioreport/evidence/numeric-temperature-candidates.txt"; then
+    echo "Temperature alternate source probe retained failed IOReport numeric output" >&2
+    cat "$temperature_alt_source_failed_ioreport/evidence/numeric-temperature-candidates.txt" >&2
     exit 1
 fi
 temperature_alt_source_hanging_clang_bin="$bag_mode_smoke_dir/temperature-alt-source-hanging-clang-fakes"
@@ -1931,6 +2026,7 @@ if ! awk -F '\t' '$1 == "permission-behavior" && $2 == "evidence" { found = 1 } 
 fi
 for todo_row in \
     numeric-temperature-output \
+    scale-validation \
     freshness-samples \
     active-cadence-samples \
     idle-cadence-samples \
@@ -2484,6 +2580,47 @@ if ! grep -q 'case "thermal-levels"' "$temperature_smappservice_provider_thermal
     cat "$temperature_smappservice_provider_thermal_levels/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" >&2
     exit 1
 fi
+temperature_smappservice_provider_ioreport_ans2="$bag_mode_smoke_dir/temperature-smappservice-provider-ioreport-ans2"
+CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreport-ans2 \
+    CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=smc \
+    scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_ioreport_ans2" >/dev/null
+if ! grep -q '^providerSource=ioreport-ans2$' "$temperature_smappservice_provider_ioreport_ans2/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not record ioreport-ans2 provider source" >&2
+    cat "$temperature_smappservice_provider_ioreport_ans2/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^caseId=apple-silicon-ioreport-ans2-smappservice$' "$temperature_smappservice_provider_ioreport_ans2/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not use the ioreport-ans2 default case id" >&2
+    cat "$temperature_smappservice_provider_ioreport_ans2/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q '^powermetricsSamplers=not-used$' "$temperature_smappservice_provider_ioreport_ans2/validation-config.txt"; then
+    echo "Temperature SMAppService provider harness did not ignore stale powermetrics sampler settings for ioreport-ans2" >&2
+    cat "$temperature_smappservice_provider_ioreport_ans2/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q -- '--provider-source' "$temperature_smappservice_provider_ioreport_ans2/evidence/provider-command-or-api.txt" || \
+    ! grep -q '"ioreport-ans2"' "$temperature_smappservice_provider_ioreport_ans2/evidence/provider-command-or-api.txt"; then
+    echo "Temperature SMAppService provider harness did not wire ioreport-ans2 source into the LaunchDaemon command" >&2
+    cat "$temperature_smappservice_provider_ioreport_ans2/evidence/provider-command-or-api.txt" >&2
+    exit 1
+fi
+if [[ ! -x "$temperature_smappservice_provider_ioreport_ans2/ClawShellTemperatureProviderPrototype.app/Contents/MacOS/ClawShellIOReportTemperatureProbe" ]]; then
+    echo "Temperature SMAppService provider harness did not bundle the IOReport probe executable" >&2
+    ls -la "$temperature_smappservice_provider_ioreport_ans2/ClawShellTemperatureProviderPrototype.app/Contents/MacOS" >&2
+    exit 1
+fi
+if ! grep -q 'case "ioreport-ans2"' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ClawShellIOReportTemperatureProbe' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportProbeFormatObserved' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'let ioreportSampleAccepted = !timedOut &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q '!stdoutTruncated &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q '!stderrTruncated &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'stderrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift"; then
+    echo "Temperature SMAppService provider helper source did not include ioreport-ans2 command path" >&2
+    cat "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" >&2
+    exit 1
+fi
 temperature_smappservice_provider_multi_samplers="$bag_mode_smoke_dir/temperature-smappservice-provider-multi-samplers"
 CLAWSHELL_TEMPERATURE_PROVIDER_POWERMETRICS_SAMPLERS=thermal,cpu_power \
     scripts/temperature-provider-smappservice-proof.sh --output-dir "$temperature_smappservice_provider_multi_samplers" >/dev/null
@@ -2524,6 +2661,7 @@ fi
 for todo_row in \
     helper-ownership-context \
     numeric-temperature-output \
+    scale-validation \
     timeout-enforcement \
     permission-behavior \
     freshness-samples \
@@ -2775,7 +2913,7 @@ if CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=smc \
     echo "Temperature SMAppService provider harness accepted an invalid provider source" >&2
     exit 1
 fi
-if ! grep -q "CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE must be one of: powermetrics, ioreg-smc, ioreg-pmu, ioreg-smc-dispatcher, thermal-levels" "$bag_mode_smoke_error"; then
+if ! grep -q "CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE must be one of: powermetrics, ioreg-smc, ioreg-pmu, ioreg-smc-dispatcher, thermal-levels, ioreport-ans2" "$bag_mode_smoke_error"; then
     cat "$bag_mode_smoke_error" >&2
     exit 1
 fi
@@ -3106,6 +3244,7 @@ temperature_proof_required_checks=(
     provider-command-or-api
     helper-ownership-context
     numeric-temperature-output
+    scale-validation
     freshness-samples
     active-cadence-samples
     idle-cadence-samples
@@ -3156,6 +3295,11 @@ cp -R "$temperature_proof_dir" "$temperature_proof_thermal_levels"
 sed -i '' 's/providerSource=powermetrics/providerSource=thermal-levels/' "$temperature_proof_thermal_levels/validation-config.txt"
 sed -i '' 's/- Provider source: powermetrics/- Provider source: thermal-levels/' "$temperature_proof_thermal_levels/manual-result.md"
 scripts/temperature-provider-proof-verify.sh --manifest "$temperature_proof_thermal_levels/provider-manifest.tsv" >/dev/null
+temperature_proof_ioreport_ans2="$bag_mode_smoke_dir/temperature-proof-ioreport-ans2"
+cp -R "$temperature_proof_dir" "$temperature_proof_ioreport_ans2"
+sed -i '' 's/providerSource=powermetrics/providerSource=ioreport-ans2/' "$temperature_proof_ioreport_ans2/validation-config.txt"
+sed -i '' 's/- Provider source: powermetrics/- Provider source: ioreport-ans2/' "$temperature_proof_ioreport_ans2/manual-result.md"
+scripts/temperature-provider-proof-verify.sh --manifest "$temperature_proof_ioreport_ans2/provider-manifest.tsv" >/dev/null
 
 temperature_proof_scaffold="$bag_mode_smoke_dir/temperature-proof-scaffold"
 scripts/temperature-provider-proof-scaffold.sh --output-dir "$temperature_proof_scaffold" >/dev/null

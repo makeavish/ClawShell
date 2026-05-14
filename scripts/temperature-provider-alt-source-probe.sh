@@ -201,6 +201,8 @@ fi
 HIDUTIL_BIN="${CLAWSHELL_TEMPERATURE_ALT_SOURCE_HIDUTIL:-$(command -v hidutil 2>/dev/null || true)}"
 CLANG_BIN="${CLAWSHELL_TEMPERATURE_ALT_SOURCE_CLANG:-$(command -v clang 2>/dev/null || true)}"
 IOHID_PROBE_BIN="${CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOHID_PROBE:-}"
+IOREPORT_PROBE_BIN="${CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREPORT_PROBE:-}"
+SDKROOT_PATH="${CLAWSHELL_TEMPERATURE_ALT_SOURCE_SDKROOT:-$(xcrun --show-sdk-path 2>/dev/null || true)}"
 
 capture "smc-endpoint-inventory" "$TIMEOUT_SECONDS" "$IOREG_BIN" -r -c AppleSMCKeysEndpoint -l
 capture "smc-temp-sensor-node-inventory" "$TIMEOUT_SECONDS" "$IOREG_BIN" -r -n smctempsensor0 -l
@@ -246,6 +248,25 @@ else
     capture "iohid-service-probe-build" "$TIMEOUT_SECONDS" bash -c 'echo "IOHID service probe build unavailable"; exit 127'
     capture "iohid-temperature-service-properties" "$TIMEOUT_SECONDS" bash -c 'echo "IOHID service probe unavailable"; exit 127'
 fi
+if [[ -n "$IOREPORT_PROBE_BIN" ]]; then
+    capture "ioreport-temperature-probe-build" "$TIMEOUT_SECONDS" bash -c 'echo "using configured IOReport probe: $1"' _ "$IOREPORT_PROBE_BIN"
+    capture "ioreport-temperature-samples" "$TIMEOUT_SECONDS" "$IOREPORT_PROBE_BIN"
+elif [[ -n "$CLANG_BIN" && "$(uname -s)" == "Darwin" && -r "$SCRIPT_DIR/temperature-provider-ioreport-probe.c" ]]; then
+    ioreport_build_args=("$CLANG_BIN" -x c -fblocks)
+    if [[ -n "$SDKROOT_PATH" ]]; then
+        ioreport_build_args+=(-isysroot "$SDKROOT_PATH")
+    fi
+    ioreport_build_args+=(-framework CoreFoundation -lIOReport -o "$OUTPUT_DIR/ioreport-temperature-probe" "$SCRIPT_DIR/temperature-provider-ioreport-probe.c")
+    capture "ioreport-temperature-probe-build" "$TIMEOUT_SECONDS" "${ioreport_build_args[@]}"
+    if grep -q '^exitCode=0$' "$EVIDENCE_DIR/ioreport-temperature-probe-build.status" && [[ -x "$OUTPUT_DIR/ioreport-temperature-probe" ]]; then
+        capture "ioreport-temperature-samples" "$TIMEOUT_SECONDS" "$OUTPUT_DIR/ioreport-temperature-probe"
+    else
+        capture "ioreport-temperature-samples" "$TIMEOUT_SECONDS" bash -c 'echo "IOReport temperature probe build failed"; exit 127'
+    fi
+else
+    capture "ioreport-temperature-probe-build" "$TIMEOUT_SECONDS" bash -c 'echo "IOReport temperature probe build unavailable"; exit 127'
+    capture "ioreport-temperature-samples" "$TIMEOUT_SECONDS" bash -c 'echo "IOReport temperature probe unavailable"; exit 127'
+fi
 # shellcheck disable=SC2016
 capture "ioreport-temperature-legend-inventory" "$TIMEOUT_SECONDS" bash -c '
 set -euo pipefail
@@ -280,6 +301,8 @@ iohid_temperature_service_count=0
 iohid_value_property_count=0
 iohid_numeric_value_property_count=0
 ioreport_temperature_legend_present=false
+ioreport_probe_available=false
+ioreport_temperature_sample_count=0
 numeric_temperature_observed=false
 numeric_candidate_count=0
 numeric_raw_candidate_count=0
@@ -356,6 +379,18 @@ fi
 if grep -Eiq 'temperature|thermal|temp|die' "$EVIDENCE_DIR/ioreport-temperature-legend-inventory.txt"; then
     ioreport_temperature_legend_present=true
 fi
+ioreport_samples_ok=false
+if grep -q '^ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1$' "$EVIDENCE_DIR/ioreport-temperature-samples.txt" && \
+    grep -q '^exitCode=0$' "$EVIDENCE_DIR/ioreport-temperature-samples.status" && \
+    grep -q '^timedOut=false$' "$EVIDENCE_DIR/ioreport-temperature-samples.status"; then
+    ioreport_samples_ok=true
+    ioreport_probe_available=true
+    ioreport_temperature_sample_count="$(value_for_key temperatureSampleCount "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
+    ioreport_temperature_sample_count="${ioreport_temperature_sample_count:-0}"
+    if ! [[ "$ioreport_temperature_sample_count" =~ ^[0-9]+$ ]]; then
+        ioreport_temperature_sample_count=0
+    fi
+fi
 raw_candidates_tmp="$EVIDENCE_DIR/numeric-temperature-candidates.raw.tmp"
 accepted_candidates_tmp="$EVIDENCE_DIR/numeric-temperature-candidates.accepted.tmp"
 rejected_candidates_tmp="$EVIDENCE_DIR/rejected-temperature-candidates.tmp"
@@ -416,6 +451,11 @@ do
         awk 'length($0) <= 500' \
         >>"$accepted_candidates_tmp" || true
 done
+if [[ "$ioreport_samples_ok" == true ]]; then
+    grep -HniE "$numeric_candidate_pattern" "$EVIDENCE_DIR/ioreport-temperature-samples.txt" |
+        awk 'length($0) <= 500' \
+        >>"$accepted_candidates_tmp" || true
+fi
 cat "$accepted_candidates_tmp" >>"$raw_candidates_tmp"
 head -n "$MAX_LINES" "$accepted_candidates_tmp" >"$EVIDENCE_DIR/numeric-temperature-candidates.txt"
 head -n "$MAX_LINES" "$rejected_candidates_tmp" >"$EVIDENCE_DIR/rejected-temperature-candidates.txt"
@@ -442,12 +482,12 @@ fi
 } >"$EVIDENCE_DIR/numeric-temperature-candidates.status"
 
 candidate_surface_available=false
-if [[ "$smc_endpoint_present" == true || "$smc_temp_sensor_node_present" == true || "$smc_sensor_dispatcher_present" == true || "$pmu_temp_sensor_present" == true || "$nvme_temp_sensor_present" == true || "$die_temp_controller_present" == true || "$hid_pmu_temperature_inventory_present" == true || "$hid_nvme_temperature_inventory_present" == true || "$hid_temperature_service_dump_present" == true || "$iohid_temperature_service_count" -gt 0 || "$ioreport_temperature_legend_present" == true ]]; then
+if [[ "$smc_endpoint_present" == true || "$smc_temp_sensor_node_present" == true || "$smc_sensor_dispatcher_present" == true || "$pmu_temp_sensor_present" == true || "$nvme_temp_sensor_present" == true || "$die_temp_controller_present" == true || "$hid_pmu_temperature_inventory_present" == true || "$hid_nvme_temperature_inventory_present" == true || "$hid_temperature_service_dump_present" == true || "$iohid_temperature_service_count" -gt 0 || "$ioreport_temperature_legend_present" == true || "$ioreport_temperature_sample_count" -gt 0 ]]; then
     candidate_surface_available=true
 fi
 
 cat >"$OUTPUT_DIR/validation-config.txt" <<EOF
-evidenceFormat=temperature-alt-source-probe-v4
+evidenceFormat=temperature-alt-source-probe-v5
 metadataRedacted=true
 caseId=$CASE_ID
 capturedAtUtc=$(now_utc)
@@ -473,6 +513,8 @@ iohidTemperatureServiceCount=$iohid_temperature_service_count
 iohidValuePropertyCount=$iohid_value_property_count
 iohidNumericValuePropertyCount=$iohid_numeric_value_property_count
 ioreportTemperatureLegendPresent=$ioreport_temperature_legend_present
+ioreportProbeAvailable=$ioreport_probe_available
+ioreportTemperatureSampleCount=$ioreport_temperature_sample_count
 candidateSurfaceAvailable=$candidate_surface_available
 helperOwned=false
 numericTemperatureObserved=$numeric_temperature_observed
@@ -501,6 +543,8 @@ $(manifest_row "hidutil-temperature-service-ndjson" "evidence" "evidence/hidutil
 $(manifest_row "hidutil-temperature-service-dump" "evidence" "evidence/hidutil-temperature-service-dump.txt" "Bounded HID services dump captured for PMU/NVMe temperature-service metadata only")
 $(manifest_row "iohid-service-probe-build" "evidence" "evidence/iohid-service-probe-build.txt" "Native IOHID probe compile/configuration evidence")
 $(manifest_row "iohid-temperature-service-properties" "evidence" "evidence/iohid-temperature-service-properties.txt" "Native IOHIDServiceClient property probe for common current-value keys; discovery only")
+$(manifest_row "ioreport-temperature-probe-build" "evidence" "evidence/ioreport-temperature-probe-build.txt" "Native libIOReport probe compile/configuration evidence")
+$(manifest_row "ioreport-temperature-samples" "evidence" "evidence/ioreport-temperature-samples.txt" "Native libIOReport ANS2/MSP temperature-like samples; scale and coverage still unverified")
 $(manifest_row "ioreport-temperature-legend-inventory" "evidence" "evidence/ioreport-temperature-legend-inventory.txt" "IOReport-style temperature/thermal legend inventory captured without sudo")
 $(manifest_row "numeric-temperature-candidates" "evidence" "evidence/numeric-temperature-candidates.txt" "Bounded candidate lines for later provider review; not promoted to cutoff proof")
 $(manifest_row "rejected-temperature-candidates" "evidence" "evidence/rejected-temperature-candidates.txt" "Battery-context temperature lines rejected for production cutoff review")

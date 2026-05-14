@@ -19,7 +19,8 @@ registered and approved. The default source is powermetrics; set
 CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc for the diagnostic I/O Registry
 SMC endpoint source, ioreg-pmu for the AppleARMPMUTempSensor inventory
 candidate, ioreg-smc-dispatcher for the AppleSMCSensorDispatcher inventory
-candidate, or thermal-levels for the root-gated thermal levels command.
+candidate, thermal-levels for the root-gated thermal levels command, or
+ioreport-ans2 for the native libIOReport ANS2/MSP temperature-like sampler.
 
 --register calls SMAppService and can change local helper state. Use it only
 during an intentional #25 prototype run.
@@ -197,9 +198,9 @@ require_provider_source() {
     local name="$1"
     local value="$2"
     case "$value" in
-        powermetrics|ioreg-smc|ioreg-pmu|ioreg-smc-dispatcher|thermal-levels) ;;
+        powermetrics|ioreg-smc|ioreg-pmu|ioreg-smc-dispatcher|thermal-levels|ioreport-ans2) ;;
         *)
-            echo "$name must be one of: powermetrics, ioreg-smc, ioreg-pmu, ioreg-smc-dispatcher, thermal-levels" >&2
+            echo "$name must be one of: powermetrics, ioreg-smc, ioreg-pmu, ioreg-smc-dispatcher, thermal-levels, ioreport-ans2" >&2
             exit 64
             ;;
     esac
@@ -252,6 +253,9 @@ if [[ -z "$CASE_ID" ]]; then
             ;;
         thermal-levels)
             CASE_ID="apple-silicon-thermal-levels-smappservice"
+            ;;
+        ioreport-ans2)
+            CASE_ID="apple-silicon-ioreport-ans2-smappservice"
             ;;
         *)
             CASE_ID="apple-silicon-powermetrics-smappservice"
@@ -337,6 +341,14 @@ if [[ -x /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild ]]; then
 fi
 
 CODESIGN="$(xcrun --find codesign)"
+CLANG=""
+SDKROOT_PATH=""
+if [[ "$PROVIDER_SOURCE" == "ioreport-ans2" ]]; then
+    CLANG="$(xcrun --find clang)"
+    SDKROOT_PATH="$(xcrun --show-sdk-path)"
+fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IOREPORT_PROBE_NAME="ClawShellIOReportTemperatureProbe"
 
 capture() {
     local name="$1"
@@ -819,6 +831,7 @@ let showInitialUsage = CommandLine.arguments.contains("--show-initial-usage")
 let powermetricsPath = "/usr/bin/powermetrics"
 let ioregPath = "/usr/sbin/ioreg"
 let thermalPath = "/usr/bin/thermal"
+let executableDirectory = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
 let outputByteLimit = 2_000_000
 let commandPath: String
 let commandArguments: [String]
@@ -835,6 +848,9 @@ case "ioreg-smc-dispatcher":
 case "thermal-levels":
     commandPath = thermalPath
     commandArguments = ["levels"]
+case "ioreport-ans2":
+    commandPath = executableDirectory.appendingPathComponent("ClawShellIOReportTemperatureProbe").path
+    commandArguments = []
 default:
     commandPath = powermetricsPath
     var arguments = ["-n", "1", "-i", "\(sampleRateMs)", "--samplers", powermetricsSamplers]
@@ -989,9 +1005,40 @@ func ioregSMCNumericTemperatureAnalysis(_ text: String) -> (candidateCount: Int,
 }
 let ioregSMCAnalysis = ioregSMCNumericTemperatureAnalysis(combinedOutput)
 let legacyNumericObserved = matchesNumericTemperature(combinedOutput)
-let numericTemperatureCandidateCount = providerSource == "ioreg-smc" ? ioregSMCAnalysis.candidateCount : (legacyNumericObserved ? 1 : 0)
-let numericTemperatureAcceptedCount = providerSource == "ioreg-smc" ? ioregSMCAnalysis.acceptedCount : (legacyNumericObserved ? 1 : 0)
-let numericTemperatureRejectedBatteryContextCount = providerSource == "ioreg-smc" ? ioregSMCAnalysis.rejectedBatteryContextCount : 0
+
+func value(for key: String, in text: String) -> String? {
+    text.split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init)
+        .first { $0.hasPrefix("\(key)=") }?
+        .split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        .last
+        .map(String.init)
+}
+
+let ioreportSampleCount = Int(value(for: "temperatureSampleCount", in: combinedOutput) ?? "") ?? 0
+let ioreportProbeFormatObserved = combinedOutput.contains("ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1")
+let numericTemperatureCandidateCount: Int
+let numericTemperatureAcceptedCount: Int
+let numericTemperatureRejectedBatteryContextCount: Int
+if providerSource == "ioreg-smc" {
+    numericTemperatureCandidateCount = ioregSMCAnalysis.candidateCount
+    numericTemperatureAcceptedCount = ioregSMCAnalysis.acceptedCount
+    numericTemperatureRejectedBatteryContextCount = ioregSMCAnalysis.rejectedBatteryContextCount
+} else if providerSource == "ioreport-ans2" {
+    let ioreportSampleAccepted = !timedOut &&
+        exitCode == 0 &&
+        ioreportProbeFormatObserved &&
+        !stdoutTruncated &&
+        !stderrTruncated &&
+        stderrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    numericTemperatureCandidateCount = ioreportSampleAccepted ? ioreportSampleCount : 0
+    numericTemperatureAcceptedCount = ioreportSampleAccepted ? ioreportSampleCount : 0
+    numericTemperatureRejectedBatteryContextCount = 0
+} else {
+    numericTemperatureCandidateCount = legacyNumericObserved ? 1 : 0
+    numericTemperatureAcceptedCount = legacyNumericObserved ? 1 : 0
+    numericTemperatureRejectedBatteryContextCount = 0
+}
 let numericObserved = numericTemperatureAcceptedCount > 0
 let numericTemperatureRejectionReason = providerSource == "ioreg-smc" && numericTemperatureCandidateCount > 0 && numericTemperatureAcceptedCount == 0 ? "ioreg-smc-battery-context-only" : "none"
 let helperOwned = geteuid() == 0
@@ -1184,6 +1231,12 @@ swift build --package-path "$SOURCE_DIR" --product "$HELPER_NAME" >"$EVIDENCE_DI
 BIN_DIR="$(swift build --package-path "$SOURCE_DIR" --show-bin-path)"
 cp "$BIN_DIR/$APP_NAME" "$MACOS_DIR/$APP_NAME"
 cp "$BIN_DIR/$HELPER_NAME" "$MACOS_DIR/$HELPER_NAME"
+if [[ "$PROVIDER_SOURCE" == "ioreport-ans2" ]]; then
+    "$CLANG" -x c -fblocks -isysroot "$SDKROOT_PATH" -framework CoreFoundation -lIOReport \
+        -o "$MACOS_DIR/$IOREPORT_PROBE_NAME" \
+        "$SCRIPT_DIR/temperature-provider-ioreport-probe.c" \
+        >"$EVIDENCE_DIR/ioreport-probe-build.txt" 2>&1
+fi
 
 capture_required "provider-command-or-api" plutil -p "$LAUNCHD_DIR/$PLIST_NAME"
 capture_required "processinfo-supplemental-signal" swift -e 'import Foundation
@@ -1198,6 +1251,9 @@ case .critical: print("thermalState=critical")
 capture_optional "app-signing-before-sign" "$CODESIGN" -dvvv "$APP_DIR"
 "$CODESIGN" --force --sign - "$MACOS_DIR/$APP_NAME" >/dev/null 2>"$EVIDENCE_DIR/controller-codesign.stderr"
 "$CODESIGN" --force --sign - "$MACOS_DIR/$HELPER_NAME" >/dev/null 2>"$EVIDENCE_DIR/helper-codesign.stderr"
+if [[ "$PROVIDER_SOURCE" == "ioreport-ans2" ]]; then
+    "$CODESIGN" --force --sign - "$MACOS_DIR/$IOREPORT_PROBE_NAME" >/dev/null 2>"$EVIDENCE_DIR/ioreport-probe-codesign.stderr"
+fi
 "$CODESIGN" --force --sign - --deep "$APP_DIR" >/dev/null 2>"$EVIDENCE_DIR/app-bundle-codesign.stderr"
 capture_required "helper-ownership-model" "$CODESIGN" -dvvv "$MACOS_DIR/$HELPER_NAME"
 capture_required "temperature-provider-status-before-approval" "$MACOS_DIR/$APP_NAME" status
@@ -1306,6 +1362,7 @@ manifest_row() {
     manifest_row "provider-command-or-api" "evidence" "evidence/provider-command-or-api.txt" "SMAppService LaunchDaemon provider command captured"
     manifest_row "helper-ownership-context" "TODO" "" "Capture root helper runtime context after approval"
     manifest_row "numeric-temperature-output" "TODO" "" "Capture helper provider output after approval"
+    manifest_row "scale-validation" "TODO" "" "Validate provider numeric scale before production cutoff use"
     manifest_row "freshness-samples" "TODO" "" "Capture repeated helper/root samples and compute max age"
     manifest_row "active-cadence-samples" "TODO" "" "Capture samples at active cadence"
     manifest_row "idle-cadence-samples" "TODO" "" "Capture samples at idle cadence"

@@ -81,6 +81,7 @@ required_check_ids() {
 provider-command-or-api
 helper-ownership-context
 numeric-temperature-output
+scale-validation
 freshness-samples
 active-cadence-samples
 idle-cadence-samples
@@ -327,8 +328,8 @@ verify_config() {
     if ! is_choice_value "$CONFIG_HARDWARE_CLASS" "MacBook" "desktop" "unknown"; then
         record_error "validation-config.txt" "hardwareClass must be MacBook, desktop, or unknown"
     fi
-    if ! is_choice_value "$CONFIG_PROVIDER_SOURCE" "powermetrics" "ioreg-smc" "ioreg-pmu" "ioreg-smc-dispatcher" "thermal-levels" "SMC" "IOReport" "other"; then
-        record_error "validation-config.txt" "providerSource must be powermetrics, ioreg-smc, ioreg-pmu, ioreg-smc-dispatcher, thermal-levels, SMC, IOReport, or other"
+    if ! is_choice_value "$CONFIG_PROVIDER_SOURCE" "powermetrics" "ioreg-smc" "ioreg-pmu" "ioreg-smc-dispatcher" "thermal-levels" "ioreport-ans2" "SMC" "IOReport" "other"; then
+        record_error "validation-config.txt" "providerSource must be powermetrics, ioreg-smc, ioreg-pmu, ioreg-smc-dispatcher, thermal-levels, ioreport-ans2, SMC, IOReport, or other"
     fi
     if [[ "$CONFIG_HELPER_OWNED" != "true" ]]; then
         record_error "validation-config.txt" "helperOwned must be true for #25 evidence"
@@ -396,7 +397,7 @@ verify_manual_result() {
         check_required_field "$label"
     done
 
-    check_choice_field "Provider source" "powermetrics" "ioreg-smc" "ioreg-pmu" "ioreg-smc-dispatcher" "thermal-levels" "SMC" "IOReport" "other"
+    check_choice_field "Provider source" "powermetrics" "ioreg-smc" "ioreg-pmu" "ioreg-smc-dispatcher" "thermal-levels" "ioreport-ans2" "SMC" "IOReport" "other"
     check_choice_field "Helper-owned provider" "yes"
     check_choice_field "Numeric cutoff source" "yes"
     check_choice_field "No user-visible prompts" "yes"
