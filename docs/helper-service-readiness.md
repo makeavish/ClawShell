@@ -753,6 +753,22 @@ Optional manifest `checkId` rows:
 - `homebrew-cask-semantics` when `homebrewCaskUsed=true`; otherwise include an
   `n/a` row with the reason no cask path was exercised.
 
+For the current staged app/repo, the packaging consent audit can produce a
+separate #120 support artifact without installing a cask or package:
+
+```bash
+scripts/packaging-consent-audit.sh \
+  --output-dir .build/packaging-consent-audit/local-$(date -u +%Y%m%dT%H%M%SZ) \
+  --stage-app
+```
+
+This audit only proves that the audited app bundle and known release workflow,
+package, and cask files have no detected silent privileged-helper activation
+path. `--stage-app` builds an isolated app bundle inside the audit output
+directory; it does not open the app. If a future cask/package, bundled
+LaunchDaemon helper, or new release automation path is added, the optional
+package/cask verifier rows still need real install/upgrade/uninstall evidence.
+
 ## Conclusion
 
 The current no-membership `SMAppService` helper shape reached enabled status,

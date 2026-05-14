@@ -81,6 +81,30 @@ executable and is reserved for smoke tests such as:
 swift run ClawShell --smoke-test
 ```
 
+## Packaging Consent Audit
+
+Run the packaging consent audit before treating package/cask semantics as
+ready:
+
+```sh
+scripts/packaging-consent-audit.sh \
+  --output-dir .build/packaging-consent-audit/local-$(date -u +%Y%m%dT%H%M%SZ) \
+  --stage-app
+```
+
+The audit is static and non-privileged. With `--stage-app`, it builds and stages
+an isolated app bundle under the audit output directory without opening or
+stopping ClawShell. It captures the bundle layout and `Info.plist`, scans
+production app/build sources for privileged helper activation calls, and scans
+known release workflow/package/cask files for install hooks. It does not install
+a cask or package, register a helper, call `SMAppService`, open the app, or
+mutate launchd state. A `result=pass` means the audited app bundle and known
+release files have no detected install-time or launch-time privileged helper
+activation path. Future builds that add helper LaunchDaemon assets, cask files,
+package scripts, or new release automation paths still need real
+install/upgrade/uninstall evidence before #120 can promote the final packaging
+row.
+
 ## Coverage Status
 
 - `automated`: covered by the current portable checks or SwiftPM tests.
