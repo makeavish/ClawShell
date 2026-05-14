@@ -409,6 +409,19 @@ and route through `ControlServer` with explicit status/repair/uninstall
 messages. The current app-level helper status and repair responses remain
 unavailable because no production helper is installed yet, so this is CLI and
 control-routing evidence only.
+
+To capture that CLI row as an attachable evidence package, run:
+
+```sh
+scripts/helper-service-cli-outcome-proof.sh \
+  --output-dir .build/helper-service-prototype/cli-outcome-proof-$(date -u +%Y%m%dT%H%M%SZ)
+```
+
+The harness uses the full Xcode developer directory at
+`/Applications/Xcode.app/Contents/Developer` by default and runs
+`swift test --filter controlRouterSurfacesHelperCommandOutcomes`. The resulting
+package records the focused test output, a status file, source references, and
+`helperCliOutcomeProofReady=true` only when that one CLI-routing test passes.
 New artifacts derive a unique SMAppService bundle/helper identity from the
 output path, and write it to `appBundleIdentifier`, `helperLabel`, and
 `identitySuffix` in `validation-config.txt`. Set

@@ -5080,6 +5080,99 @@ if ! grep -q "Provide at least one --command-artifact" "$bag_mode_smoke_error"; 
     exit 1
 fi
 
+echo "==> helper service CLI outcome proof smoke"
+helper_cli_proof_bin="$bag_mode_smoke_dir/helper-cli-proof-bin"
+helper_cli_proof_developer_dir="$bag_mode_smoke_dir/helper-cli-proof-xcode"
+mkdir -p "$helper_cli_proof_bin" "$helper_cli_proof_developer_dir"
+cat >"$helper_cli_proof_bin/swift" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" != "test --filter controlRouterSurfacesHelperCommandOutcomes" ]]; then
+    echo "unexpected swift arguments: $*" >&2
+    exit 64
+fi
+cat <<'OUT'
+◇ Test run started.
+/Users/alice/local/clawshell/Tests/ClawShellCoreTests/ControlServerTests.swift:12: note: fixture path
+◇ Suite ControlServerTests started.
+◇ Test controlRouterSurfacesHelperCommandOutcomes() started.
+✔ Test controlRouterSurfacesHelperCommandOutcomes() passed after 0.001 seconds.
+✔ Suite ControlServerTests passed after 0.001 seconds.
+✔ Test run with 1 test in 1 suite passed after 0.001 seconds.
+OUT
+EOF
+chmod +x "$helper_cli_proof_bin/swift"
+helper_cli_proof_dir="$bag_mode_smoke_dir/helper-cli-proof"
+PATH="$helper_cli_proof_bin:$PATH" \
+    CLAWSHELL_HELPER_CLI_DEVELOPER_DIR="$helper_cli_proof_developer_dir" \
+    scripts/helper-service-cli-outcome-proof.sh --output-dir "$helper_cli_proof_dir" >/dev/null
+if ! grep -q '^helperCliOutcomeProofReady=true$' "$helper_cli_proof_dir/validation-config.txt"; then
+    echo "Helper CLI outcome proof did not mark the focused passing test as ready" >&2
+    cat "$helper_cli_proof_dir/validation-config.txt" >&2
+    exit 1
+fi
+if ! grep -q 'Test controlRouterSurfacesHelperCommandOutcomes() passed' "$helper_cli_proof_dir/evidence/cli-helper-status-repair-uninstall.txt"; then
+    echo "Helper CLI outcome proof did not capture focused test output" >&2
+    cat "$helper_cli_proof_dir/evidence/cli-helper-status-repair-uninstall.txt" >&2
+    exit 1
+fi
+if grep -q '/Users/alice' "$helper_cli_proof_dir/evidence/cli-helper-status-repair-uninstall.txt"; then
+    echo "Helper CLI outcome proof did not redact user metadata from focused test output" >&2
+    cat "$helper_cli_proof_dir/evidence/cli-helper-status-repair-uninstall.txt" >&2
+    exit 1
+fi
+if ! grep -q '/Users/<user>/local/clawshell' "$helper_cli_proof_dir/evidence/cli-helper-status-repair-uninstall.txt"; then
+    echo "Helper CLI outcome proof did not preserve a redacted path marker" >&2
+    cat "$helper_cli_proof_dir/evidence/cli-helper-status-repair-uninstall.txt" >&2
+    exit 1
+fi
+cat >"$helper_cli_proof_bin/swift" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "focused test failed"
+exit 1
+EOF
+chmod +x "$helper_cli_proof_bin/swift"
+helper_cli_proof_fail="$bag_mode_smoke_dir/helper-cli-proof-fail"
+if PATH="$helper_cli_proof_bin:$PATH" \
+    CLAWSHELL_HELPER_CLI_DEVELOPER_DIR="$helper_cli_proof_developer_dir" \
+    scripts/helper-service-cli-outcome-proof.sh --output-dir "$helper_cli_proof_fail" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper CLI outcome proof accepted a failing focused test" >&2
+    exit 1
+fi
+if ! grep -q '^helperCliOutcomeProofReady=false$' "$helper_cli_proof_fail/validation-config.txt"; then
+    echo "Helper CLI outcome proof did not mark failing test as not ready" >&2
+    cat "$helper_cli_proof_fail/validation-config.txt" >&2
+    exit 1
+fi
+helper_cli_proof_missing_xcode="$bag_mode_smoke_dir/helper-cli-proof-missing-xcode"
+if PATH="$helper_cli_proof_bin:$PATH" \
+    CLAWSHELL_HELPER_CLI_DEVELOPER_DIR="$bag_mode_smoke_dir/missing-xcode" \
+    scripts/helper-service-cli-outcome-proof.sh --output-dir "$helper_cli_proof_missing_xcode" >/dev/null 2>"$bag_mode_smoke_error"; then
+    echo "Helper CLI outcome proof accepted a missing developer directory" >&2
+    exit 1
+fi
+if ! grep -q "Full Xcode developer directory not found" "$bag_mode_smoke_error"; then
+    cat "$bag_mode_smoke_error" >&2
+    exit 1
+fi
+helper_cli_proof_symlink_target="$bag_mode_smoke_dir/helper-cli-proof-symlink-target"
+helper_cli_proof_symlink="$bag_mode_smoke_dir/helper-cli-proof-symlink"
+mkdir -p "$helper_cli_proof_symlink_target"
+ln -s "$helper_cli_proof_symlink_target" "$helper_cli_proof_symlink"
+for helper_cli_proof_symlink_path in "$helper_cli_proof_symlink" "$helper_cli_proof_symlink/"; do
+    if PATH="$helper_cli_proof_bin:$PATH" \
+        CLAWSHELL_HELPER_CLI_DEVELOPER_DIR="$helper_cli_proof_developer_dir" \
+        scripts/helper-service-cli-outcome-proof.sh --output-dir "$helper_cli_proof_symlink_path" >/dev/null 2>"$bag_mode_smoke_error"; then
+        echo "Helper CLI outcome proof accepted a symlink output directory: $helper_cli_proof_symlink_path" >&2
+        exit 1
+    fi
+    if ! grep -q "Output path must not be a symlink" "$bag_mode_smoke_error"; then
+        cat "$bag_mode_smoke_error" >&2
+        exit 1
+    fi
+done
+
 helper_smappservice_file="$bag_mode_smoke_dir/helper-smappservice-file"
 touch "$helper_smappservice_file"
 if scripts/helper-service-smappservice-prototype.sh --output-dir "$helper_smappservice_file" >/dev/null 2>"$bag_mode_smoke_error"; then
