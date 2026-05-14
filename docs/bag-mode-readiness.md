@@ -1,20 +1,23 @@
 # Bag Mode Readiness
 
-Bag Mode is blocked until the primitive, helper, and safety-provider spikes produce concrete evidence. This page is the operator checklist for issue #7.
+This page preserves the Bag Mode readiness evidence gathered for issue #7.
+The remaining manual hardware and app-level validation now lives in the single
+final E2E tracker: [#120](https://github.com/makeavish/ClawShell/issues/120).
 
-## Current Blockers
+## Current Status
 
-As of the May 14, 2026 local evidence, production Bag Mode remains blocked by
-three evidence issues:
+As of the May 14, 2026 owner decision, the split readiness/prototype issues are
+no longer separate execution blockers. Keep the evidence below as carry-forward
+context for final app E2E validation in #120:
 
 | Issue | Current local state | Next operator action |
 |---|---|---|
-| [#29](https://github.com/makeavish/ClawShell/issues/29) primitive matrix | `.build/power-validation/bag-mode-matrix/apple-silicon-ac-internal-20260513T115058Z` is verified Apple Silicon AC/internal evidence, but the operator reported lid-close sleep-block `inconclusive`. `.build/power-validation/bag-mode-matrix/apple-silicon-battery-internal-20260513T162945Z` is verified Apple Silicon battery/internal evidence: the harness applied `/usr/bin/pmset disablesleep 1`, observed `SleepDisabled 1`, rolled back to `0`, and the operator reported closed-lid battery blocking plus clean reopen recovery. The laptop sleeping after rollback is expected normal behavior because `SleepDisabled` was restored to `0`. | Continue the primitive matrix on target hardware: other physically available display states, open/closed paths beyond reopen recovery, app quit/crash, and reboot-held lifecycle evidence. |
-| [#27](https://github.com/makeavish/ClawShell/issues/27) no-membership helper prototype | `.build/helper-service-readiness/recheck-20260512T105510Z` records full Xcode/tooling available, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. `.build/helper-service-prototype/smappservice-register-stdout-20260513T040749Z` records a fresh ad-hoc `SMAppService` helper reaching enabled status, launchd `runs = 1`, root helper stdout with `uid=0`/`euid=0`, mirrored `bagModeHelperLedgerSample` JSON, root ledger `0600`, and unregister cleanup to status raw `0` / launchctl service-not-found. Reviewed fixed-command API artifacts now cover approved dry-run dispatch for `status`, `enableBagMode`, `disableBagMode`, `repair`, and `uninstall`; each recorded root execution, emitted mirrored ledger JSON, and unregistered cleanly. `.build/helper-service-prototype/smappservice-reboot-20260513T134512Z` records post-reboot append-capture evidence: the approved helper was still enabled after reboot, launchd was still managing the ServiceManagement daemon, root stdout appeared after reboot with mirrored ledger JSON, and unregister cleanup returned raw `0` / service-not-found. The May 14 helper-update attempt is negative evidence: same-label generation 2 `register()` did not move launchd off the generation 1 binary, while unregister/register replacement moved launchd to generation 2 but failed to spawn with `OS_REASON_CODESIGNING`; cleanup returned raw `0`. Post-approval status, launchctl, stdout-log, unified-log, root-ledger schema/ownership, post-reboot append-capture, and negative update evidence are reviewed for the local dry-run helper boundary, but no artifact is a verifier-complete package. CLI helper status/repair/uninstall command routing is automated as control-socket outcome evidence. Local dry-run failure-case probes are now captured by new prepare artifacts. Developer ID membership is intentionally deferred. | Complete the remaining #27 verifier proof: admin approval/password flow, final manifest/manual promotion for remaining rows, update, production restore conflict behavior, production repair/uninstall behavior, installed-helper/fallback failure cases, and helper-owned Bag Mode state cleanup before deciding whether fallback LaunchDaemon evidence is needed. |
-| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | The unique no-membership `SMAppService` helper artifacts provide root-runtime evidence after approval, but are not verifier-accepted provider proof. `powermetrics`, `ioreg-smc`, `ioreg-pmu`, `ioreg-smc-dispatcher`, `thermal-levels`, HID, IOHID, and NVMe discovery attempts either produced no accepted non-battery numeric source or only metadata/battery-context values. The new `.build/temperature-provider-proof/ioreport-ans2-smappservice-20260514T052521Z` artifact is the first strong candidate: a bundled native `libIOReport` ANS2/MSP probe ran from the approved helper as root, completed under the 1s timeout, exited `0`, and captured four non-battery numeric temperature-like samples with no truncation. The refreshed `.build/temperature-provider-proof/alt-source-ioreport-unit-field-20260514T075756Z` direct probe records `unitFieldPresent=true`, `unitRaw=0x0`, `unitQuantity=0`, and `ioreportTemperatureScaleVerified=false`, so scale remains unverified. | Treat `ioreport-ans2` as the lead candidate, then capture scale validation, provider freshness, active/idle cadence, closed-bag coverage, timeout, and fail-closed evidence. |
+| [#29](https://github.com/makeavish/ClawShell/issues/29) primitive matrix | `.build/power-validation/bag-mode-matrix/apple-silicon-ac-internal-20260513T115058Z` is verified Apple Silicon AC/internal evidence, but the operator reported lid-close sleep-block `inconclusive`. `.build/power-validation/bag-mode-matrix/apple-silicon-battery-internal-20260513T162945Z` is verified Apple Silicon battery/internal evidence: the harness applied `/usr/bin/pmset disablesleep 1`, observed `SleepDisabled 1`, rolled back to `0`, and the operator reported closed-lid battery blocking plus clean reopen recovery. The laptop sleeping after rollback is expected normal behavior because `SleepDisabled` was restored to `0`. | Carry remaining primitive/app lifecycle rows into #120: other physically available display states, open/closed paths beyond reopen recovery, app quit/crash, and reboot-held lifecycle evidence. |
+| [#27](https://github.com/makeavish/ClawShell/issues/27) no-membership helper prototype | `.build/helper-service-readiness/recheck-20260512T105510Z` records full Xcode/tooling available, Developer ID Application identities = 0, Developer ID Installer identities = 0, and `signedPrototypeReady=false`. `.build/helper-service-prototype/smappservice-register-stdout-20260513T040749Z` records a fresh ad-hoc `SMAppService` helper reaching enabled status, launchd `runs = 1`, root helper stdout with `uid=0`/`euid=0`, mirrored `bagModeHelperLedgerSample` JSON, root ledger `0600`, and unregister cleanup to status raw `0` / launchctl service-not-found. Reviewed fixed-command API artifacts now cover approved dry-run dispatch for `status`, `enableBagMode`, `disableBagMode`, `repair`, and `uninstall`; each recorded root execution, emitted mirrored ledger JSON, and unregistered cleanly. `.build/helper-service-prototype/smappservice-reboot-20260513T134512Z` records post-reboot append-capture evidence: the approved helper was still enabled after reboot, launchd was still managing the ServiceManagement daemon, root stdout appeared after reboot with mirrored ledger JSON, and unregister cleanup returned raw `0` / service-not-found. The May 14 helper-update attempt is negative evidence: same-label generation 2 `register()` did not move launchd off the generation 1 binary, while unregister/register replacement moved launchd to generation 2 but failed to spawn with `OS_REASON_CODESIGNING`; cleanup returned raw `0`. Post-approval status, launchctl, stdout-log, unified-log, root-ledger schema/ownership, post-reboot append-capture, and negative update evidence are reviewed for the local dry-run helper boundary, but no artifact is a verifier-complete package. CLI helper status/repair/uninstall command routing is automated as control-socket outcome evidence. Local dry-run failure-case probes are now captured by new prepare artifacts. Developer ID membership is intentionally deferred. | Carry remaining helper lifecycle rows into #120: admin approval/password flow, final manifest/manual promotion, update, production restore conflict behavior, repair/uninstall behavior, failure cases, and helper-owned Bag Mode state cleanup. |
+| [#25](https://github.com/makeavish/ClawShell/issues/25) thermal provider proof | The unique no-membership `SMAppService` helper artifacts provide root-runtime evidence after approval, but are not verifier-accepted provider proof. `powermetrics`, `ioreg-smc`, `ioreg-pmu`, `ioreg-smc-dispatcher`, `thermal-levels`, HID, IOHID, and NVMe discovery attempts either produced no accepted non-battery numeric source or only metadata/battery-context values. The new `.build/temperature-provider-proof/ioreport-ans2-smappservice-20260514T052521Z` artifact is the first strong candidate: a bundled native `libIOReport` ANS2/MSP probe ran from the approved helper as root, completed under the 1s timeout, exited `0`, and captured four non-battery numeric temperature-like samples with no truncation. The refreshed `.build/temperature-provider-proof/alt-source-ioreport-unit-field-20260514T075756Z` direct probe records `unitFieldPresent=true`, `unitRaw=0x0`, `unitQuantity=0`, and `ioreportTemperatureScaleVerified=false`, so scale remains unverified. | Carry remaining provider/fail-closed rows into #120: scale validation or feature gate, freshness, cadence, closed-bag coverage, timeout, and fail-closed behavior. |
 
-Readiness harnesses, scaffolds, and verifier success are support gates only.
-They do not close #7 without the real evidence above.
+Readiness harnesses, scaffolds, and verifier success are support evidence only.
+They feed final app E2E validation in #120.
 
 ## Primitive Validation
 
@@ -22,7 +25,7 @@ They do not close #7 without the real evidence above.
 
 Current artifact: [Bag Mode Primitive Matrix](bag-mode-primitive-matrix.md).
 
-PR #22 added the primitive validation harness, but the candidate primitive is not proven. The first verified real apply artifact is `.build/power-validation/bag-mode-matrix/apple-silicon-ac-internal-20260513T115058Z`: it is structurally complete and inconclusive for the AC/internal/reopen-recovery case. The follow-up `.build/power-validation/bag-mode-matrix/apple-silicon-battery-internal-20260513T162945Z` artifact is structurally complete and passed for the battery/internal/reopen-recovery normal lifecycle case. The broader hardware reliability matrix is tracked in [#29](https://github.com/makeavish/ClawShell/issues/29).
+PR #22 added the primitive validation harness, but the candidate primitive is not proven across the full app matrix. The first verified real apply artifact is `.build/power-validation/bag-mode-matrix/apple-silicon-ac-internal-20260513T115058Z`: it is structurally complete and inconclusive for the AC/internal/reopen-recovery case. The follow-up `.build/power-validation/bag-mode-matrix/apple-silicon-battery-internal-20260513T162945Z` artifact is structurally complete and passed for the battery/internal/reopen-recovery normal lifecycle case. Remaining primitive/app lifecycle validation is tracked in [#120](https://github.com/makeavish/ClawShell/issues/120).
 
 ```sh
 scripts/bag-mode-primitive-validation.sh --case-id apple-silicon-battery-internal
@@ -81,7 +84,11 @@ sudo /usr/bin/pmset disablesleep <prior value>
 CLAWSHELL_PMSET_REDACT_METADATA=1 scripts/pmset-snapshot.sh <evidence-dir>/after-rollback
 ```
 
-The harness redacts host/user metadata by default. Fill in `manual-result.md`, attach the evidence directory to issue #29, and summarize or cross-link the result on issue #7. Every primitive matrix case must include reboot state or an explicit `N/A` reason in `manual-result.md`.
+The harness redacts host/user metadata by default. Fill in `manual-result.md`
+and attach or summarize new evidence in final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120). Every primitive
+matrix case must include reboot state or an explicit `N/A` reason in
+`manual-result.md`.
 
 ## Required Matrix
 
@@ -93,7 +100,7 @@ The harness redacts host/user metadata by default. Fill in `manual-result.md`, a
 | Display | Internal only, external display, no external display |
 | Lid | Open, closed, reopen recovery |
 | Primitive lifecycle now | app quit, app crash, reboot while held |
-| Helper lifecycle after #27 | helper restart, helper upgrade mid-hold |
+| Helper lifecycle carried into #120 | helper restart, helper upgrade mid-hold |
 
 Each case must record the exact command applied, rollback command, `pmset -g custom`, `pmset -g assertions`, available IORegistry state, lid-close result, and reboot state when relevant.
 
@@ -134,11 +141,12 @@ reviewed command set now covers the fixed-command API row boundary for dry-run
 dispatch only. The status, launchctl, stdout-log, and unified-log captures also
 cover the local post-approval bootstrap boundary. The mirrored
 `bagModeHelperLedgerSample` plus root-owned `0600` ledger file evidence covers
-the dry-run root-ledger schema/ownership boundary. The required #27 prototype
-still needs the rest of the lifecycle evidence rather than another
-bootstrap-only, dry-run-command, ledger-shape-only, or unregister-only capture,
-including admin approval/password flow evidence because these artifacts do not
-prove which System Settings UI was shown before enablement.
+the dry-run root-ledger schema/ownership boundary. Final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120) still needs the rest
+of the lifecycle evidence rather than another bootstrap-only, dry-run-command,
+ledger-shape-only, or unregister-only capture, including admin
+approval/password flow evidence because these artifacts do not prove which
+System Settings UI was shown before enablement.
 
 Before attaching a helper prototype package, run:
 
@@ -169,7 +177,7 @@ This records post-reboot `SMAppService` status, `launchctl`, runtime log,
 stdout/stderr, and unified-log evidence without auto-promoting the verifier row.
 The current `.build/helper-service-prototype/smappservice-reboot-20260513T134512Z`
 append capture has been reviewed as local dry-run evidence, but final verifier
-promotion remains part of the #27 cleanup.
+promotion remains part of #120.
 
 Helper-generation preparation can be captured by creating separate artifacts
 with `CLAWSHELL_HELPER_PROTOTYPE_GENERATION=<positive-integer>`. Those artifacts
@@ -203,7 +211,7 @@ The provider proof must choose a fresh, permission-compatible temperature source
 
 Current artifact: [Temperature Provider Check](temperature-provider-check.md).
 
-The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine. The tested `powermetrics`, bounded `ioreg-smc`, explicit `ioreg-pmu`, `thermal-levels`, `ioreg-smc-dispatcher`, HID, native IOHID, NVMe, and SMC-dispatcher paths did not produce an accepted non-battery numeric cutoff source. The May 14 `ioreport-ans2` SMAppService run did produce helper-owned non-battery numeric ANS2/MSP samples under the 1 second deadline, so it is now the lead source candidate. Helper-side provider validation is tracked in [#25](https://github.com/makeavish/ClawShell/issues/25).
+The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine. The tested `powermetrics`, bounded `ioreg-smc`, explicit `ioreg-pmu`, `thermal-levels`, `ioreg-smc-dispatcher`, HID, native IOHID, NVMe, and SMC-dispatcher paths did not produce an accepted non-battery numeric cutoff source. The May 14 `ioreport-ans2` SMAppService run did produce helper-owned non-battery numeric ANS2/MSP samples under the 1 second deadline, so it is now the lead source candidate. Remaining helper-side provider validation is tracked in [#120](https://github.com/makeavish/ClawShell/issues/120).
 
 Before attempting helper/root sampling, run the non-mutating preflight:
 
@@ -269,8 +277,8 @@ with `CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-smc`. That mode runs
 current SMAppService artifact runs that bounded source as root within the 1
 second timeout, but the observed numeric candidates are under
 `AppleSmartBattery`. New proof attempts reject those candidates for production
-cutoff evidence and must promote a better helper-owned source before #25 can
-close.
+cutoff evidence; final app E2E must promote a better helper-owned source or
+prove feature-gated fail-closed behavior.
 
 To test the PMU I/O Registry inventory path, create the artifact with
 `CLAWSHELL_TEMPERATURE_PROVIDER_SOURCE=ioreg-pmu`. That mode runs
@@ -298,7 +306,8 @@ direct refresh of the same probe now records the raw
 `IOReportChannelInfo.IOReportChannelUnit` field and reports `unitRaw=0x0` /
 undefined unit quantity for those channels, so scale remains unverified. The
 candidate still needs scale validation, freshness/cadence, closed-bag coverage,
-and fail-closed proof before #25 can close.
+and fail-closed proof in final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120).
 
 Each artifact also gets a unique SMAppService identity derived from its output
 path so repeated ad-hoc attempts do not reuse stale approval/code-signing state.
@@ -384,9 +393,11 @@ Required artifact:
 
 ## Issue #7 Closeout
 
-Issue #7 is not complete until every failed or inconclusive primitive, helper, temperature, or Codex assumption has either:
+Issue #7 is closed because every failed or inconclusive primitive, helper,
+temperature, or Codex assumption now has either:
 
 - an updated TDD finding, or
 - a linked follow-up issue with the blocking evidence.
 
-Follow-up issues are blocker tracking, not proof. The primitive path remains open until #29 records pass/fail/inconclusive hardware evidence and the TDD/readiness docs are updated.
+The remaining manual and app-level validation rows are consolidated in
+[#120](https://github.com/makeavish/ClawShell/issues/120).

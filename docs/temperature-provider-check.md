@@ -2,9 +2,9 @@
 
 Check date: May 14, 2026
 
-Issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
+Original issue: [#7](https://github.com/makeavish/ClawShell/issues/7)
 
-Follow-up: [#25](https://github.com/makeavish/ClawShell/issues/25)
+Final E2E follow-up: [#120](https://github.com/makeavish/ClawShell/issues/120)
 
 App-side artifact: `.build/temperature-provider-validation/local-20260512T023358Z`
 
@@ -189,7 +189,7 @@ The later `.build/temperature-provider-proof/smappservice-all-20260512T181830Z`
 artifact used the same helper path with `--samplers all`. It confirmed the
 LaunchDaemon arguments and root-owned helper execution, but the 1 second run
 timed out before a sampler body was captured. This is runtime-capture evidence,
-not verifier-accepted #25 proof:
+not verifier-accepted final provider proof:
 
 ```text
 command=/usr/bin/powermetrics --show-initial-usage -n 1 -i 1000 --samplers all
@@ -330,8 +330,8 @@ CPU/package or closed-bag thermal coverage.
 These artifacts are useful evidence for the no-membership helper mechanism and
 candidate-source discovery, not proof of a production temperature provider. New
 `ioreg-smc` proof attempts reject the battery-context candidates for production
-cutoff evidence, so the next #25 work should capture freshness, cadence,
-closed-bag coverage, and fail-closed evidence for a better source.
+cutoff evidence, so #120 should capture freshness, cadence, closed-bag
+coverage, and fail-closed evidence for a better source.
 
 The refreshed alternate-source probe
 `.build/temperature-provider-proof/alt-source-classified-20260513T082121Z`
@@ -520,7 +520,7 @@ numericTemperatureAcceptedCount=0
 The output exposes `AppleSMCSensorDispatcher`, `AppleSMCSensorDispatcherUserClient`,
 and `IOUserClientCreator = "pid 552, thermalmonitord"`, but no scalar reading.
 Cleanup unregistered the helper and returned status raw `0`. This is useful
-negative helper-owned source evidence only; it must not be treated as #25 proof
+negative helper-owned source evidence only; it must not be treated as final proof
 until a source produces a non-battery numeric cutoff signal plus freshness,
 cadence, timeout, closed-bag coverage, and fail-closed evidence.
 
@@ -590,15 +590,15 @@ No production Bag Mode temperature provider is selected yet. The current best
 candidate is the helper-owned native `libIOReport` ANS2/MSP probe because it is
 non-battery, numeric, root-owned, and completes under the 1 second deadline.
 It still needs scale validation, freshness/cadence evidence, closed-bag
-coverage, and fail-closed proof before #25 can close.
+coverage, and fail-closed proof in final app E2E validation.
 
-`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine. The tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source. The bounded `ioreg-smc` diagnostic path now runs as root through SMAppService without timing out, but its observed `AppleSmartBattery` values are rejected as production cutoff candidates and do not prove CPU/package or closed-bag thermal coverage. The `ioreg-pmu` path now also runs as root through SMAppService without timing out, but the visible `AppleARMPMUTempSensor` inventory exposes PMU sensor names without numeric readings. The `thermal-levels` path can also run as root through SMAppService, but `/usr/bin/thermal levels` exits 69 with unsupported-hardware output on this machine. The refreshed alternate-source probe now captures `hidutil list`, HID temperature-service NDJSON/dump metadata, native IOHID service properties, NVMe temperature sensor inventory, and native IOReport samples. On this machine the IOReport ANS2/MSP path is the first accepted non-battery numeric candidate, while the HID/PMU/NVMe inventory remains metadata only. [#25](https://github.com/makeavish/ClawShell/issues/25) must still prove scale, freshness, cadence, timeout, coverage, and fail-closed behavior.
+`ProcessInfo.thermalState` is permission-compatible and useful as a supplemental app-side thermal-pressure/liveness signal, but it is coarse, non-numeric, and does not prove closed-bag coverage. `pmset -g therm` did not provide current numeric temperature evidence. AppleSmartBattery temperature is useful context when present, but it is not enough for CPU/package or closed-bag thermal risk and did not meet the 10 second freshness target in the local run. The no-membership `SMAppService` path can launch a helper as root on this machine. The tested `powermetrics` sampler variants did not provide a trustworthy numeric cutoff source. The bounded `ioreg-smc` diagnostic path now runs as root through SMAppService without timing out, but its observed `AppleSmartBattery` values are rejected as production cutoff candidates and do not prove CPU/package or closed-bag thermal coverage. The `ioreg-pmu` path now also runs as root through SMAppService without timing out, but the visible `AppleARMPMUTempSensor` inventory exposes PMU sensor names without numeric readings. The `thermal-levels` path can also run as root through SMAppService, but `/usr/bin/thermal levels` exits 69 with unsupported-hardware output on this machine. The refreshed alternate-source probe now captures `hidutil list`, HID temperature-service NDJSON/dump metadata, native IOHID service properties, NVMe temperature sensor inventory, and native IOReport samples. On this machine the IOReport ANS2/MSP path is the first accepted non-battery numeric candidate, while the HID/PMU/NVMe inventory remains metadata only. Final app E2E issue [#120](https://github.com/makeavish/ClawShell/issues/120) must still prove scale or feature-gated fail-closed behavior, freshness, cadence, timeout, and coverage before Bag Mode/release readiness is claimed.
 
-Production Bag Mode remains blocked until [#25](https://github.com/makeavish/ClawShell/issues/25) validates a no-membership helper or helper-equivalent provider that can supply fresh, permission-compatible thermal evidence with the required fail-closed behavior.
+Production Bag Mode readiness remains gated by [#120](https://github.com/makeavish/ClawShell/issues/120), which carries forward the remaining provider validation rows from #25.
 
 ## Helper Provider Proof Verifier
 
-Before attaching helper/helper-equivalent provider proof to #25, run:
+Before attaching or summarizing helper/helper-equivalent provider proof in #120, run:
 
 ```bash
 scripts/temperature-provider-proof-verify.sh \
@@ -883,4 +883,4 @@ scale-validation	evidence	evidence/scale-validation.txt	scale validation attache
 Evidence paths must be relative, non-empty, inside the evidence package, and free
 of symlink components. Evidence files must contain real captured output rather
 than `TODO`, `<paste output>`, or placeholder text. Verifier success is
-structural only; it does not prove the provider is reliable or close #25.
+structural only; it does not prove the provider is reliable or complete #120.

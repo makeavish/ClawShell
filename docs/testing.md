@@ -110,7 +110,9 @@ See [power-validation.md](power-validation.md) for the current normal assertion 
 
 ## Bag Mode Primitive Harness
 
-Use the Bag Mode primitive harness only for issue #7/#29 evidence:
+Use the Bag Mode primitive harness for historical #7/#29 evidence and for
+final app E2E carry-forward evidence in
+[#120](https://github.com/makeavish/ClawShell/issues/120):
 
 ```sh
 sudo scripts/bag-mode-primitive-validation.sh \
@@ -120,7 +122,7 @@ sudo scripts/bag-mode-primitive-validation.sh \
   --i-understand-this-changes-power-settings
 ```
 
-The default run is baseline-only and non-mutating. Mutating lid-close or reboot-held runs require root and explicit acknowledgement; attach the evidence directory and filled `manual-result.md` to the primitive matrix issue. For reboot-held evidence, add `--reboot-held`, follow `ROLLBACK_REQUIRED.txt`, capture `post-reboot/`, roll back, and capture `after-rollback/`.
+The default run is baseline-only and non-mutating. Mutating lid-close or reboot-held runs require root and explicit acknowledgement; attach or summarize the evidence directory and filled `manual-result.md` in final app E2E issue #120. For reboot-held evidence, add `--reboot-held`, follow `ROLLBACK_REQUIRED.txt`, capture `post-reboot/`, roll back, and capture `after-rollback/`.
 
 Record every supported row or explicit N/A/deferred reason in a tab-separated manifest:
 
@@ -160,12 +162,13 @@ scripts/bag-mode-primitive-matrix-review.sh \
 
 The review report maps only structurally verified case directories and leaves
 missing physical/lifecycle rows as `keep-todo`.
-After the matrix is attached to #29, update the readiness docs with the
-pass/fail/inconclusive result before production Bag Mode implementation begins.
+After a matrix run is complete, attach or summarize the evidence in #120 and
+update the readiness docs if the final app E2E conclusion changes.
 
 ## Temperature Provider Harness
 
-Use the non-destructive temperature-provider harness for #7 safety-source checks:
+Use the non-destructive temperature-provider harness for historical #7
+safety-source checks and #120 final app E2E carry-forward evidence:
 
 ```sh
 scripts/temperature-provider-validation.sh --output-dir .build/temperature-provider-validation/local-$(date -u +%Y%m%dT%H%M%SZ)
@@ -188,7 +191,8 @@ closed-bag coverage, fail-closed behavior, or provider reliability.
 
 Thermal cutoff and fail-closed behavior are tested with mocked provider inputs through `BagModeSafetyPolicy`. These tests cover warning, cutoff, stale, unavailable, permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout, coverage-insufficient, missing/invalid battery, battery floor, and hysteresis transitions without intentionally heating hardware.
 
-Use the helper provider proof verifier before attaching #25 evidence:
+Use the helper provider proof verifier before attaching or summarizing provider
+evidence in final app E2E issue #120:
 
 ```sh
 scripts/temperature-provider-proof-verify.sh \
@@ -311,7 +315,7 @@ scripts/temperature-provider-smappservice-proof.sh \
 This calls `unregister()` from the existing app bundle and records follow-up
 status, `launchctl`, and unified log output.
 
-Use the non-mutating provider proof scaffold when starting a new #25 evidence
+Use the non-mutating provider proof scaffold when starting a new #120 provider evidence
 package:
 
 ```sh
@@ -344,7 +348,8 @@ Xcode install discovered under `/Applications`, because Xcode can be installed
 while the active developer directory still points at Command Line Tools. It does
 not install, register, approve, unregister, or run a helper.
 
-Use the helper prototype evidence verifier before attaching #27 evidence:
+Use the helper prototype evidence verifier before attaching or summarizing helper
+evidence in final app E2E issue #120:
 
 ```sh
 scripts/helper-service-prototype-verify.sh \
@@ -379,7 +384,7 @@ and a mirrored `bagModeHelperLedgerSample` JSON event. A later
 `--capture-unregister` run on the same artifact recorded
 `unregisterResult=success`, status raw `1 -> 0`, follow-up status raw `0`, and
 `launchctl` service-not-found. Treat this as local SMAppService root-bootstrap
-and unregister evidence, not complete #27 evidence. The manifest still needs
+and unregister evidence, not complete final E2E evidence. The manifest still needs
 deliberate promotion only after reviewing admin-approval/password-flow,
 reboot, update, production restore conflict behavior, production
 repair/uninstall behavior, installed-helper/fallback failure-case, and helper-owned Bag Mode state cleanup
@@ -504,7 +509,8 @@ scripts/helper-service-prototype-review-summary.sh \
 The summary marks rows as `ready`, `needs-review`, `missing`, or
 `not-applicable`. It is a tracker/gap report only; it never mutates
 `prototype-manifest.tsv` or `manual-result.md`, and `missing` rows still require
-new lifecycle evidence before #27 can close.
+new lifecycle evidence in final app E2E issue
+[#120](https://github.com/makeavish/ClawShell/issues/120).
 The config records `rootLedgerPath=runtime/helper-ledger.jsonl`, and the
 LaunchDaemon passes the resolved absolute artifact path. The post-approval
 capture records ledger permissions and contents when readable without
@@ -579,7 +585,7 @@ call removed the ServiceManagement job; keep helper-owned Bag Mode state cleanup
 as a separate required evidence row until a real helper-owned Bag Mode state is
 created and removed.
 
-Use the non-mutating prototype scaffold when starting a new #27 evidence
+Use the non-mutating prototype scaffold when starting a new #120 helper evidence
 package:
 
 ```sh
