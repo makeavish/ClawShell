@@ -64,6 +64,23 @@ The V1 integration layer has both portable checks and contract fixtures:
 - Native Codex hook stdin is reduced to ClawShell's minimal event schema without prompt text, raw cwd, transcript paths, tool input, tool output, or assistant text. See [codex-native-hooks.md](codex-native-hooks.md) for confidence transitions.
 - Integration removal persists per-agent `doNotAutoInstall` suppression and writes a local audit event.
 
+## Local App Launch
+
+Launch the SwiftPM AppKit app as a real `.app` bundle for manual UI checks:
+
+```sh
+./script/build_and_run.sh --verify
+```
+
+The script builds `ClawShell`, stages `dist/ClawShell.app`, launches it with
+`open -n`, and verifies the app process exists. Use this path for menu bar and
+settings-window validation. Direct `swift run ClawShell` launches the raw
+executable and is reserved for smoke tests such as:
+
+```sh
+swift run ClawShell --smoke-test
+```
+
 ## Coverage Status
 
 - `automated`: covered by the current portable checks or SwiftPM tests.
