@@ -16,6 +16,7 @@ struct ClawShellCoreChecks {
         try cpuDiagnosticsDoNotDriveTransitions()
         try remainingTransitionRowsAreExecutable()
         try bagModeSafetyPolicyCoversWarningCutoffFailClosedAndHysteresis()
+        try bagModeSafetyDiagnosticsCoverUserFacingProviderStates()
         try trustedEventsAreMonotonic()
         try assertionManagerAcquiresValidatedNormalAssertionsAndReleases()
         try assertionManagerPauseAndReleaseOverridesStopAssertions()
@@ -568,6 +569,144 @@ struct ClawShellCoreChecks {
             isBagModeArmed: true
         )
         try check(rearmedWarning.state.mode == .warning, "Expected re-armed warning input to remain warning")
+    }
+
+    private static func bagModeSafetyDiagnosticsCoverUserFacingProviderStates() throws {
+        let now = Date(timeIntervalSince1970: 4_600)
+        let policy = BagModeSafetyPolicy()
+
+        let allow = policy.evaluate(
+            input: safetyInput(temperature: 70, battery: 80, now: now),
+            isBagModeArmed: false
+        )
+        try check(BagModeSafetyDiagnostic.userFacing(for: allow) == nil, "Expected normal safety state to have no diagnostic")
+
+        let warning = policy.evaluate(
+            input: safetyInput(temperature: 86, battery: 80, now: now),
+            isBagModeArmed: false
+        )
+        let warningDiagnostic = try checkNotNil(
+            BagModeSafetyDiagnostic.userFacing(for: warning),
+            "Expected warning state to have a diagnostic"
+        )
+        try check(warningDiagnostic.title.contains("warning"), "Expected warning diagnostic title")
+        try check(warningDiagnostic.recoveryAction != nil, "Expected warning diagnostic recovery action")
+
+        let supplementalWarning = policy.evaluate(
+            input: safetyInput(temperature: 60, pressure: .serious, battery: 80, now: now),
+            isBagModeArmed: false
+        )
+        let supplementalWarningDiagnostic = try checkNotNil(
+            BagModeSafetyDiagnostic.userFacing(for: supplementalWarning),
+            "Expected supplemental thermal pressure warning to have a diagnostic"
+        )
+        try check(
+            !supplementalWarningDiagnostic.title.localizedCaseInsensitiveContains("temperature is elevated"),
+            "Expected supplemental warning copy not to claim numeric temperature is elevated"
+        )
+
+        let failureCases: [(String, BagModeSafetyInput, BagModeSafetyAction, String)] = [
+            (
+                "temperature",
+                safetyInput(temperature: 96, battery: 80, now: now),
+                .failClosedBeforeArming,
+                "temperature cutoff"
+            ),
+            (
+                "battery",
+                safetyInput(temperature: 70, battery: 15, now: now),
+                .failClosedBeforeArming,
+                "battery"
+            ),
+            (
+                "stale",
+                BagModeSafetyInput(
+                    temperature: .sample(BagModeTemperatureSample(celsius: 70, capturedAt: now.addingTimeInterval(-11))),
+                    batteryPercent: 80,
+                    now: now
+                ),
+                .failClosedBeforeArming,
+                "stale"
+            ),
+            (
+                "unavailable",
+                BagModeSafetyInput(temperature: .unavailable, batteryPercent: 80, now: now),
+                .failClosedBeforeArming,
+                "unavailable"
+            ),
+            (
+                "permission",
+                BagModeSafetyInput(temperature: .permissionDenied, batteryPercent: 80, now: now),
+                .failClosedBeforeArming,
+                "permission"
+            ),
+            (
+                "parse",
+                BagModeSafetyInput(temperature: .parseFailed, batteryPercent: 80, now: now),
+                .failClosedBeforeArming,
+                "parsed"
+            ),
+            (
+                "helper",
+                BagModeSafetyInput(temperature: .helperCrashed, batteryPercent: 80, now: now),
+                .releaseIfArmed,
+                "helper"
+            ),
+            (
+                "unsupported",
+                BagModeSafetyInput(temperature: .unsupportedHardware, batteryPercent: 80, now: now),
+                .failClosedBeforeArming,
+                "unsupported"
+            ),
+            (
+                "timeout",
+                BagModeSafetyInput(temperature: .timedOut, batteryPercent: 80, now: now),
+                .releaseIfArmed,
+                "timed out"
+            ),
+            (
+                "coverage",
+                BagModeSafetyInput(
+                    temperature: .sample(BagModeTemperatureSample(celsius: 70, capturedAt: now, coversClosedBagRisk: false)),
+                    batteryPercent: 80,
+                    now: now
+                ),
+                .failClosedBeforeArming,
+                "coverage"
+            ),
+            (
+                "battery unavailable",
+                BagModeSafetyInput(
+                    temperature: .sample(BagModeTemperatureSample(celsius: 70, capturedAt: now)),
+                    batteryPercent: nil,
+                    now: now
+                ),
+                .failClosedBeforeArming,
+                "battery"
+            ),
+            (
+                "battery invalid",
+                safetyInput(temperature: 70, battery: 999, now: now),
+                .releaseIfArmed,
+                "battery"
+            )
+        ]
+
+        for (label, input, expectedAction, expectedTitleFragment) in failureCases {
+            let decision = policy.evaluate(input: input, isBagModeArmed: expectedAction == .releaseIfArmed)
+            try check(decision.action == expectedAction, "Expected \(label) diagnostic case to use \(expectedAction.rawValue)")
+
+            let diagnostic = try checkNotNil(
+                BagModeSafetyDiagnostic.userFacing(for: decision),
+                "Expected \(label) to have a diagnostic"
+            )
+            try check(
+                diagnostic.title.localizedCaseInsensitiveContains(expectedTitleFragment),
+                "Expected \(label) diagnostic title to explain the reason"
+            )
+            try check(!diagnostic.detail.isEmpty, "Expected \(label) diagnostic detail")
+            try check(diagnostic.recoveryAction?.isEmpty == false, "Expected \(label) diagnostic recovery action")
+        }
     }
 
     private static func trustedEventsAreMonotonic() throws {

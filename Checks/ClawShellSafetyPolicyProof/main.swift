@@ -462,6 +462,7 @@ struct ClawShellSafetyPolicyProof {
         failClosedCaseCount=\(failClosedRows.count)
         preArmBlockCovered=\(failClosedRows.contains { $0.decision.action == .failClosedBeforeArming })
         armedReleaseCovered=\(failClosedRows.contains { $0.decision.action == .releaseIfArmed })
+        userFacingDiagnosticsCovered=\(failClosedRows.allSatisfy { BagModeSafetyDiagnostic.userFacing(for: $0.decision) != nil })
         result=pass
         """
         try write(config + "\n", to: outputDirectory.appendingPathComponent("validation-config.txt"))
@@ -482,6 +483,9 @@ struct ClawShellSafetyPolicyProof {
                 "expectedCanArm",
                 "actualCanArm",
                 "shouldReleaseIfArmed",
+                "diagnosticTitle",
+                "diagnosticDetail",
+                "diagnosticRecoveryAction",
                 "result"
             ].joined(separator: "\t")
         ]
@@ -491,7 +495,10 @@ struct ClawShellSafetyPolicyProof {
 
     private static func writeSummary(rows: [ProofRow], failClosedRows: [ProofRow], to outputDirectory: URL) throws {
         let failClosedCases = failClosedRows
-            .map { "- \($0.proofCase.id): \($0.decision.state.cutoffReason?.rawValue ?? "none") -> \($0.decision.action.rawValue)" }
+            .map { row in
+                let diagnostic = BagModeSafetyDiagnostic.userFacing(for: row.decision)
+                return "- \(row.proofCase.id): \(row.decision.state.cutoffReason?.rawValue ?? "none") -> \(row.decision.action.rawValue) — \(diagnostic?.title ?? "no diagnostic")"
+            }
             .joined(separator: "\n")
         let summary = """
         # Safety Policy Fail-Closed Proof
@@ -506,6 +513,7 @@ struct ClawShellSafetyPolicyProof {
         - Fail-closed cases: \(failClosedRows.count)
         - Pre-arm block covered: \(failClosedRows.contains { $0.decision.action == .failClosedBeforeArming })
         - Armed release covered: \(failClosedRows.contains { $0.decision.action == .releaseIfArmed })
+        - User-facing diagnostics covered: \(failClosedRows.allSatisfy { BagModeSafetyDiagnostic.userFacing(for: $0.decision) != nil })
 
         ## Fail-Closed Cases
 
@@ -576,7 +584,8 @@ private struct ProofRow {
     var decision: BagModeSafetyDecision
 
     var tsvLine: String {
-        [
+        let diagnostic = BagModeSafetyDiagnostic.userFacing(for: decision)
+        return [
             proofCase.id,
             proofCase.category.rawValue,
             String(proofCase.isBagModeArmed),
@@ -589,8 +598,11 @@ private struct ProofRow {
             String(proofCase.expectedCanArm),
             String(decision.canArmBagMode),
             String(decision.shouldReleaseIfArmed),
+            diagnostic?.title ?? "",
+            diagnostic?.detail ?? "",
+            diagnostic?.recoveryAction ?? "",
             "pass"
-        ].joined(separator: "\t")
+        ].map(escapeTSV).joined(separator: "\t")
     }
 
     func assertExpected() throws {
@@ -598,7 +610,29 @@ private struct ProofRow {
         try check(decision.action == proofCase.expectedAction, "\(proofCase.id) action mismatch")
         try check(decision.state.cutoffReason == proofCase.expectedReason, "\(proofCase.id) reason mismatch")
         try check(decision.canArmBagMode == proofCase.expectedCanArm, "\(proofCase.id) can-arm mismatch")
+        if proofCase.category == .failClosed || proofCase.category == .warningOnly {
+            let diagnostic = try checkNotNil(
+                BagModeSafetyDiagnostic.userFacing(for: decision),
+                "\(proofCase.id) missing user-facing diagnostic"
+            )
+            try check(!diagnostic.title.isEmpty, "\(proofCase.id) diagnostic title is empty")
+            try check(!diagnostic.detail.isEmpty, "\(proofCase.id) diagnostic detail is empty")
+            try check(diagnostic.recoveryAction?.isEmpty == false, "\(proofCase.id) diagnostic recovery action is empty")
+        }
     }
+}
+
+private func escapeTSV(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "\t", with: " ")
+        .replacingOccurrences(of: "\n", with: " ")
+}
+
+private func checkNotNil<T>(_ value: T?, _ message: String) throws -> T {
+    guard let value else {
+        throw ProofError(message)
+    }
+    return value
 }
 
 private func safetyInput(
