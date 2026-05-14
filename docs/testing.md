@@ -33,7 +33,7 @@ coverage.
 - PID reuse and process restart dedupe: covered by `AgentSessionStateMachineTests`
 - Out-of-order hook events
 - Grace timer reset and non-reset rules: covered by `AgentSessionStateMachineTests`
-- Manual override precedence and persistence
+- Manual override precedence and persistence: covered by `AgentSessionStateMachineTests`
 - Normal assertion ownership/release and failed-release retry behavior: covered by `AssertionManagerTests`
 - Safety transitions, stale sensors, unavailable sensors, and hysteresis: covered by `BagModeSafetyPolicy` checks in `ClawShellCoreChecks`
 - Settings migration, atomic write, corrupt settings recovery

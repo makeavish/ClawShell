@@ -4,18 +4,24 @@ public final class AgentSessionStateMachine {
     public var graceInterval: TimeInterval
     public private(set) var sessions: [AgentSession]
     public private(set) var pauseAllExpiresAt: Date?
+    public private(set) var manualPauseAllExpiresAt: Date?
     public private(set) var safetyCutoffActive: Bool
+    public private(set) var manualSafetyCutoffExpiresAt: Date?
 
     public init(
         graceInterval: TimeInterval = 15 * 60,
         sessions: [AgentSession] = [],
         pauseAllExpiresAt: Date? = nil,
-        safetyCutoffActive: Bool = false
+        manualPauseAllExpiresAt: Date? = nil,
+        safetyCutoffActive: Bool = false,
+        manualSafetyCutoffExpiresAt: Date? = nil
     ) {
         self.graceInterval = graceInterval
         self.sessions = sessions
         self.pauseAllExpiresAt = pauseAllExpiresAt
+        self.manualPauseAllExpiresAt = manualPauseAllExpiresAt
         self.safetyCutoffActive = safetyCutoffActive
+        self.manualSafetyCutoffExpiresAt = manualSafetyCutoffExpiresAt
     }
 
     public func applyProcessObservations(_ observations: [AgentProcessObservation], at now: Date) {
@@ -156,9 +162,31 @@ public final class AgentSessionStateMachine {
         safetyCutoffActive = isActive
     }
 
+    public func applyManualOverrides(_ overrides: [ManualOverride], at now: Date) {
+        refreshExpirations(at: now)
+
+        let activeOverrides = overrides.filter { $0.isActive(at: now) }
+        let pauseOverrideExpirations = activeOverrides
+            .filter { $0.overrideKind == .pauseAll }
+            .map { $0.expiresAt ?? .distantFuture }
+        manualPauseAllExpiresAt = pauseOverrideExpirations.max()
+        let safetyOverrideExpirations = activeOverrides
+            .filter { $0.overrideKind == .safetyCutoff }
+            .map { $0.expiresAt ?? .distantFuture }
+        manualSafetyCutoffExpiresAt = safetyOverrideExpirations.max()
+    }
+
     public func refreshExpirations(at now: Date) {
         if let pauseAllExpiresAt, pauseAllExpiresAt <= now {
             self.pauseAllExpiresAt = nil
+        }
+
+        if let manualPauseAllExpiresAt, manualPauseAllExpiresAt <= now {
+            self.manualPauseAllExpiresAt = nil
+        }
+
+        if let manualSafetyCutoffExpiresAt, manualSafetyCutoffExpiresAt <= now {
+            self.manualSafetyCutoffExpiresAt = nil
         }
 
         for index in sessions.indices {
@@ -175,7 +203,8 @@ public final class AgentSessionStateMachine {
     }
 
     public func aggregateHoldState(at now: Date) -> AgentAggregateHoldState {
-        if safetyCutoffActive {
+        let isManualSafetyCutoffActive = manualSafetyCutoffExpiresAt.map { $0 > now } ?? false
+        if safetyCutoffActive || isManualSafetyCutoffActive {
             return AgentAggregateHoldState(
                 shouldHold: false,
                 heldSessionIDs: [],
@@ -184,7 +213,8 @@ public final class AgentSessionStateMachine {
         }
 
         let isPaused = pauseAllExpiresAt.map { $0 > now } ?? false
-        if isPaused {
+        let isManuallyPaused = manualPauseAllExpiresAt.map { $0 > now } ?? false
+        if isPaused || isManuallyPaused {
             return AgentAggregateHoldState(shouldHold: false, heldSessionIDs: [], isPaused: true)
         }
 

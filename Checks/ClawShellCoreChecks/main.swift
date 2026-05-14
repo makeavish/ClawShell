@@ -19,6 +19,7 @@ struct ClawShellCoreChecks {
         try bagModeSafetyDiagnosticsCoverUserFacingProviderStates()
         try trustedEventsAreMonotonic()
         try outOfOrderHookEventsAreIgnored()
+        try manualOverridePrecedenceAndPersistence()
         try assertionManagerAcquiresValidatedNormalAssertionsAndReleases()
         try assertionManagerPauseAndReleaseOverridesStopAssertions()
         try assertionManagerPartialCreateFailureKeepsAcquiredAssertionsAndRetriesMissingOnes()
@@ -859,6 +860,81 @@ struct ClawShellCoreChecks {
         )
         try check(multiTurnMachine.sessions.count == 2, "Expected later Claude prompt with the same session id to create a new turn")
         try check(multiTurnMachine.sessions[1].state == .active, "Expected later same-session Claude prompt to become active")
+    }
+
+    private static func manualOverridePrecedenceAndPersistence() throws {
+        var current = Date(timeIntervalSince1970: 5_000)
+        var settings = ClawShellSettings(
+            manualOverrides: [
+                ManualOverride(id: "pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(60))
+            ]
+        )
+        let monitor = AgentMonitor(
+            snapshotProvider: StaticSnapshotProvider(
+                snapshotsToReturn: [
+                    ProcessSnapshot(
+                        pid: 110,
+                        processName: "codex",
+                        executablePath: "/opt/homebrew/bin/codex",
+                        processStartTime: current
+                    )
+                ]
+            ),
+            settingsProvider: { settings },
+            now: { current }
+        )
+
+        monitor.poll()
+        try check(monitor.sessions.count == 1, "Expected process polling to create a held session")
+        try check(!monitor.aggregateHoldState.shouldHold, "Expected persisted pause override to suppress held sessions")
+        try check(monitor.aggregateHoldState.isPaused, "Expected persisted pause override to be visible in aggregate state")
+
+        let machine = AgentSessionStateMachine()
+        machine.applyProcessObservations([observation(pid: 111, start: current)], at: current)
+        machine.applyManualOverrides(settings.manualOverrides, at: current)
+        try check(machine.aggregateHoldState(at: current).isPaused, "Expected manual pause override to suppress direct state-machine holds")
+
+        machine.setSafetyCutoffActive(true)
+        let safetyDuringPause = machine.aggregateHoldState(at: current)
+        try check(safetyDuringPause.isSafetyCutoffActive, "Expected safety cutoff to take precedence over manual pause")
+        try check(!safetyDuringPause.isPaused, "Expected aggregate state to report the higher-priority safety cutoff")
+        machine.setSafetyCutoffActive(false)
+
+        settings.manualOverrides = [
+            ManualOverride(id: "safety", kind: ManualOverrideKind.safetyCutoff.rawValue, expiresAt: current.addingTimeInterval(5))
+        ]
+        current = current.addingTimeInterval(1)
+        monitor.poll()
+        try check(monitor.aggregateHoldState.isSafetyCutoffActive, "Expected persisted safety override to suppress holds")
+        try check(!monitor.aggregateHoldState.isPaused, "Expected safety override to take precedence over an expired previous pause")
+
+        current = current.addingTimeInterval(6)
+        try check(monitor.aggregateHoldState.shouldHold, "Expected expired safety override not to linger between polls")
+        try check(!monitor.aggregateHoldState.isSafetyCutoffActive, "Expected expired safety override to stop suppressing holds")
+
+        settings.manualOverrides = []
+        current = current.addingTimeInterval(1)
+        monitor.poll()
+        try check(monitor.aggregateHoldState.shouldHold, "Expected removing persisted overrides to restore held sessions")
+        try check(!monitor.aggregateHoldState.isPaused, "Expected removed persisted pause override not to linger")
+        try check(!monitor.aggregateHoldState.isSafetyCutoffActive, "Expected removed persisted safety override not to linger")
+
+        settings.manualOverrides = [
+            ManualOverride(id: "expired", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(-1))
+        ]
+        monitor.poll()
+        try check(monitor.aggregateHoldState.shouldHold, "Expected expired persisted pause override not to suppress holds")
+
+        settings.manualOverrides = [
+            ManualOverride(id: "fallback-pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(60))
+        ]
+        let fallbackMonitor = AgentMonitor(
+            snapshotProvider: ThrowingSnapshotProvider(),
+            settingsProvider: { settings },
+            now: { current }
+        )
+        fallbackMonitor.poll()
+        try check(fallbackMonitor.aggregateHoldState.isPaused, "Expected persisted pause override to apply even when process snapshots fail")
     }
 
     private static func assertionManagerAcquiresValidatedNormalAssertionsAndReleases() throws {
@@ -2574,6 +2650,12 @@ struct StaticSnapshotProvider: ProcessSnapshotProviding {
 
     func snapshots() throws -> [ProcessSnapshot] {
         snapshotsToReturn
+    }
+}
+
+struct ThrowingSnapshotProvider: ProcessSnapshotProviding {
+    func snapshots() throws -> [ProcessSnapshot] {
+        throw CheckFailure("snapshot failure")
     }
 }
 

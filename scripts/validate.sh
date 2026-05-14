@@ -1603,7 +1603,8 @@ fi
 
 echo "==> temperature provider alternate source probe smoke"
 temperature_alt_source_dir="$bag_mode_smoke_dir/temperature-alt-source"
-scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_dir" >/dev/null
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_TIMEOUT_SECONDS=5 \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_dir" >/dev/null
 for required_file in \
     validation-config.txt \
     source-probe-manifest.tsv \

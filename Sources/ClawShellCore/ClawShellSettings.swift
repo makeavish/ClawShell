@@ -206,6 +206,19 @@ public struct ManualOverride: Codable, Equatable, Sendable {
         self.kind = kind
         self.expiresAt = expiresAt
     }
+
+    public var overrideKind: ManualOverrideKind? {
+        ManualOverrideKind(rawValue: kind)
+    }
+
+    public func isActive(at now: Date) -> Bool {
+        expiresAt.map { $0 > now } ?? true
+    }
+}
+
+public enum ManualOverrideKind: String, Codable, Equatable, Sendable {
+    case pauseAll
+    case safetyCutoff
 }
 
 public struct HelperOwnership: Codable, Equatable, Sendable {
