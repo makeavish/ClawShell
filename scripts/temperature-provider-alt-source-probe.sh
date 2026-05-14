@@ -303,6 +303,8 @@ iohid_numeric_value_property_count=0
 ioreport_temperature_legend_present=false
 ioreport_probe_available=false
 ioreport_temperature_sample_count=0
+ioreport_temperature_scale_verified=false
+ioreport_temperature_scale_verified_count=0
 numeric_temperature_observed=false
 numeric_candidate_count=0
 numeric_raw_candidate_count=0
@@ -383,12 +385,38 @@ ioreport_samples_ok=false
 if grep -q '^ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1$' "$EVIDENCE_DIR/ioreport-temperature-samples.txt" && \
     grep -q '^exitCode=0$' "$EVIDENCE_DIR/ioreport-temperature-samples.status" && \
     grep -q '^timedOut=false$' "$EVIDENCE_DIR/ioreport-temperature-samples.status"; then
-    ioreport_samples_ok=true
     ioreport_probe_available=true
-    ioreport_temperature_sample_count="$(value_for_key temperatureSampleCount "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
-    ioreport_temperature_sample_count="${ioreport_temperature_sample_count:-0}"
-    if ! [[ "$ioreport_temperature_sample_count" =~ ^[0-9]+$ ]]; then
-        ioreport_temperature_sample_count=0
+    ioreport_temperature_reported_sample_count="$(value_for_key temperatureSampleCount "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
+    ioreport_temperature_reported_sample_count="${ioreport_temperature_reported_sample_count:-0}"
+    if ! [[ "$ioreport_temperature_reported_sample_count" =~ ^[0-9]+$ ]]; then
+        ioreport_temperature_reported_sample_count=0
+    fi
+    ioreport_temperature_line_count="$(awk '/^temperature=/ { count += 1 } END { print count + 0 }' "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
+    ioreport_temperature_scale_verified_line_count="$(awk '
+        /^temperature=/ &&
+            /(^| )unitQuantity=10( |$)/ &&
+            /(^| )unitScale=0x0( |$)/ &&
+            /(^| )scaleVerified=true( |$)/ {
+                count += 1
+        }
+        END { print count + 0 }
+    ' "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
+    ioreport_temperature_reported_scale_verified_count="$(value_for_key temperatureScaleVerifiedCount "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
+    ioreport_temperature_reported_scale_verified_count="${ioreport_temperature_reported_scale_verified_count:-0}"
+    if ! [[ "$ioreport_temperature_reported_scale_verified_count" =~ ^[0-9]+$ ]]; then
+        ioreport_temperature_reported_scale_verified_count=0
+    fi
+    if [[ "$ioreport_temperature_line_count" == "$ioreport_temperature_reported_sample_count" ]]; then
+        ioreport_samples_ok=true
+        ioreport_temperature_sample_count="$ioreport_temperature_reported_sample_count"
+        ioreport_temperature_scale_verified_count="$ioreport_temperature_scale_verified_line_count"
+    fi
+    ioreport_reported_scale_verified="$(value_for_key temperatureScaleVerified "$EVIDENCE_DIR/ioreport-temperature-samples.txt")"
+    if [[ "$ioreport_reported_scale_verified" == "true" &&
+          "$ioreport_temperature_sample_count" -gt 0 &&
+          "$ioreport_temperature_scale_verified_count" == "$ioreport_temperature_sample_count" &&
+          "$ioreport_temperature_reported_scale_verified_count" == "$ioreport_temperature_sample_count" ]]; then
+        ioreport_temperature_scale_verified=true
     fi
 fi
 raw_candidates_tmp="$EVIDENCE_DIR/numeric-temperature-candidates.raw.tmp"
@@ -487,7 +515,7 @@ if [[ "$smc_endpoint_present" == true || "$smc_temp_sensor_node_present" == true
 fi
 
 cat >"$OUTPUT_DIR/validation-config.txt" <<EOF
-evidenceFormat=temperature-alt-source-probe-v5
+evidenceFormat=temperature-alt-source-probe-v6
 metadataRedacted=true
 caseId=$CASE_ID
 capturedAtUtc=$(now_utc)
@@ -515,6 +543,8 @@ iohidNumericValuePropertyCount=$iohid_numeric_value_property_count
 ioreportTemperatureLegendPresent=$ioreport_temperature_legend_present
 ioreportProbeAvailable=$ioreport_probe_available
 ioreportTemperatureSampleCount=$ioreport_temperature_sample_count
+ioreportTemperatureScaleVerified=$ioreport_temperature_scale_verified
+ioreportTemperatureScaleVerifiedCount=$ioreport_temperature_scale_verified_count
 candidateSurfaceAvailable=$candidate_surface_available
 helperOwned=false
 numericTemperatureObserved=$numeric_temperature_observed

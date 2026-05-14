@@ -1281,8 +1281,8 @@ if ! grep -q '^providerProofReady=false$' "$temperature_alt_source_dir/validatio
     cat "$temperature_alt_source_dir/validation-config.txt" >&2
     exit 1
 fi
-if ! grep -q '^evidenceFormat=temperature-alt-source-probe-v5$' "$temperature_alt_source_dir/validation-config.txt"; then
-    echo "Temperature alternate source probe did not record v5 evidence format" >&2
+if ! grep -q '^evidenceFormat=temperature-alt-source-probe-v6$' "$temperature_alt_source_dir/validation-config.txt"; then
+    echo "Temperature alternate source probe did not record v6 evidence format" >&2
     cat "$temperature_alt_source_dir/validation-config.txt" >&2
     exit 1
 fi
@@ -1313,6 +1313,11 @@ if [[ "$(uname -s)" == "Darwin" && -n "$(command -v clang 2>/dev/null || true)" 
     if ! grep -q '^ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1$' "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.txt"; then
         echo "Temperature alternate source native IOReport probe did not run in default smoke" >&2
         cat "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.status" >&2
+        cat "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.txt" >&2
+        exit 1
+    fi
+    if ! grep -q '^temperatureScaleValidationSource=IOReportChannelGetUnit$' "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.txt"; then
+        echo "Temperature alternate source native IOReport probe did not record unit/scale validation metadata" >&2
         cat "$temperature_alt_source_dir/evidence/ioreport-temperature-samples.txt" >&2
         exit 1
     fi
@@ -1501,10 +1506,12 @@ cat >"$temperature_alt_source_fake_bin/ioreport-probe" <<'EOF'
 #!/usr/bin/env bash
 cat <<'PROBE'
 ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
-temperatureScaleVerified=false
-temperature=34 group=ANS2 subgroup=MSP0 channel=Temperature(0) scale=unverified source=libIOReport
-temperature=35 group=ANS2 subgroup=MSP1 channel=Temperature(0) scale=unverified source=libIOReport
+temperature=34 group=ANS2 subgroup=MSP0 channel=Temperature(0) unitQuantity=10 unitScale=0x0 unitLabel=C scale=celsius scaleVerified=true source=libIOReport
+temperature=35 group=ANS2 subgroup=MSP1 channel=Temperature(0) unitQuantity=10 unitScale=0x0 unitLabel=C scale=celsius scaleVerified=true source=libIOReport
+temperatureScaleVerified=true
+temperatureScaleValidationSource=IOReportChannelGetUnit
 temperatureSampleCount=2
+temperatureScaleVerifiedCount=2
 numericTemperatureCandidateCount=2
 numericTemperatureAcceptedCount=2
 PROBE
@@ -1537,6 +1544,8 @@ for expected_key in \
     ioreportTemperatureLegendPresent=true \
     ioreportProbeAvailable=true \
     ioreportTemperatureSampleCount=2 \
+    ioreportTemperatureScaleVerified=true \
+    ioreportTemperatureScaleVerifiedCount=2 \
     candidateSurfaceAvailable=true \
     numericTemperatureObserved=true \
     numericTemperatureCandidateCount=6 \
@@ -1672,6 +1681,7 @@ cat <<'PROBE'
 ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
 temperatureScaleVerified=false
 temperatureSampleCount=0
+temperatureScaleVerifiedCount=0
 numericTemperatureCandidateCount=0
 numericTemperatureAcceptedCount=0
 PROBE
@@ -1713,8 +1723,9 @@ cat >"$temperature_alt_source_failed_ioreport_bin/ioreport-probe-failed" <<'EOF'
 cat <<'PROBE'
 ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
 temperatureScaleVerified=false
-temperature=99 group=ANS2 subgroup=MSP0 channel=Temperature(0) scale=unverified source=libIOReport
+temperature=99 group=ANS2 subgroup=MSP0 channel=Temperature(0) unitQuantity=0 unitScale=0x0 unitLabel= scale=unverified scaleVerified=false source=libIOReport
 temperatureSampleCount=1
+temperatureScaleVerifiedCount=0
 numericTemperatureCandidateCount=1
 numericTemperatureAcceptedCount=1
 PROBE
@@ -1746,6 +1757,82 @@ if grep -q 'temperature=99' "$temperature_alt_source_failed_ioreport/evidence/nu
     cat "$temperature_alt_source_failed_ioreport/evidence/numeric-temperature-candidates.txt" >&2
     exit 1
 fi
+temperature_alt_source_bad_scale_bin="$bag_mode_smoke_dir/temperature-alt-source-bad-scale-fakes"
+mkdir -p "$temperature_alt_source_bad_scale_bin"
+cat >"$temperature_alt_source_bad_scale_bin/ioreport-probe-bad-scale" <<'EOF'
+#!/usr/bin/env bash
+cat <<'PROBE'
+ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
+temperature=34 group=ANS2 subgroup=MSP0 channel=Temperature(0) unitQuantity=10 unitScale=0x0 unitLabel=C scale=celsius scaleVerified=true source=libIOReport
+temperature=35 group=ANS2 subgroup=MSP1 channel=Temperature(0) unitQuantity=0 unitScale=0x0 unitLabel= scale=unverified scaleVerified=false source=libIOReport
+temperatureScaleVerified=true
+temperatureScaleValidationSource=IOReportChannelGetUnit
+temperatureSampleCount=2
+temperatureScaleVerifiedCount=1
+numericTemperatureCandidateCount=2
+numericTemperatureAcceptedCount=2
+PROBE
+EOF
+chmod +x "$temperature_alt_source_bad_scale_bin/ioreport-probe-bad-scale"
+temperature_alt_source_bad_scale="$bag_mode_smoke_dir/temperature-alt-source-bad-scale"
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOHID_PROBE="$temperature_alt_source_zero_bin/iohid-probe-zero" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREPORT_PROBE="$temperature_alt_source_bad_scale_bin/ioreport-probe-bad-scale" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREG="$temperature_alt_source_zero_bin/ioreg" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_HIDUTIL="$temperature_alt_source_zero_bin/hidutil" \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_bad_scale" >/dev/null
+for expected_key in \
+    ioreportProbeAvailable=true \
+    ioreportTemperatureSampleCount=2 \
+    ioreportTemperatureScaleVerified=false \
+    ioreportTemperatureScaleVerifiedCount=1 \
+    candidateSurfaceAvailable=true \
+    numericTemperatureObserved=true
+do
+    if ! grep -q "^$expected_key$" "$temperature_alt_source_bad_scale/validation-config.txt"; then
+        echo "Temperature alternate source probe trusted inconsistent IOReport scale metadata: $expected_key" >&2
+        cat "$temperature_alt_source_bad_scale/validation-config.txt" >&2
+        cat "$temperature_alt_source_bad_scale/evidence/ioreport-temperature-samples.txt" >&2
+        exit 1
+    fi
+done
+temperature_alt_source_line_disagree_bin="$bag_mode_smoke_dir/temperature-alt-source-line-disagree-fakes"
+mkdir -p "$temperature_alt_source_line_disagree_bin"
+cat >"$temperature_alt_source_line_disagree_bin/ioreport-probe-line-disagree" <<'EOF'
+#!/usr/bin/env bash
+cat <<'PROBE'
+ioreportTemperatureProbeFormat=ioreport-temperature-probe-v1
+temperature=34 group=ANS2 subgroup=MSP0 channel=Temperature(0) unitQuantity=10 unitScale=0x0 unitLabel=C scale=celsius scaleVerified=true source=libIOReport
+temperature=35 group=ANS2 subgroup=MSP1 channel=Temperature(0) unitQuantity=0 unitScale=0x0 unitLabel= scale=unverified scaleVerified=false source=libIOReport
+temperatureScaleVerified=true
+temperatureScaleValidationSource=IOReportChannelGetUnit
+temperatureSampleCount=2
+temperatureScaleVerifiedCount=2
+numericTemperatureCandidateCount=2
+numericTemperatureAcceptedCount=2
+PROBE
+EOF
+chmod +x "$temperature_alt_source_line_disagree_bin/ioreport-probe-line-disagree"
+temperature_alt_source_line_disagree="$bag_mode_smoke_dir/temperature-alt-source-line-disagree"
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOHID_PROBE="$temperature_alt_source_zero_bin/iohid-probe-zero" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREPORT_PROBE="$temperature_alt_source_line_disagree_bin/ioreport-probe-line-disagree" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_IOREG="$temperature_alt_source_zero_bin/ioreg" \
+CLAWSHELL_TEMPERATURE_ALT_SOURCE_HIDUTIL="$temperature_alt_source_zero_bin/hidutil" \
+    scripts/temperature-provider-alt-source-probe.sh --output-dir "$temperature_alt_source_line_disagree" >/dev/null
+for expected_key in \
+    ioreportProbeAvailable=true \
+    ioreportTemperatureSampleCount=2 \
+    ioreportTemperatureScaleVerified=false \
+    ioreportTemperatureScaleVerifiedCount=1 \
+    candidateSurfaceAvailable=true \
+    numericTemperatureObserved=true
+do
+    if ! grep -q "^$expected_key$" "$temperature_alt_source_line_disagree/validation-config.txt"; then
+        echo "Temperature alternate source probe trusted IOReport aggregate over sample-line scale metadata: $expected_key" >&2
+        cat "$temperature_alt_source_line_disagree/validation-config.txt" >&2
+        cat "$temperature_alt_source_line_disagree/evidence/ioreport-temperature-samples.txt" >&2
+        exit 1
+    fi
+done
 temperature_alt_source_hanging_clang_bin="$bag_mode_smoke_dir/temperature-alt-source-hanging-clang-fakes"
 mkdir -p "$temperature_alt_source_hanging_clang_bin"
 temperature_alt_source_hanging_marker="$bag_mode_smoke_dir/temperature-alt-source-hanging-clang-marker"
@@ -2613,7 +2700,16 @@ fi
 if ! grep -q 'case "ioreport-ans2"' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
     ! grep -q 'ClawShellIOReportTemperatureProbe' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
     ! grep -q 'ioreportProbeFormatObserved' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
-    ! grep -q 'let ioreportSampleAccepted = !timedOut &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportTemperatureLineCounts' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportLineCounts.sampleCount == ioreportSampleCount' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportLineCounts.scaleVerifiedCount == ioreportSampleCount' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportScaleVerified' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportReportedScaleVerified' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportReportedScaleVerifiedCount == ioreportSampleCount' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'let ioreportScaleVerifiedCount = ioreportSampleAccepted ? ioreportLineCounts.scaleVerifiedCount : 0' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportSampleCount > 0' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'ioreportTemperatureScaleVerified' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
+    ! grep -q 'let ioreportSampleAccepted = providerSource == "ioreport-ans2" &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
     ! grep -q '!stdoutTruncated &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
     ! grep -q '!stderrTruncated &&' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift" || \
     ! grep -q 'stderrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty' "$temperature_smappservice_provider_ioreport_ans2/source-package/Sources/ClawShellTemperatureProviderPrototypeDaemon/main.swift"; then
