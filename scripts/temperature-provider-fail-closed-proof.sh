@@ -77,9 +77,20 @@ if ! grep -qx 'failClosedContract=covered' "$config"; then
     exit 1
 fi
 
-case_count="$(awk -F '\t' 'NR > 1 && $2 == "fail-closed" && $13 == "pass" { count++ } END { print count + 0 }' "$cases")"
+if ! grep -qx 'userFacingDiagnosticsCovered=true' "$config"; then
+    echo "Safety policy proof did not cover user-facing diagnostics" >&2
+    exit 1
+fi
+
+case_count="$(awk -F '\t' 'NR > 1 && $2 == "fail-closed" && $16 == "pass" { count++ } END { print count + 0 }' "$cases")"
 if [[ "$case_count" -lt 10 ]]; then
     echo "Safety policy proof recorded too few fail-closed cases: $case_count" >&2
+    exit 1
+fi
+
+diagnostic_count="$(awk -F '\t' 'NR > 1 && $2 == "fail-closed" && $13 != "" && $14 != "" && $15 != "" { count++ } END { print count + 0 }' "$cases")"
+if [[ "$diagnostic_count" != "$case_count" ]]; then
+    echo "Safety policy proof did not record diagnostics for every fail-closed case" >&2
     exit 1
 fi
 

@@ -289,8 +289,10 @@ The artifact writes `validation-config.txt`, `fail-closed-cases.tsv`, and
 `summary.md`. It proves the mocked safety-policy contract only:
 unsupported/stale/malformed/timed-out/insufficient-coverage provider states and
 missing/invalid battery states block arming or release Bag Mode if already
-armed. It is not helper-owned provider freshness, cadence, closed-bag hardware
-coverage, or numeric scale proof.
+armed. The TSV also records the user-facing diagnostic title, detail, and
+recovery action for each warning or fail-closed row, including unsupported
+provider states. It is not helper-owned provider freshness, cadence, closed-bag
+hardware coverage, or numeric scale proof.
 
 Use the helper provider proof verifier before attaching or summarizing provider
 evidence in final app E2E issue #120:
