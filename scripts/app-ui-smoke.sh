@@ -273,7 +273,7 @@ if grep -q '^statusItemFound=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &
 fi
 
 bag_mode_copy_found=false
-if grep -q '^menuItem=Bag Mode$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
+if grep -q '^menuItem=Bag Mode unavailable$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
     bag_mode_copy_found=true
 fi
 
@@ -322,9 +322,9 @@ cat >"$OUTPUT_DIR/README.md" <<'EOF'
 
 This package captures live local evidence that the staged ClawShell app bundle
 launches, the CLI can reach it, and macOS Accessibility exposes a ClawShell menu
-bar item. It also opens the menu bar Settings item and verifies that CoreGraphics
-reports an onscreen, non-empty `ClawShell Settings` window for the staged app
-process.
+bar item with the current `Bag Mode unavailable` product copy. It also opens the
+menu bar Settings item and verifies that CoreGraphics reports an onscreen,
+non-empty `ClawShell Settings` window for the staged app process.
 
 Evidence files:
 
