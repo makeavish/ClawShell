@@ -272,9 +272,9 @@ if grep -q '^statusItemFound=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &
     status_item_found=true
 fi
 
-bag_mode_copy_found=false
-if grep -q '^menuItem=Bag Mode unavailable$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
-    bag_mode_copy_found=true
+closed_lid_mode_copy_found=false
+if grep -q '^menuItem=Closed-Lid Mode unavailable$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
+    closed_lid_mode_copy_found=true
 fi
 
 settings_menu_item_found=false
@@ -295,7 +295,7 @@ fi
 
 result="pass"
 if [[ "$status_item_found" != true ||
-      "$bag_mode_copy_found" != true ||
+      "$closed_lid_mode_copy_found" != true ||
       "$settings_menu_item_found" != true ||
       "$settings_window_found" != true ||
       "$cli_reachable" != true ]]; then
@@ -309,7 +309,7 @@ launchVerification=pass
 expectedPID=$expected_pid
 cliReachable=$cli_reachable
 accessibilityStatusItemFound=$status_item_found
-bagModeMenuCopyFound=$bag_mode_copy_found
+closedLidModeMenuCopyFound=$closed_lid_mode_copy_found
 settingsMenuItemPressed=$settings_menu_item_found
 settingsWindowFound=$settings_window_found
 result=$result
@@ -322,8 +322,8 @@ cat >"$OUTPUT_DIR/README.md" <<'EOF'
 
 This package captures live local evidence that the staged ClawShell app bundle
 launches, the CLI can reach it, and macOS Accessibility exposes a ClawShell menu
-bar item with the current `Bag Mode unavailable` product copy. It also opens the
-menu bar Settings item and verifies that CoreGraphics reports an onscreen,
+bar item with the current `Closed-Lid Mode unavailable` product copy. It also
+opens the menu bar Settings item and verifies that CoreGraphics reports an onscreen,
 non-empty `ClawShell Settings` window for the staged app process.
 
 Evidence files:

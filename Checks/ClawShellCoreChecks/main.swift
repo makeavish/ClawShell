@@ -76,7 +76,7 @@ struct ClawShellCoreChecks {
     private static func snapshotIncludesRuntimeDiagnostics() throws {
         let snapshot = MenuBarModel.snapshot(
             currentState: .idle,
-            sessionSummary: "Sessions: none detected",
+            sessionSummary: "Sessions: none seen",
             integrationStatuses: [
                 IntegrationStatusSnapshot(
                     agentID: "claude-code",
@@ -87,8 +87,8 @@ struct ClawShellCoreChecks {
         )
 
         let titles = snapshot.items.map(\.title)
-        try check(titles.contains("Sessions: none detected"), "Expected session summary in menu")
-        try check(titles.contains(BagModeAvailability.unavailableTitle), "Expected Bag Mode boundary in menu")
+        try check(titles.contains("Sessions: none seen"), "Expected session summary in menu")
+        try check(titles.contains(BagModeAvailability.unavailableTitle), "Expected Closed-Lid Mode boundary in menu")
         try check(titles.contains("Claude Code: Installed"), "Expected integration status in menu")
         try check(titles.contains("Refresh Status"), "Expected refresh action in menu")
         try check(titles.contains("Repair Integrations..."), "Expected repair action in menu")
@@ -97,13 +97,13 @@ struct ClawShellCoreChecks {
     private static func snapshotNamesTheCurrentState() throws {
         let snapshot = MenuBarModel.snapshot(currentState: .bagMode)
 
-        try check(snapshot.currentState == .bagMode, "Expected Bag Mode as current state")
+        try check(snapshot.currentState == .bagMode, "Expected Closed-Lid Mode as current state")
         try check(snapshot.statusItemTitle == "ClawShell", "Expected stable status item title")
         try check(
             snapshot.items.first?.title == "Current: \(BagModeAvailability.unavailableTitle)",
             "Expected current-state menu row"
         )
-        try check(snapshot.items.first?.detail == BagModeAvailability.settingsDetail, "Expected Bag Mode unavailable detail")
+        try check(snapshot.items.first?.detail == BagModeAvailability.settingsDetail, "Expected Closed-Lid Mode unavailable detail")
     }
 
     private static func stateDerivesFromHoldState() throws {
@@ -113,7 +113,7 @@ struct ClawShellCoreChecks {
         )
         try check(
             ClawShellState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [UUID()])) == .active,
-            "Expected held session to derive Active"
+            "Expected held session to derive Protecting"
         )
         try check(
             ClawShellState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isPaused: true)) == .paused,
@@ -275,8 +275,8 @@ struct ClawShellCoreChecks {
         monitor.poll()
         try check(monitor.visibleSessions.count == 3, "Expected parallel agent processes to remain distinct")
         try check(
-            monitor.sessionSummaryMessage() == "Sessions: 3 detected, none holding",
-            "Expected process-only matches to stay diagnostic instead of claiming active holds"
+            monitor.sessionSummaryMessage() == "Sessions: 3 seen, none protecting",
+            "Expected process-only matches to stay diagnostic instead of claiming confirmed protection"
         )
 
         monitor.applyIntegrationEvent(
@@ -291,8 +291,8 @@ struct ClawShellCoreChecks {
             at: now.addingTimeInterval(1)
         )
         try check(
-            monitor.sessionSummaryMessage() == "Sessions: 1 holding, 2 detected",
-            "Expected integration-backed activity to hold while process-only sessions remain detected: \(monitor.sessionSummaryMessage())"
+            monitor.sessionSummaryMessage() == "Sessions: 1 protecting, 2 seen",
+            "Expected integration-backed activity to protect while process-only sessions remain seen: \(monitor.sessionSummaryMessage())"
         )
     }
 
@@ -327,18 +327,18 @@ struct ClawShellCoreChecks {
 
         monitor.poll()
         try check(
-            monitor.sessionSummaryMessage() == "Sessions: 1 provisional, 2 detected",
-            "Expected newest startup-detected process to hold provisionally while older shells remain diagnostic: \(monitor.sessionSummaryMessage())"
+            monitor.sessionSummaryMessage() == "Sessions: 1 starting up, 2 seen",
+            "Expected newest startup-seen process to protect during startup while older shells remain diagnostic: \(monitor.sessionSummaryMessage())"
         )
         try check(
-            monitor.sessionListMessage().contains("Codex CLI: provisional source=processScan pid=32"),
-            "Expected process-only startup hold to be labeled provisional: \(monitor.sessionListMessage())"
+            monitor.sessionListMessage().contains("Codex CLI: starting up source=processScan pid=32"),
+            "Expected process-only startup protection to be labeled starting up: \(monitor.sessionListMessage())"
         )
 
         currentDate = currentDate.addingTimeInterval(901)
         try check(
-            monitor.sessionSummaryMessage() == "Sessions: 3 detected, none holding",
-            "Expected provisional startup hold to expire without hook evidence: \(monitor.sessionSummaryMessage())"
+            monitor.sessionSummaryMessage() == "Sessions: 3 seen, none protecting",
+            "Expected startup protection to expire without hook evidence: \(monitor.sessionSummaryMessage())"
         )
     }
 

@@ -313,18 +313,18 @@ private func runProcessOnlyStartupDetectionHoldsNewestSessionProvisionally() thr
 
     monitor.poll()
     try check(
-        monitor.sessionSummaryMessage() == "Sessions: 1 provisional, 2 detected",
-        "Expected newest startup-detected process to hold provisionally while older shells remain diagnostic: \(monitor.sessionSummaryMessage())"
+        monitor.sessionSummaryMessage() == "Sessions: 1 starting up, 2 seen",
+        "Expected newest startup-seen process to protect during startup while older shells remain diagnostic: \(monitor.sessionSummaryMessage())"
     )
     try check(
-        monitor.sessionListMessage().contains("Codex CLI: provisional source=processScan pid=32"),
-        "Expected process-only startup hold to be labeled provisional: \(monitor.sessionListMessage())"
+        monitor.sessionListMessage().contains("Codex CLI: starting up source=processScan pid=32"),
+        "Expected process-only startup protection to be labeled starting up: \(monitor.sessionListMessage())"
     )
 
     currentDate = currentDate.addingTimeInterval(901)
     try check(
-        monitor.sessionSummaryMessage() == "Sessions: 3 detected, none holding",
-        "Expected provisional startup hold to expire without hook evidence: \(monitor.sessionSummaryMessage())"
+        monitor.sessionSummaryMessage() == "Sessions: 3 seen, none protecting",
+        "Expected startup protection to expire without hook evidence: \(monitor.sessionSummaryMessage())"
     )
 }
 

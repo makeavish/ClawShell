@@ -16,7 +16,7 @@ The first public version is planned to focus on:
 - Holding normal macOS sleep while agents are working
 - Showing exactly why sleep is currently being held
 - Releasing sleep prevention when agent work finishes or times out
-- Showing Bag Mode as unavailable until the helper lifecycle and live
+- Showing Closed-Lid Mode as unavailable until the helper lifecycle and live
   temperature-provider validation gates are complete
 
 ## Why
@@ -25,7 +25,7 @@ Long-running coding agents can work for minutes or hours. macOS can interrupt th
 
 `caffeinate -i` helps with idle sleep, but it is easy to forget and does not track agent lifecycle. ClawShell aims to make normal sleep prevention automatic, visible, and agent-scoped without becoming a general-purpose "keep my Mac awake forever" tool.
 
-Closed-lid Bag Mode remains a planned guarded path after the helper and
+Closed-Lid Mode remains a planned guarded path after the helper and
 temperature-provider validation gates pass.
 
 ## Planned First Version Support
@@ -47,7 +47,7 @@ Gemini CLI, Cursor, VS Code, and custom binaries are planned for later versions.
 ## Safety Model
 
 Closed-lid battery support is treated as a guarded mode, not a blanket promise that every situation is safe.
-Bag Mode is currently unavailable in the app until helper lifecycle and live
+Closed-Lid Mode is currently unavailable in the app until helper lifecycle and live
 temperature-provider validation are complete.
 
 Planned safeguards include:
@@ -82,7 +82,7 @@ The V1 adapter contract reduces native hook payloads to a minimal event schema a
 No hosted or Homebrew installable build is available yet.
 
 The planned primary distribution path is a Homebrew cask. Direct downloads may come later, with signing and notarization planned after the early release path is validated.
-See [CHANGELOG.md](CHANGELOG.md) for the pending v1 release scope and Bag Mode boundary.
+See [CHANGELOG.md](CHANGELOG.md) for the pending v1 release scope and Closed-Lid Mode boundary.
 
 ## Release Packaging
 
@@ -93,7 +93,7 @@ scripts/package-release.sh --version v0.1.0
 ```
 
 The generated artifact is ad-hoc signed, does not install/register privileged
-helpers, and keeps Bag Mode unavailable for the v0.1.0 scope.
+helpers, and keeps Closed-Lid Mode unavailable for the v0.1.0 scope.
 
 ## Development
 

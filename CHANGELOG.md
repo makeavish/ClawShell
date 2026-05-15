@@ -14,19 +14,19 @@ First public release scope:
 - Includes local-only logs and status surfaces for integration setup, helper
   fallback outcomes, and release decisions.
 
-Bag Mode status:
+Closed-Lid Mode status:
 
-- Bag Mode is unavailable in this release.
+- Closed-Lid Mode is unavailable in this release.
 - Closed-lid/clamshell support remains deferred until helper lifecycle, live
   temperature-provider, hardware matrix, and packaging validation gates are
   complete.
 - The app, UI smoke harness, readiness docs, and README intentionally present
-  Bag Mode as unavailable rather than partially supported.
+  Closed-Lid Mode as unavailable rather than partially supported.
 
 Release notes:
 
 - No Apple Developer Program membership is required for the v1 normal
   sleep-prevention scope.
 - Normal runtime/use does not require admin privileges.
-- Any future Bag Mode helper/admin approval flow is outside this release and is
-  tracked separately in the post-v1 Bag Mode readiness issue.
+- Any future Closed-Lid Mode helper/admin approval flow is outside this release
+  and is tracked separately in the post-v1 readiness issue.

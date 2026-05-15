@@ -48,7 +48,7 @@ public struct NormalPowerAssertionPolicy: Equatable, Sendable {
 
     public init(
         assertionTypes: [PowerAssertionType] = Self.validatedDefaultAssertionTypes,
-        reason: String = "ClawShell is holding sleep for active agent sessions"
+        reason: String = "ClawShell is protecting agent work from sleep"
     ) {
         self.assertionTypes = assertionTypes
         self.reason = reason

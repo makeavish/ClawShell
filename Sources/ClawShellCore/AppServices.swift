@@ -152,7 +152,7 @@ public final class AgentMonitor: AppLifecycleComponent {
         queue.sync {
             let activeSessions = stateMachine.sessions.filter { $0.state != .finished }
             guard !activeSessions.isEmpty else {
-                return "Sessions: none detected"
+                return "Sessions: none seen"
             }
 
             let timestamp = now()
@@ -161,22 +161,22 @@ public final class AgentMonitor: AppLifecycleComponent {
             let confirmedHeldCount = heldCount - provisionalCount
             let detectedCount = activeSessions.count - heldCount
             if heldCount == activeSessions.count && provisionalCount == 0 {
-                return "Sessions: \(activeSessions.count) holding"
+                return "Sessions: \(activeSessions.count) protecting"
             }
 
             if heldCount == 0 {
-                return "Sessions: \(detectedCount) detected, none holding"
+                return "Sessions: \(detectedCount) seen, none protecting"
             }
 
             var parts: [String] = []
             if confirmedHeldCount > 0 {
-                parts.append("\(confirmedHeldCount) holding")
+                parts.append("\(confirmedHeldCount) protecting")
             }
             if provisionalCount > 0 {
-                parts.append("\(provisionalCount) provisional")
+                parts.append("\(provisionalCount) starting up")
             }
             if detectedCount > 0 {
-                parts.append("\(detectedCount) detected")
+                parts.append("\(detectedCount) seen")
             }
 
             return "Sessions: \(parts.joined(separator: ", "))"
@@ -187,7 +187,7 @@ public final class AgentMonitor: AppLifecycleComponent {
         queue.sync {
             let activeSessions = stateMachine.sessions.filter { $0.state != .finished }
             guard !activeSessions.isEmpty else {
-                return "No active sessions detected"
+                return "No sessions seen"
             }
 
             return activeSessions
@@ -217,18 +217,29 @@ public final class AgentMonitor: AppLifecycleComponent {
 
     private func sessionDisplayState(_ session: AgentSession, at now: Date) -> String {
         if session.isProvisionalHold(at: now) {
-            return "provisional"
+            return "starting up"
         }
 
         if session.contributesToHold(at: now) {
-            return session.state.rawValue
+            return sessionProtectingState(session)
         }
 
         if session.source == .processScan && session.state != .finished {
-            return "detected"
+            return "seen"
         }
 
-        return session.state.rawValue
+        return sessionProtectingState(session)
+    }
+
+    private func sessionProtectingState(_ session: AgentSession) -> String {
+        switch session.state {
+        case .active:
+            return "protecting"
+        case .standingBy:
+            return "recently active"
+        case .finished:
+            return "finished"
+        }
     }
 }
 
@@ -272,7 +283,7 @@ public final class ClawShellServices {
         self.controlServer = controlServer ?? ControlServerComponent(
             runtimeStore: ControlRuntimeStore(paths: paths),
             router: DefaultControlCommandRouter(statusProvider: {
-                resolvedAgentMonitor.aggregateHoldState.shouldHold ? "ClawShell holding" : "ClawShell running"
+                resolvedAgentMonitor.aggregateHoldState.shouldHold ? "ClawShell protecting" : "ClawShell running"
             }, listProvider: {
                 resolvedAgentMonitor.sessionListMessage()
             }, pauseHandler: { duration, receivedAt in
