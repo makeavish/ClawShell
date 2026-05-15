@@ -45,4 +45,8 @@ public struct AgentWakePaths: Equatable, Sendable {
     public var cwdHashSaltURL: URL {
         applicationSupportDirectory.appendingPathComponent("cwd-hash-salt", isDirectory: false)
     }
+
+    public var closedLidModeStateURL: URL {
+        runtimeDirectory.appendingPathComponent("closed-lid-mode-state.json", isDirectory: false)
+    }
 }

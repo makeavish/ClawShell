@@ -250,12 +250,14 @@ public final class AgentWakeServices {
     public let integrationManager: IntegrationManager
     public let settingsStore: SettingsStore
     public let logStore: LogStore
+    public let closedLidModeController: ClosedLidModeController
 
     public init(
         agentMonitor: AgentMonitor? = nil,
         controlServer: ControlServerComponent? = nil,
         assertionManager: AssertionManager? = nil,
         integrationManager: IntegrationManager? = nil,
+        closedLidModeController: ClosedLidModeController? = nil,
         settingsStore: SettingsStore? = nil,
         logStore: LogStore? = nil,
         paths: AgentWakePaths = .defaultPaths(),
@@ -272,6 +274,8 @@ public final class AgentWakeServices {
             installLocations: autoInstallIntegrations ? .defaultLocations() : nil
         )
         self.integrationManager = resolvedIntegrationManager
+        let resolvedClosedLidModeController = closedLidModeController ?? ClosedLidModeController(paths: paths)
+        self.closedLidModeController = resolvedClosedLidModeController
         let resolvedAgentMonitor = agentMonitor ?? AgentMonitor(settingsProvider: { resolvedSettingsStore.settings })
         self.agentMonitor = resolvedAgentMonitor
         let resolvedAssertionManager = assertionManager ?? AssertionManager(
@@ -305,15 +309,21 @@ public final class AgentWakeServices {
                 resolvedAssertionManager.reconcile()
                 return "Integration event accepted: \(event.agent.rawValue) \(event.event.rawValue)"
             }, helperStatusProvider: {
-                ClosedLidModeAvailability.helperCommandMessage("status")
+                "No production helper is installed. Use `agentwake closed-lid status` for local admin-approved Closed-Lid Mode."
             }, helperEnableBagModeHandler: { _ in
-                ClosedLidModeAvailability.helperCommandMessage("enable")
+                "Production helper enable unavailable. Use `agentwake closed-lid enable` for local admin-approved Closed-Lid Mode."
             }, helperDisableBagModeHandler: { _ in
-                ClosedLidModeAvailability.helperCommandMessage("disable")
+                "Production helper disable unavailable. Use `agentwake closed-lid disable` for local admin-approved Closed-Lid Mode."
             }, helperRepairHandler: { _ in
-                ClosedLidModeAvailability.helperCommandMessage("repair")
+                "Production helper repair unavailable: no production helper is installed."
             }, helperUninstallHandler: { _ in
-                ClosedLidModeAvailability.helperCommandMessage("uninstall")
+                "Production helper uninstall unavailable: no production helper is installed."
+            }, closedLidStatusProvider: {
+                resolvedClosedLidModeController.statusMessage()
+            }, closedLidEnableHandler: { _ in
+                try resolvedClosedLidModeController.enable()
+            }, closedLidDisableHandler: { _ in
+                try resolvedClosedLidModeController.disable()
             }, uninstallHandler: { removeHelper, removeIntegrations, receivedAt in
                 var outcomes = ["Uninstall requested"]
                 if removeIntegrations {
@@ -324,7 +334,7 @@ public final class AgentWakeServices {
                 }
 
                 if removeHelper {
-                    outcomes.append("helper removal unavailable: no helper is installed")
+                    outcomes.append("helper removal unavailable: no production helper is installed")
                 } else {
                     outcomes.append("helper unchanged")
                 }

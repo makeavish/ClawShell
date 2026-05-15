@@ -562,13 +562,16 @@ The CLI helper-command outcome boundary is automated in
 `ControlServerTests.cliParsesCommandsAndSendsThroughClient` plus
 `ControlServerTests.controlRouterSurfacesHelperCommandOutcomes`. The CLI parses
 `agentwake helper status`, `agentwake helper enable`, `agentwake helper
-disable`, `agentwake helper repair`, `agentwake helper uninstall`, and
-`agentwake uninstall --remove-helper --remove-integrations`, sends them through
-`ControlServer`, and the router surfaces explicit helper unavailable messages.
-The current app reports helper commands as unavailable because no production
-helper is installed yet; this proves CLI and control-routing behavior only.
-Production helper-backed enable, disable, repair, uninstall, restore conflict
-handling, and helper-owned Closed-Lid Mode cleanup remain separate #120 evidence rows.
+disable`, `agentwake helper repair`, `agentwake helper uninstall`,
+`agentwake closed-lid status`, `agentwake closed-lid enable`,
+`agentwake closed-lid disable`, and `agentwake uninstall --remove-helper
+--remove-integrations`, sends them through `ControlServer`, and the router
+surfaces explicit outcomes. Helper commands stay no-production-helper
+responses; only the product `closed-lid` commands route to the local
+admin-approved controller that toggles `pmset disablesleep` and records restore
+state.
+Production helper-backed update, repair conflict handling, and helper-owned
+Closed-Lid Mode cleanup remain separate #120 evidence rows.
 
 The CLI outcome proof harness captures that boundary in an attachable package:
 

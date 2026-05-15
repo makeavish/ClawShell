@@ -42,6 +42,9 @@ public enum ControlCommand: Equatable, Sendable, Codable {
     case helperDisableBagMode
     case helperRepair
     case helperUninstall
+    case closedLidStatus
+    case closedLidEnable
+    case closedLidDisable
     case uninstall(removeHelper: Bool, removeIntegrations: Bool)
 
     private enum CodingKeys: String, CodingKey {
@@ -89,6 +92,12 @@ public enum ControlCommand: Equatable, Sendable, Codable {
             self = .helperRepair
         case "helperUninstall":
             self = .helperUninstall
+        case "closedLidStatus":
+            self = .closedLidStatus
+        case "closedLidEnable":
+            self = .closedLidEnable
+        case "closedLidDisable":
+            self = .closedLidDisable
         case "uninstall":
             self = .uninstall(
                 removeHelper: try container.decode(Bool.self, forKey: .removeHelper),
@@ -142,6 +151,12 @@ public enum ControlCommand: Equatable, Sendable, Codable {
             try container.encode("helperRepair", forKey: .name)
         case .helperUninstall:
             try container.encode("helperUninstall", forKey: .name)
+        case .closedLidStatus:
+            try container.encode("closedLidStatus", forKey: .name)
+        case .closedLidEnable:
+            try container.encode("closedLidEnable", forKey: .name)
+        case .closedLidDisable:
+            try container.encode("closedLidDisable", forKey: .name)
         case .uninstall(let removeHelper, let removeIntegrations):
             try container.encode("uninstall", forKey: .name)
             try container.encode(removeHelper, forKey: .removeHelper)
@@ -330,6 +345,9 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
     public var helperDisableBagModeHandler: (Date) throws -> String
     public var helperRepairHandler: (Date) throws -> String
     public var helperUninstallHandler: (Date) throws -> String
+    public var closedLidStatusProvider: () -> String
+    public var closedLidEnableHandler: (Date) throws -> String
+    public var closedLidDisableHandler: (Date) throws -> String
     public var uninstallHandler: (Bool, Bool, Date) throws -> String
 
     public init(
@@ -347,6 +365,9 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
         helperDisableBagModeHandler: @escaping (Date) throws -> String = { _ in ClosedLidModeAvailability.helperCommandMessage("disable") },
         helperRepairHandler: @escaping (Date) throws -> String = { _ in ClosedLidModeAvailability.helperCommandMessage("repair") },
         helperUninstallHandler: @escaping (Date) throws -> String = { _ in ClosedLidModeAvailability.helperCommandMessage("uninstall") },
+        closedLidStatusProvider: @escaping () -> String = { ClosedLidModeAvailability.helperCommandMessage("status") },
+        closedLidEnableHandler: @escaping (Date) throws -> String = { _ in ClosedLidModeAvailability.helperCommandMessage("enable") },
+        closedLidDisableHandler: @escaping (Date) throws -> String = { _ in ClosedLidModeAvailability.helperCommandMessage("disable") },
         uninstallHandler: @escaping (Bool, Bool, Date) throws -> String = { removeHelper, removeIntegrations, _ in
             "Uninstall requested removeHelper=\(removeHelper) removeIntegrations=\(removeIntegrations)"
         }
@@ -365,6 +386,9 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
         self.helperDisableBagModeHandler = helperDisableBagModeHandler
         self.helperRepairHandler = helperRepairHandler
         self.helperUninstallHandler = helperUninstallHandler
+        self.closedLidStatusProvider = closedLidStatusProvider
+        self.closedLidEnableHandler = closedLidEnableHandler
+        self.closedLidDisableHandler = closedLidDisableHandler
         self.uninstallHandler = uninstallHandler
     }
 
@@ -402,6 +426,12 @@ public struct DefaultControlCommandRouter: ControlCommandRouting {
             return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: try helperRepairHandler(receivedAt))
         case .helperUninstall:
             return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: try helperUninstallHandler(receivedAt))
+        case .closedLidStatus:
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: closedLidStatusProvider())
+        case .closedLidEnable:
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: try closedLidEnableHandler(receivedAt))
+        case .closedLidDisable:
+            return ControlResponse(accepted: true, receiptTimestamp: receivedAt, message: try closedLidDisableHandler(receivedAt))
         case .uninstall(let removeHelper, let removeIntegrations):
             return ControlResponse(
                 accepted: true,

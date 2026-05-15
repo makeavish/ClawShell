@@ -269,11 +269,11 @@ private func runCLIParsesCommandsAndSendsThroughClient() throws {
     _ = try cli.run(arguments: ["agentwake", "helper", "disable-closed-lid"])
     try check(client.commands.last == .helperDisableBagMode, "Expected helper closed-lid disable command")
     _ = try cli.run(arguments: ["agentwake", "closed-lid", "status"])
-    try check(client.commands.last == .helperStatus, "Expected closed-lid status command")
+    try check(client.commands.last == .closedLidStatus, "Expected closed-lid status command")
     _ = try cli.run(arguments: ["agentwake", "closed-lid", "enable"])
-    try check(client.commands.last == .helperEnableBagMode, "Expected closed-lid enable command")
+    try check(client.commands.last == .closedLidEnable, "Expected closed-lid enable command")
     _ = try cli.run(arguments: ["agentwake", "closed-lid", "disable"])
-    try check(client.commands.last == .helperDisableBagMode, "Expected closed-lid disable command")
+    try check(client.commands.last == .closedLidDisable, "Expected closed-lid disable command")
     _ = try cli.run(arguments: ["agentwake", "helper", "repair"])
     try check(client.commands.last == .helperRepair, "Expected helper repair command")
     _ = try cli.run(arguments: ["agentwake", "helper", "uninstall"])
@@ -322,12 +322,18 @@ private func runControlRouterSurfacesHelperCommandOutcomes() throws {
     let defaultDisable = try defaultRouter.route(.helperDisableBagMode, receivedAt: receivedAt)
     let defaultRepair = try defaultRouter.route(.helperRepair, receivedAt: receivedAt)
     let defaultUninstall = try defaultRouter.route(.helperUninstall, receivedAt: receivedAt)
+    let defaultClosedLidStatus = try defaultRouter.route(.closedLidStatus, receivedAt: receivedAt)
+    let defaultClosedLidEnable = try defaultRouter.route(.closedLidEnable, receivedAt: receivedAt)
+    let defaultClosedLidDisable = try defaultRouter.route(.closedLidDisable, receivedAt: receivedAt)
 
     try check(defaultStatus.message == ClosedLidModeAvailability.helperCommandMessage("status"), "Expected default helper status outcome")
     try check(defaultEnable.message == ClosedLidModeAvailability.helperCommandMessage("enable"), "Expected default helper enable outcome")
     try check(defaultDisable.message == ClosedLidModeAvailability.helperCommandMessage("disable"), "Expected default helper disable outcome")
     try check(defaultRepair.message == ClosedLidModeAvailability.helperCommandMessage("repair"), "Expected default helper repair outcome")
     try check(defaultUninstall.message == ClosedLidModeAvailability.helperCommandMessage("uninstall"), "Expected default helper uninstall outcome")
+    try check(defaultClosedLidStatus.message == ClosedLidModeAvailability.helperCommandMessage("status"), "Expected default closed-lid status outcome")
+    try check(defaultClosedLidEnable.message == ClosedLidModeAvailability.helperCommandMessage("enable"), "Expected default closed-lid enable outcome")
+    try check(defaultClosedLidDisable.message == ClosedLidModeAvailability.helperCommandMessage("disable"), "Expected default closed-lid disable outcome")
 
     let router = DefaultControlCommandRouter(
         helperStatusProvider: {
@@ -345,6 +351,15 @@ private func runControlRouterSurfacesHelperCommandOutcomes() throws {
         helperUninstallHandler: { receivedAt in
             "Helper uninstall checked at \(Int(receivedAt.timeIntervalSince1970))"
         },
+        closedLidStatusProvider: {
+            "Closed-Lid Mode off"
+        },
+        closedLidEnableHandler: { receivedAt in
+            "Closed-Lid enable checked at \(Int(receivedAt.timeIntervalSince1970))"
+        },
+        closedLidDisableHandler: { receivedAt in
+            "Closed-Lid disable checked at \(Int(receivedAt.timeIntervalSince1970))"
+        },
         uninstallHandler: { removeHelper, removeIntegrations, receivedAt in
             "Uninstall removeHelper=\(removeHelper) removeIntegrations=\(removeIntegrations) at \(Int(receivedAt.timeIntervalSince1970))"
         }
@@ -355,6 +370,9 @@ private func runControlRouterSurfacesHelperCommandOutcomes() throws {
     let disable = try router.route(.helperDisableBagMode, receivedAt: receivedAt)
     let repair = try router.route(.helperRepair, receivedAt: receivedAt)
     let helperUninstall = try router.route(.helperUninstall, receivedAt: receivedAt)
+    let closedLidStatus = try router.route(.closedLidStatus, receivedAt: receivedAt)
+    let closedLidEnable = try router.route(.closedLidEnable, receivedAt: receivedAt)
+    let closedLidDisable = try router.route(.closedLidDisable, receivedAt: receivedAt)
     let uninstall = try router.route(.uninstall(removeHelper: true, removeIntegrations: true), receivedAt: receivedAt)
 
     try check(status.accepted, "Expected helper status to be accepted")
@@ -363,6 +381,9 @@ private func runControlRouterSurfacesHelperCommandOutcomes() throws {
     try check(disable.message == "Helper disable checked at 9000", "Expected helper disable handler output")
     try check(repair.message == "Helper repair checked at 9000", "Expected helper repair handler output")
     try check(helperUninstall.message == "Helper uninstall checked at 9000", "Expected helper uninstall handler output")
+    try check(closedLidStatus.message == "Closed-Lid Mode off", "Expected closed-lid status provider output")
+    try check(closedLidEnable.message == "Closed-Lid enable checked at 9000", "Expected closed-lid enable handler output")
+    try check(closedLidDisable.message == "Closed-Lid disable checked at 9000", "Expected closed-lid disable handler output")
     try check(
         uninstall.message == "Uninstall removeHelper=true removeIntegrations=true at 9000",
         "Expected uninstall handler output"

@@ -16,15 +16,14 @@ First public release scope:
 
 Closed-Lid Mode status:
 
-- Closed-Lid Mode is unavailable in this release.
-- Closed-lid/clamshell support remains deferred until helper lifecycle, live
-  temperature-provider, hardware matrix, and packaging validation gates are
-  complete.
-- The app, UI smoke harness, readiness docs, and README intentionally present
-  Closed-Lid Mode as unavailable rather than partially supported.
+- Closed-Lid Mode can be enabled or disabled for local testing with macOS
+  administrator approval.
+- The implementation toggles `pmset disablesleep`, records the prior value, and
+  restores that value when disabled.
+- Live temperature-provider cutoff automation remains deferred; users should
+  treat this as an explicit local/admin-approved mode.
 - The CLI accepts the product-facing `agentwake closed-lid status|enable|disable`
-  path; these commands still fail closed for this release and now name the
-  specific pending checks before enablement.
+  path.
 
 Release notes:
 

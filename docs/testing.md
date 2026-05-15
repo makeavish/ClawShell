@@ -563,11 +563,13 @@ and service-not-found cleanup evidence. It does not edit any verifier package.
 `ControlServerTests.controlRouterSurfacesHelperCommandOutcomes` cover the CLI
 helper-command outcome boundary: `agentwake helper status`, `agentwake helper
 enable`, `agentwake helper disable`, `agentwake helper repair`, `agentwake
-helper uninstall`, and `agentwake uninstall --remove-helper
---remove-integrations` parse and route through `ControlServer` with explicit
-helper unavailable messages. The current app-level helper responses remain
-unavailable because no production helper is installed yet, so this is CLI and
-control-routing evidence only.
+helper uninstall`, `agentwake closed-lid status`, `agentwake closed-lid enable`,
+`agentwake closed-lid disable`, and `agentwake uninstall --remove-helper
+--remove-integrations` parse and route through `ControlServer`. The current
+app-level helper responses remain explicit no-production-helper messages.
+Closed-Lid Mode toggling is routed only through the product `closed-lid`
+commands, which use macOS administrator approval, update `pmset disablesleep`,
+and record restore state.
 
 To capture that CLI row as an attachable evidence package, run:
 

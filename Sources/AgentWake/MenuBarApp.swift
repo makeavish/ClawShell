@@ -8,6 +8,9 @@ final class MenuBarApp: NSObject {
     private let settingsWindowController: SettingsWindowController
     private var currentState: AgentWakeState
     private var refreshTimer: Timer?
+    private var closedLidModeStatusLine = "Closed-Lid Mode status unknown"
+    private var closedLidModeStatusDetail = "Use Refresh Status to check Closed-Lid Mode."
+    private var closedLidModeActionInFlight = false
 
     init(
         services: AgentWakeServices,
@@ -25,6 +28,7 @@ final class MenuBarApp: NSObject {
     func start() {
         services.startAll()
         refreshState()
+        refreshClosedLidModeStatusAsync()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshState()
@@ -62,6 +66,10 @@ final class MenuBarApp: NSObject {
         let snapshot = MenuBarModel.snapshot(
             currentState: currentState,
             sessionSummary: services.agentMonitor.sessionSummaryMessage(),
+            closedLidModeStatus: closedLidModeStatusLine,
+            closedLidModeDetail: closedLidModeStatusDetail,
+            enableClosedLidModeEnabled: canEnableClosedLidMode,
+            disableClosedLidModeEnabled: canDisableClosedLidMode,
             integrationStatuses: services.integrationManager.snapshots()
         )
 
@@ -71,6 +79,17 @@ final class MenuBarApp: NSObject {
         }
 
         statusItem.menu = makeMenu(from: snapshot)
+    }
+
+    private var canEnableClosedLidMode: Bool {
+        !closedLidModeActionInFlight &&
+            closedLidModeStatusLine != "Closed-Lid Mode enabled" &&
+            !closedLidModeStatusLine.contains("outside AgentWake") &&
+            !closedLidModeStatusLine.contains("pending")
+    }
+
+    private var canDisableClosedLidMode: Bool {
+        !closedLidModeActionInFlight && closedLidModeStatusLine == "Closed-Lid Mode enabled"
     }
 
     private func makeMenu(from snapshot: MenuBarSnapshot) -> NSMenu {
@@ -83,6 +102,10 @@ final class MenuBarApp: NSObject {
                 menu.addItem(.separator())
             case .diagnostic, .integrationStatus:
                 menu.addItem(disabledMenuItem(for: item))
+            case .closedLidEnable:
+                menu.addItem(actionMenuItem(for: item, action: #selector(enableClosedLidMode)))
+            case .closedLidDisable:
+                menu.addItem(actionMenuItem(for: item, action: #selector(disableClosedLidMode)))
             case .refreshStatus:
                 menu.addItem(actionMenuItem(for: item, action: #selector(refreshStatusNow)))
             case .repairIntegrations:
@@ -113,6 +136,10 @@ final class MenuBarApp: NSObject {
         return menuItem
     }
 
+    private func firstLine(of value: String) -> String {
+        value.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init) ?? value
+    }
+
     @objc private func openSettings() {
         settingsWindowController.refresh()
         NSApp.setActivationPolicy(.regular)
@@ -124,6 +151,7 @@ final class MenuBarApp: NSObject {
     @objc private func refreshStatusNow() {
         services.agentMonitor.poll()
         services.assertionManager.reconcile()
+        refreshClosedLidModeStatusAsync()
         refreshState()
         settingsWindowController.refresh()
     }
@@ -132,6 +160,77 @@ final class MenuBarApp: NSObject {
         let failures = repairAgentIntegrations()
         refreshStatusNow()
         presentRepairFailuresIfNeeded(failures)
+    }
+
+    @objc private func enableClosedLidMode() {
+        guard !closedLidModeActionInFlight else {
+            return
+        }
+        let controller = services.closedLidModeController
+        runClosedLidAction(title: "Closed-Lid Mode enabled") {
+            try controller.enable()
+        }
+    }
+
+    @objc private func disableClosedLidMode() {
+        guard !closedLidModeActionInFlight else {
+            return
+        }
+        let controller = services.closedLidModeController
+        runClosedLidAction(title: "Closed-Lid Mode disabled") {
+            try controller.disable()
+        }
+    }
+
+    private func runClosedLidAction(title: String, action: @escaping @Sendable () throws -> String) {
+        closedLidModeActionInFlight = true
+        closedLidModeStatusDetail = "Closed-Lid Mode change is waiting for macOS administrator approval."
+        refreshState()
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try action() }
+            DispatchQueue.main.async {
+                guard let self else {
+                    return
+                }
+
+                switch result {
+                case .success(let message):
+                    self.closedLidModeStatusLine = self.firstLine(of: message)
+                    self.closedLidModeStatusDetail = message
+                    self.closedLidModeActionInFlight = false
+                    self.refreshState()
+                    self.presentMessage(title: title, message: message, style: .informational)
+                case .failure(let error):
+                    self.closedLidModeStatusLine = "Closed-Lid Mode status unknown"
+                    self.closedLidModeStatusDetail = error.localizedDescription
+                    self.closedLidModeActionInFlight = false
+                    self.refreshClosedLidModeStatusAsync()
+                    self.refreshState()
+                    self.presentMessage(title: "Closed-Lid Mode failed", message: error.localizedDescription, style: .warning)
+                }
+            }
+        }
+    }
+
+    private func refreshClosedLidModeStatusAsync() {
+        guard !closedLidModeActionInFlight else {
+            return
+        }
+
+        let controller = services.closedLidModeController
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let message = controller.statusMessage()
+            DispatchQueue.main.async {
+                guard let self, !self.closedLidModeActionInFlight else {
+                    return
+                }
+
+                self.closedLidModeStatusLine = self.firstLine(of: message)
+                self.closedLidModeStatusDetail = message
+                self.refreshState()
+            }
+        }
     }
 
     private func repairAgentIntegrations() -> [String] {
@@ -157,6 +256,18 @@ final class MenuBarApp: NSObject {
         alert.messageText = "Integration repair failed"
         alert.informativeText = failures.joined(separator: "\n")
         alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    private func presentMessage(title: String, message: String, style: NSAlert.Style) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = style
         alert.addButton(withTitle: "OK")
         alert.runModal()
         NSApp.setActivationPolicy(.accessory)
