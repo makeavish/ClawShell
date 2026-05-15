@@ -2,6 +2,7 @@ import Foundation
 
 public final class AgentSessionStateMachine {
     public var graceInterval: TimeInterval
+    public var processDetectionHoldInterval: TimeInterval
     public private(set) var sessions: [AgentSession]
     public private(set) var pauseAllExpiresAt: Date?
     public private(set) var manualPauseAllExpiresAt: Date?
@@ -10,6 +11,7 @@ public final class AgentSessionStateMachine {
 
     public init(
         graceInterval: TimeInterval = 15 * 60,
+        processDetectionHoldInterval: TimeInterval = 15 * 60,
         sessions: [AgentSession] = [],
         pauseAllExpiresAt: Date? = nil,
         manualPauseAllExpiresAt: Date? = nil,
@@ -17,6 +19,7 @@ public final class AgentSessionStateMachine {
         manualSafetyCutoffExpiresAt: Date? = nil
     ) {
         self.graceInterval = graceInterval
+        self.processDetectionHoldInterval = processDetectionHoldInterval
         self.sessions = sessions
         self.pauseAllExpiresAt = pauseAllExpiresAt
         self.manualPauseAllExpiresAt = manualPauseAllExpiresAt
@@ -53,6 +56,7 @@ public final class AgentSessionStateMachine {
             }
         }
 
+        var newProcessSessionIndexes = Set<Array<AgentSession>.Index>()
         for observation in observations {
             guard let runtimeIdentity = observation.key.processRuntimeIdentity else {
                 continue
@@ -61,10 +65,13 @@ public final class AgentSessionStateMachine {
             if let index = firstProcessSessionIndex(matching: observation.key) {
                 updateSession(at: index, with: observation, at: now)
             } else {
-                if let volatileIndex = sessions.firstIndex(where: { $0.key.processRuntimeIdentity == runtimeIdentity }) {
+                if let volatileIndex = sessions.firstIndex(where: {
+                    $0.state != .finished && $0.key.processRuntimeIdentity == runtimeIdentity
+                }) {
                     markProcessDisappeared(at: volatileIndex, now: now)
                 }
 
+                let provisionalHoldExpiresAt: Date? = hasReleasedProcessSession(matching: observation.key) ? .distantPast : nil
                 sessions.append(
                     AgentSession(
                         key: observation.key,
@@ -75,11 +82,15 @@ public final class AgentSessionStateMachine {
                         lastActivityAt: now,
                         lastObservedAt: now,
                         lastEvent: SessionEvent(kind: .matchingProcessStarted, occurredAt: now),
-                        diagnosticCPUPercent: observation.snapshot.cpuPercent
+                        diagnosticCPUPercent: observation.snapshot.cpuPercent,
+                        provisionalHoldExpiresAt: provisionalHoldExpiresAt
                     )
                 )
+                newProcessSessionIndexes.insert(sessions.index(before: sessions.endIndex))
             }
         }
+
+        refreshProvisionalProcessHolds(at: now, newSessionIndexes: newProcessSessionIndexes)
     }
 
     public func applyTrustedEvent(_ kind: SessionEventKind, to sessionID: UUID, at now: Date) {
@@ -326,6 +337,58 @@ public final class AgentSessionStateMachine {
         if sessions[index].key.cwdHash == nil {
             sessions[index].key.cwdHash = event.cwdHash
         }
+
+        sessions[index].provisionalHoldExpiresAt = nil
+    }
+
+    private func refreshProvisionalProcessHolds(
+        at now: Date,
+        newSessionIndexes: Set<Array<AgentSession>.Index>
+    ) {
+        let activeProcessIndexes = sessions.indices.filter {
+            sessions[$0].source == .processScan
+                && sessions[$0].state == .active
+                && !sessions[$0].hasIntegratedEvidence
+                && !sessions[$0].holdWhileOpen
+        }
+
+        guard let candidateIndex = provisionalHoldCandidateIndex(from: activeProcessIndexes) else {
+            activeProcessIndexes.forEach { sessions[$0].provisionalHoldExpiresAt = nil }
+            return
+        }
+
+        for index in activeProcessIndexes where index != candidateIndex {
+            sessions[index].provisionalHoldExpiresAt = nil
+        }
+
+        if sessions[candidateIndex].provisionalHoldExpiresAt == nil,
+           newSessionIndexes.contains(candidateIndex) {
+            sessions[candidateIndex].provisionalHoldExpiresAt = now.addingTimeInterval(processDetectionHoldInterval)
+        }
+    }
+
+    private func provisionalHoldCandidateIndex(from indexes: [Array<AgentSession>.Index]) -> Array<AgentSession>.Index? {
+        guard !indexes.isEmpty else {
+            return nil
+        }
+
+        let sortedIndexes = indexes.sorted { lhs, rhs in
+            processSortDate(for: sessions[lhs]) > processSortDate(for: sessions[rhs])
+        }
+        guard let first = sortedIndexes.first else {
+            return nil
+        }
+
+        if sortedIndexes.count > 1,
+           processSortDate(for: sessions[first]) == processSortDate(for: sessions[sortedIndexes[1]]) {
+            return nil
+        }
+
+        return first
+    }
+
+    private func processSortDate(for session: AgentSession) -> Date {
+        session.key.processStartTime ?? session.firstSeenAt
     }
 
     private func shouldAcceptIntegrationEvent(
@@ -357,6 +420,19 @@ public final class AgentSessionStateMachine {
                 && $0.key.integrationSessionId == integrationSessionId
                 && $0.lastEvent?.kind == .sessionFinished
                 && eventProcessEvidenceMatches(session: $0, event: event)
+        }
+    }
+
+    private func hasReleasedProcessSession(matching key: SessionKey) -> Bool {
+        guard let runtimeIdentity = key.processRuntimeIdentity else {
+            return false
+        }
+
+        return sessions.contains {
+            $0.source == .processScan
+                && $0.state == .finished
+                && $0.lastEvent?.kind == .releaseNow
+                && $0.key.processRuntimeIdentity == runtimeIdentity
         }
     }
 
