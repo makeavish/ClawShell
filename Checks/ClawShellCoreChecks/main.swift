@@ -11,6 +11,8 @@ struct ClawShellCoreChecks {
         try processDetectorMatchesBuiltInAgents()
         try processDetectorExcludesCodexAppServerProcesses()
         try agentMonitorSummarizesParallelSessions()
+        try processOnlyStartupDetectionHoldsNewestSessionProvisionally()
+        try releaseNowSuppressesProcessOnlyProvisionalRehold()
         try agentMonitorPollsSnapshotsEveryTwoSecondsByDefault()
         try agentMonitorStartUsesTimerCadence()
         try sessionStateMachineCoversProcessIdentityTransitionsAndAggregateHold()
@@ -260,8 +262,8 @@ struct ClawShellCoreChecks {
                     ),
                     ProcessSnapshot(
                         pid: 23,
-                        processName: "codex",
-                        executablePath: "/opt/homebrew/bin/codex",
+                        processName: "claude-code",
+                        executablePath: "/usr/local/bin/claude-code",
                         processStartTime: now
                     )
                 ]
@@ -279,18 +281,102 @@ struct ClawShellCoreChecks {
 
         monitor.applyIntegrationEvent(
             HookAdapterEvent(
-                agent: .codexCLI,
-                host: "codex-cli",
+                agent: .claudeCode,
+                host: "claude-code",
                 event: .toolStarted,
                 pid: 23,
                 processStartTime: now,
-                integrationSessionId: "codex-turn-1"
+                integrationSessionId: "claude-turn-1"
             ),
             at: now.addingTimeInterval(1)
         )
         try check(
             monitor.sessionSummaryMessage() == "Sessions: 1 holding, 2 detected",
             "Expected integration-backed activity to hold while process-only sessions remain detected: \(monitor.sessionSummaryMessage())"
+        )
+    }
+
+    private static func processOnlyStartupDetectionHoldsNewestSessionProvisionally() throws {
+        var currentDate = Date(timeIntervalSince1970: 2_000)
+        let monitor = AgentMonitor(
+            snapshotProvider: StaticSnapshotProvider(
+                snapshotsToReturn: [
+                    ProcessSnapshot(
+                        pid: 31,
+                        processName: "claude",
+                        executablePath: "/opt/homebrew/bin/claude",
+                        processStartTime: currentDate.addingTimeInterval(-300)
+                    ),
+                    ProcessSnapshot(
+                        pid: 32,
+                        processName: "codex",
+                        executablePath: "/opt/homebrew/bin/codex",
+                        processStartTime: currentDate.addingTimeInterval(-60)
+                    ),
+                    ProcessSnapshot(
+                        pid: 33,
+                        processName: "claude",
+                        executablePath: "/usr/local/bin/claude-code",
+                        processStartTime: currentDate.addingTimeInterval(-180)
+                    )
+                ]
+            ),
+            settingsProvider: { ClawShellSettings(defaultGraceSeconds: 900) },
+            now: { currentDate }
+        )
+
+        monitor.poll()
+        try check(
+            monitor.sessionSummaryMessage() == "Sessions: 1 provisional, 2 detected",
+            "Expected newest startup-detected process to hold provisionally while older shells remain diagnostic: \(monitor.sessionSummaryMessage())"
+        )
+        try check(
+            monitor.sessionListMessage().contains("Codex CLI: provisional source=processScan pid=32"),
+            "Expected process-only startup hold to be labeled provisional: \(monitor.sessionListMessage())"
+        )
+
+        currentDate = currentDate.addingTimeInterval(901)
+        try check(
+            monitor.sessionSummaryMessage() == "Sessions: 3 detected, none holding",
+            "Expected provisional startup hold to expire without hook evidence: \(monitor.sessionSummaryMessage())"
+        )
+    }
+
+    private static func releaseNowSuppressesProcessOnlyProvisionalRehold() throws {
+        let baseline = Date(timeIntervalSince1970: 2_500)
+        let machine = AgentSessionStateMachine(graceInterval: 900)
+        let processObservation = observation(
+            pid: 34,
+            start: baseline.addingTimeInterval(-30),
+            path: "/opt/homebrew/bin/claude",
+            agent: .claudeCode
+        )
+
+        machine.applyProcessObservations([processObservation], at: baseline)
+        let provisionalSessionID = try checkNotNil(machine.sessions.first?.id, "Expected provisional process-backed session")
+        try check(machine.aggregateHoldState(at: baseline).shouldHold, "Expected startup process to hold provisionally")
+
+        machine.applyTrustedEvent(.releaseNow, to: provisionalSessionID, at: baseline.addingTimeInterval(1))
+        machine.applyProcessObservations([processObservation], at: baseline.addingTimeInterval(2))
+        try check(
+            !machine.aggregateHoldState(at: baseline.addingTimeInterval(2)).shouldHold,
+            "Expected released process-only session not to regain provisional hold on the next poll"
+        )
+
+        machine.applyIntegrationEvent(
+            HookAdapterEvent(
+                agent: .claudeCode,
+                host: "claude-code",
+                event: .toolStarted,
+                pid: 34,
+                processStartTime: baseline.addingTimeInterval(-30),
+                integrationSessionId: "claude-after-release"
+            ),
+            at: baseline.addingTimeInterval(3)
+        )
+        try check(
+            machine.aggregateHoldState(at: baseline.addingTimeInterval(3)).shouldHold,
+            "Expected a real integration event to restore hold after an explicit process-only release"
         )
     }
 
@@ -350,7 +436,11 @@ struct ClawShellCoreChecks {
         machine.applyProcessObservations([observation(pid: 42, start: baseline)], at: baseline)
         let firstSessionID = try checkNotNil(machine.sessions.first?.id, "Expected initial process session")
         try check(machine.sessions.first?.state == .active, "Expected matching process start to create an active session")
-        try check(!machine.aggregateHoldState(at: baseline).shouldHold, "Expected process-only session to stay diagnostic")
+        try check(machine.aggregateHoldState(at: baseline).shouldHold, "Expected process-only startup session to hold provisionally")
+        try check(
+            !machine.aggregateHoldState(at: baseline.addingTimeInterval(901)).shouldHold,
+            "Expected process-only provisional hold to expire without integration evidence"
+        )
         machine.applyIntegrationEvent(
             HookAdapterEvent(
                 agent: .codexCLI,

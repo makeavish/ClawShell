@@ -164,6 +164,7 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
     public var lastEvent: SessionEvent?
     public var diagnosticCPUPercent: Double?
     public var processExitedAt: Date?
+    public var provisionalHoldExpiresAt: Date?
 
     public init(
         id: UUID = UUID(),
@@ -179,7 +180,8 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
         holdWhileOpen: Bool = false,
         lastEvent: SessionEvent? = nil,
         diagnosticCPUPercent: Double? = nil,
-        processExitedAt: Date? = nil
+        processExitedAt: Date? = nil,
+        provisionalHoldExpiresAt: Date? = nil
     ) {
         self.id = id
         self.key = key
@@ -195,10 +197,14 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
         self.lastEvent = lastEvent
         self.diagnosticCPUPercent = diagnosticCPUPercent
         self.processExitedAt = processExitedAt
+        self.provisionalHoldExpiresAt = provisionalHoldExpiresAt
     }
 
     public func contributesToHold(at now: Date) -> Bool {
-        guard source != .processScan || confidence == .integrated || key.integrationSessionId != nil || holdWhileOpen else {
+        let hasConfirmedEvidence = hasIntegratedEvidence
+        let hasProvisionalProcessHold = isProvisionalHold(at: now)
+
+        guard hasConfirmedEvidence || holdWhileOpen || hasProvisionalProcessHold else {
             return false
         }
 
@@ -210,6 +216,17 @@ public struct AgentSession: Codable, Equatable, Identifiable, Sendable {
         case .finished:
             false
         }
+    }
+
+    public var hasIntegratedEvidence: Bool {
+        source != .processScan || confidence == .integrated || key.integrationSessionId != nil
+    }
+
+    public func isProvisionalHold(at now: Date) -> Bool {
+        source == .processScan
+            && !hasIntegratedEvidence
+            && !holdWhileOpen
+            && (provisionalHoldExpiresAt.map { $0 > now } ?? false)
     }
 }
 

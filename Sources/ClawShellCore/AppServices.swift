@@ -116,6 +116,7 @@ public final class AgentMonitor: AppLifecycleComponent {
         queue.sync {
             let settings = settingsProvider()
             stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
+            stateMachine.processDetectionHoldInterval = TimeInterval(settings.defaultGraceSeconds)
             stateMachine.applyManualOverrides(settings.manualOverrides, at: now)
 
             do {
@@ -133,6 +134,7 @@ public final class AgentMonitor: AppLifecycleComponent {
         let timestamp = now()
         let settings = settingsProvider()
         stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
+        stateMachine.processDetectionHoldInterval = TimeInterval(settings.defaultGraceSeconds)
         stateMachine.applyManualOverrides(settings.manualOverrides, at: timestamp)
 
         do {
@@ -153,9 +155,12 @@ public final class AgentMonitor: AppLifecycleComponent {
                 return "Sessions: none detected"
             }
 
-            let heldCount = activeSessions.filter { $0.contributesToHold(at: now()) }.count
+            let timestamp = now()
+            let heldCount = activeSessions.filter { $0.contributesToHold(at: timestamp) }.count
+            let provisionalCount = activeSessions.filter { $0.isProvisionalHold(at: timestamp) }.count
+            let confirmedHeldCount = heldCount - provisionalCount
             let detectedCount = activeSessions.count - heldCount
-            if heldCount == activeSessions.count {
+            if heldCount == activeSessions.count && provisionalCount == 0 {
                 return "Sessions: \(activeSessions.count) holding"
             }
 
@@ -163,7 +168,18 @@ public final class AgentMonitor: AppLifecycleComponent {
                 return "Sessions: \(detectedCount) detected, none holding"
             }
 
-            return "Sessions: \(heldCount) holding, \(detectedCount) detected"
+            var parts: [String] = []
+            if confirmedHeldCount > 0 {
+                parts.append("\(confirmedHeldCount) holding")
+            }
+            if provisionalCount > 0 {
+                parts.append("\(provisionalCount) provisional")
+            }
+            if detectedCount > 0 {
+                parts.append("\(detectedCount) detected")
+            }
+
+            return "Sessions: \(parts.joined(separator: ", "))"
         }
     }
 
@@ -200,6 +216,10 @@ public final class AgentMonitor: AppLifecycleComponent {
     }
 
     private func sessionDisplayState(_ session: AgentSession, at now: Date) -> String {
+        if session.isProvisionalHold(at: now) {
+            return "provisional"
+        }
+
         if session.contributesToHold(at: now) {
             return session.state.rawValue
         }
