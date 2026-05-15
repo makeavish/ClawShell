@@ -71,7 +71,7 @@ private final class SettingsViewController: NSViewController {
         statusLabel.setAccessibilityLabel("ClawShell runtime status")
 
         let normalProtectionLabel = keyValueLabel(key: "Normal sleep protection", value: "On")
-        let bagModeLabel = keyValueLabel(key: "Bag Mode", value: BagModeAvailability.unavailableTitle)
+        let bagModeLabel = keyValueLabel(key: "Closed-Lid Mode", value: "Unavailable")
 
         let claudeTitle = keyValueLabel(key: "Claude Code", value: "")
         let codexTitle = keyValueLabel(key: "Codex CLI", value: "")

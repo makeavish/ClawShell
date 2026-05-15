@@ -15,7 +15,7 @@ public enum ClawShellState: String, CaseIterable, Equatable, Identifiable, Senda
         case .idle:
             "Idle"
         case .active:
-            "Active"
+            "Protecting"
         case .bagMode:
             BagModeAvailability.unavailableTitle
         case .paused:
@@ -33,9 +33,9 @@ public enum ClawShellState: String, CaseIterable, Equatable, Identifiable, Senda
     public var placeholderDetail: String {
         switch self {
         case .idle:
-            "No agent session detected"
+            "No agent session seen"
         case .active:
-            "Agent session detected"
+            "Keeping this Mac awake for agent work"
         case .bagMode:
             BagModeAvailability.settingsDetail
         case .paused:

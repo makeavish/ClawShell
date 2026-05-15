@@ -79,7 +79,7 @@ Sanitized excerpt:
 
 ```text
 during/pmset-assertions.txt:
-pid <redacted>(ClawShellPowerValidation): PreventUserIdleSystemSleep named: "ClawShell is holding sleep for active agent sessions"
+pid <redacted>(ClawShellPowerValidation): PreventUserIdleSystemSleep named: "ClawShell is protecting agent work from sleep"
 
 after/pmset-assertions.txt:
 <no ClawShellPowerValidation assertions present>

@@ -1,6 +1,6 @@
 # Bag Mode Readiness
 
-This page preserves the Bag Mode readiness evidence gathered for issue #7.
+This page preserves the Closed-Lid Mode readiness evidence gathered for issue #7.
 The remaining manual hardware and app-level validation now lives in the single
 final E2E tracker: [#120](https://github.com/makeavish/ClawShell/issues/120).
 
@@ -21,15 +21,15 @@ They feed final app E2E validation in #120.
 
 ## Latest #120 Support Evidence
 
-The app still must not claim Bag Mode or release readiness until #120 is closed,
+The app still must not claim Closed-Lid Mode or release readiness until #120 is closed,
 but the following support slices are now covered on `main`:
 
 | Area | Current support evidence | Still open in #120 |
 |---|---|---|
-| App launch and UI | Staged app launch, clean-install copy launch, Accessibility-visible menu bar ownership, Settings window opening, lifecycle relaunch after quit/SIGTERM/SIGKILL, and product copy showing `Bag Mode unavailable` are covered by PRs #122, #126, #127, #128, #129, #133, and #138. | Human visual confirmation on target display configurations, reboot behavior for the full app, and final release package behavior. |
-| Integrations and helper CLI surface | Codex CLI owned-block recovery, helper command routing, uninstall routing, helper dry-run auth failure probes, and helper/app disagreement gating are covered by PRs #123, #124, #136, and #137. | Installed-helper enable/disable/repair/uninstall behavior, production repair conflicts, helper-owned Bag Mode cleanup, and final verifier-complete helper package. |
+| App launch and UI | Staged app launch, clean-install copy launch, Accessibility-visible menu bar ownership, Settings window opening, lifecycle relaunch after quit/SIGTERM/SIGKILL, and product copy showing `Closed-Lid Mode unavailable` are covered by PRs #122, #126, #127, #128, #129, #133, and #138. | Human visual confirmation on target display configurations, reboot behavior for the full app, and final release package behavior. |
+| Integrations and helper CLI surface | Codex CLI owned-block recovery, helper command routing, uninstall routing, helper dry-run auth failure probes, and helper/app disagreement gating are covered by PRs #123, #124, #136, and #137. | Installed-helper enable/disable/repair/uninstall behavior, production repair conflicts, helper-owned Closed-Lid Mode cleanup, and final verifier-complete helper package. |
 | Primitive lifecycle | Battery/internal and AC/internal closed-lid reopen recovery passed in final E2E artifacts. Reboot-held, app-quit while held, and app-crash while held passed for Apple Silicon battery/internal open-lid lifecycle artifacts. | External-display/no-external-display rows where physically available, broader hardware coverage, and any final manual release sign-off rows. |
-| Provider and safety gate | Safety policy fail-closed behavior is covered, IOReport remains a candidate but not verifier-complete, and product behavior is now explicitly feature-gated as unavailable until helper/provider validation completes. | Live provider scale, freshness, cadence, closed-bag coverage, timeout behavior, and final provider verifier success if Bag Mode is to be enabled. |
+| Provider and safety gate | Safety policy fail-closed behavior is covered, IOReport remains a candidate but not verifier-complete, and product behavior is now explicitly feature-gated as unavailable until helper/provider validation completes. | Live provider scale, freshness, cadence, closed-bag coverage, timeout behavior, and final provider verifier success if Closed-Lid Mode is to be enabled. |
 | Packaging consent | Static staged-app/repo audit proves no detected silent privileged-helper activation path in the current sources and staged bundle. | Real Homebrew cask/package install, upgrade, uninstall, Gatekeeper/quarantine, and helper-consent lifecycle evidence. |
 
 ## Primitive Validation
@@ -161,7 +161,7 @@ ledger-shape-only, or unregister-only capture. The May 15, 2026 support run
 captured a fresh helper approval artifact and the operator confirmed the macOS
 approval/password/System Settings prompt was shown and approved, but the same
 run was not verifier-complete because post-reboot persistence, update or
-replacement, production repair conflicts, and helper-owned Bag Mode cleanup
+replacement, production repair conflicts, and helper-owned Closed-Lid Mode cleanup
 remain open.
 
 Before attaching a helper prototype package, run:
@@ -175,7 +175,7 @@ This verifies evidence structure only. The prototype still requires a real
 app/helper bundle or fallback helper install package, production restore
 conflict behavior, production repair/uninstall behavior, final post-reboot
 manifest/manual promotion, update, installed-helper failure-case, helper-owned
-Bag Mode state cleanup, and optional cask/package evidence. CLI helper
+Closed-Lid Mode state cleanup, and optional cask/package evidence. CLI helper
 status/enable/disable/repair/uninstall command outcomes are covered by the CLI
 parser and control-router tests, but production helper-backed behavior remains
 open.

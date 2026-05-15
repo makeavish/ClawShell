@@ -8,7 +8,7 @@ struct MenuBarModelTests {
     @Test func snapshotIncludesRuntimeDiagnostics() {
         let snapshot = MenuBarModel.snapshot(
             currentState: .idle,
-            sessionSummary: "Sessions: none detected",
+            sessionSummary: "Sessions: none seen",
             integrationStatuses: [
                 IntegrationStatusSnapshot(
                     agentID: "claude-code",
@@ -18,7 +18,7 @@ struct MenuBarModelTests {
             ]
         )
 
-        #expect(snapshot.items.map(\.title).contains("Sessions: none detected"))
+        #expect(snapshot.items.map(\.title).contains("Sessions: none seen"))
         #expect(snapshot.items.map(\.title).contains(BagModeAvailability.unavailableTitle))
         #expect(snapshot.items.map(\.title).contains("Claude Code: Installed"))
         #expect(snapshot.items.map(\.title).contains("Refresh Status"))
@@ -63,7 +63,7 @@ final class MenuBarModelTests: XCTestCase {
     func testSnapshotIncludesRuntimeDiagnostics() {
         let snapshot = MenuBarModel.snapshot(
             currentState: .idle,
-            sessionSummary: "Sessions: none detected",
+            sessionSummary: "Sessions: none seen",
             integrationStatuses: [
                 IntegrationStatusSnapshot(
                     agentID: "claude-code",
@@ -73,7 +73,7 @@ final class MenuBarModelTests: XCTestCase {
             ]
         )
 
-        XCTAssertTrue(snapshot.items.map(\.title).contains("Sessions: none detected"))
+        XCTAssertTrue(snapshot.items.map(\.title).contains("Sessions: none seen"))
         XCTAssertTrue(snapshot.items.map(\.title).contains(BagModeAvailability.unavailableTitle))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Claude Code: Installed"))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Refresh Status"))
