@@ -44,6 +44,7 @@ extension SettingsWindowController: NSWindowDelegate {
 private final class SettingsViewController: NSViewController {
     private let services: AgentWakeServices
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
+    private let closedLidModeStatusLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeStatusLabel = NSTextField(labelWithString: "")
     private let codexStatusLabel = NSTextField(labelWithString: "")
     private let repairButton = NSButton(title: "Repair Integrations", target: nil, action: nil)
@@ -71,7 +72,9 @@ private final class SettingsViewController: NSViewController {
         statusLabel.setAccessibilityLabel("AgentWake runtime status")
 
         let normalProtectionLabel = keyValueLabel(key: "Normal sleep protection", value: "On")
-        let bagModeLabel = keyValueLabel(key: "Closed-Lid Mode", value: "Unavailable")
+        let closedLidModeLabel = keyValueLabel(key: "Closed-Lid Mode", value: "Unavailable")
+        closedLidModeStatusLabel.textColor = .secondaryLabelColor
+        closedLidModeStatusLabel.setAccessibilityLabel("Closed-Lid Mode validation gates")
 
         let claudeTitle = keyValueLabel(key: "Claude Code", value: "")
         let codexTitle = keyValueLabel(key: "Codex CLI", value: "")
@@ -111,7 +114,8 @@ private final class SettingsViewController: NSViewController {
             titleLabel,
             statusLabel,
             normalProtectionLabel,
-            bagModeLabel,
+            closedLidModeLabel,
+            closedLidModeStatusLabel,
             separator(),
             integrationGrid,
             buttonStack
@@ -141,6 +145,7 @@ private final class SettingsViewController: NSViewController {
         }
 
         statusLabel.stringValue = services.agentMonitor.sessionSummaryMessage()
+        closedLidModeStatusLabel.stringValue = ClosedLidModeAvailability.currentStatus.settingsDetail
         let snapshots = Dictionary(
             uniqueKeysWithValues: services.integrationManager.snapshots().map { ($0.agentID, $0) }
         )

@@ -34,6 +34,16 @@ struct MenuBarModelTests {
         #expect(snapshot.items.first?.detail == ClosedLidModeAvailability.settingsDetail)
     }
 
+    @Test func closedLidModeStatusNamesPendingGates() {
+        let status = ClosedLidModeStatus(pendingGates: [.helperLifecycle, .temperatureProvider])
+
+        #expect(!status.isAvailable)
+        #expect(status.title == "Closed-Lid Mode unavailable")
+        #expect(status.summary == "Blocked by 2 checks.")
+        #expect(status.settingsDetail.contains("Helper lifecycle"))
+        #expect(status.commandMessage("status").contains("- Temperature provider:"))
+    }
+
     @Test func stateDerivesFromHoldState() {
         #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: false, heldSessionIDs: [])) == .idle)
         #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [UUID()])) == .active)
@@ -87,6 +97,16 @@ final class MenuBarModelTests: XCTestCase {
         XCTAssertEqual(snapshot.statusItemTitle, "AgentWake")
         XCTAssertEqual(snapshot.items.first?.title, "Current: \(ClosedLidModeAvailability.unavailableTitle)")
         XCTAssertEqual(snapshot.items.first?.detail, ClosedLidModeAvailability.settingsDetail)
+    }
+
+    func testClosedLidModeStatusNamesPendingGates() {
+        let status = ClosedLidModeStatus(pendingGates: [.helperLifecycle, .temperatureProvider])
+
+        XCTAssertFalse(status.isAvailable)
+        XCTAssertEqual(status.title, "Closed-Lid Mode unavailable")
+        XCTAssertEqual(status.summary, "Blocked by 2 checks.")
+        XCTAssertTrue(status.settingsDetail.contains("Helper lifecycle"))
+        XCTAssertTrue(status.commandMessage("status").contains("- Temperature provider:"))
     }
 
     func testStateDerivesFromHoldState() {

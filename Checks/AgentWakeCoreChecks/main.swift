@@ -104,6 +104,14 @@ struct AgentWakeCoreChecks {
             "Expected current-state menu row"
         )
         try check(snapshot.items.first?.detail == ClosedLidModeAvailability.settingsDetail, "Expected Closed-Lid Mode unavailable detail")
+
+        let closedLidStatus = ClosedLidModeStatus(pendingGates: [.helperLifecycle, .temperatureProvider])
+        try check(!closedLidStatus.isAvailable, "Expected pending gates to keep Closed-Lid Mode unavailable")
+        try check(closedLidStatus.summary == "Blocked by 2 checks.", "Expected pending check count in Closed-Lid Mode summary")
+        try check(
+            closedLidStatus.commandMessage("status").contains("- Temperature provider:"),
+            "Expected Closed-Lid Mode status to name pending provider gate"
+        )
     }
 
     private static func stateDerivesFromHoldState() throws {
