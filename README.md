@@ -16,8 +16,8 @@ The first public version is planned to focus on:
 - Holding normal macOS sleep while agents are working
 - Showing exactly why sleep is currently being held
 - Releasing sleep prevention when agent work finishes or times out
-- Showing Closed-Lid Mode as unavailable until the helper lifecycle and live
-  temperature-provider validation gates are complete
+- Showing Closed-Lid Mode as unavailable until the helper, temperature,
+  lifecycle, and install-consent checks are complete
 
 ## Why
 
@@ -25,8 +25,8 @@ Long-running coding agents can work for minutes or hours. macOS can interrupt th
 
 `caffeinate -i` helps with idle sleep, but it is easy to forget and does not track agent lifecycle. AgentWake aims to make normal sleep prevention automatic, visible, and agent-scoped without becoming a general-purpose "keep my Mac awake forever" tool.
 
-Closed-Lid Mode remains a planned guarded path after the helper and
-temperature-provider validation gates pass.
+Closed-Lid Mode remains a planned guarded path after the helper, temperature,
+lifecycle, and install-consent checks pass.
 
 ## Planned First Version Support
 
@@ -47,8 +47,8 @@ Gemini CLI, Cursor, VS Code, and custom binaries are planned for later versions.
 ## Safety Model
 
 Closed-lid battery support is treated as a guarded mode, not a blanket promise that every situation is safe.
-Closed-Lid Mode is currently unavailable in the app until helper lifecycle and live
-temperature-provider validation are complete.
+Closed-Lid Mode is currently unavailable in the app until helper, temperature,
+lifecycle, and install-consent checks are complete.
 
 Planned safeguards include:
 
@@ -62,8 +62,9 @@ Planned safeguards include:
 Normal sleep prevention should work without admin privileges. macOS authorization is planned only when installing the privileged helper needed for closed-lid battery support.
 
 The CLI vocabulary for that future guarded path is `agentwake closed-lid
-status|enable|disable`. In v0.1.0 those commands intentionally report the mode
-as unavailable until the helper and temperature-provider gates pass.
+status|enable|disable`. In v0.1.0 those commands intentionally report the
+mode as unavailable and list the remaining helper, provider, lifecycle, and
+packaging checks.
 
 ## Privacy Model
 
