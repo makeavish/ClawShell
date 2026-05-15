@@ -273,7 +273,7 @@ if grep -q '^statusItemFound=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &
 fi
 
 closed_lid_mode_copy_found=false
-if grep -q '^menuItem=Closed-Lid Mode unavailable$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
+if grep -Eq '^menuItem=Closed-Lid Mode( off| enabled| status unknown| enabled outside AgentWake| ownership pending)?$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
     closed_lid_mode_copy_found=true
 fi
 
@@ -322,7 +322,7 @@ cat >"$OUTPUT_DIR/README.md" <<'EOF'
 
 This package captures live local evidence that the staged AgentWake app bundle
 launches, the CLI can reach it, and macOS Accessibility exposes an AgentWake menu
-bar item with the current `Closed-Lid Mode unavailable` product copy. It also
+bar item with the current `Closed-Lid Mode` product copy/status. It also
 opens the menu bar Settings item and verifies that CoreGraphics reports an onscreen,
 non-empty `AgentWake Settings` window for the staged app process.
 

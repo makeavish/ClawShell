@@ -16,8 +16,8 @@ The first public version is planned to focus on:
 - Holding normal macOS sleep while agents are working
 - Showing exactly why sleep is currently being held
 - Releasing sleep prevention when agent work finishes or times out
-- Showing Closed-Lid Mode as unavailable until the helper, temperature,
-  lifecycle, and install-consent checks are complete
+- Providing an admin-approved Closed-Lid Mode toggle for local testing, with
+  clear status and restore behavior
 
 ## Why
 
@@ -25,8 +25,9 @@ Long-running coding agents can work for minutes or hours. macOS can interrupt th
 
 `caffeinate -i` helps with idle sleep, but it is easy to forget and does not track agent lifecycle. AgentWake aims to make normal sleep prevention automatic, visible, and agent-scoped without becoming a general-purpose "keep my Mac awake forever" tool.
 
-Closed-Lid Mode remains a planned guarded path after the helper, temperature,
-lifecycle, and install-consent checks pass.
+Closed-Lid Mode currently uses macOS administrator approval to toggle the
+`pmset disablesleep` primitive and records the prior value so AgentWake can
+restore it when disabled.
 
 ## Planned First Version Support
 
@@ -47,8 +48,9 @@ Gemini CLI, Cursor, VS Code, and custom binaries are planned for later versions.
 ## Safety Model
 
 Closed-lid battery support is treated as a guarded mode, not a blanket promise that every situation is safe.
-Closed-Lid Mode is currently unavailable in the app until helper, temperature,
-lifecycle, and install-consent checks are complete.
+Closed-Lid Mode is currently an explicit admin-approved local mode. It changes
+`pmset disablesleep`, records the prior value, and restores that value when
+disabled. Temperature-provider cutoff automation remains a guarded follow-up.
 
 Planned safeguards include:
 
@@ -61,10 +63,9 @@ Planned safeguards include:
 
 Normal sleep prevention should work without admin privileges. macOS authorization is planned only when installing the privileged helper needed for closed-lid battery support.
 
-The CLI vocabulary for that future guarded path is `agentwake closed-lid
-status|enable|disable`. In v0.1.0 those commands intentionally report the
-mode as unavailable and list the remaining helper, provider, lifecycle, and
-packaging checks.
+The CLI vocabulary is `agentwake closed-lid status|enable|disable`. Enable and
+disable may show a macOS administrator prompt because the closed-lid primitive
+requires privileged power-setting changes.
 
 ## Privacy Model
 
@@ -97,8 +98,9 @@ Build a local release ZIP:
 scripts/package-release.sh --version v0.1.0
 ```
 
-The generated artifact is ad-hoc signed, does not install/register privileged
-helpers, and keeps Closed-Lid Mode unavailable for the v0.1.0 scope.
+The generated artifact is ad-hoc signed and does not install/register privileged
+helpers. Closed-Lid Mode uses macOS administrator approval at the moment the
+user enables or disables it.
 
 ## Development
 

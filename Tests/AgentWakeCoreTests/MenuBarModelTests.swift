@@ -21,6 +21,8 @@ struct MenuBarModelTests {
         #expect(snapshot.items.map(\.title).contains("Sessions: none seen"))
         #expect(snapshot.items.map(\.title).contains(ClosedLidModeAvailability.unavailableTitle))
         #expect(snapshot.items.map(\.title).contains("Claude Code: Installed"))
+        #expect(snapshot.items.map(\.title).contains("Enable Closed-Lid Mode"))
+        #expect(snapshot.items.map(\.title).contains("Disable Closed-Lid Mode"))
         #expect(snapshot.items.map(\.title).contains("Refresh Status"))
         #expect(snapshot.items.map(\.title).contains("Repair Integrations..."))
     }
@@ -86,6 +88,8 @@ final class MenuBarModelTests: XCTestCase {
         XCTAssertTrue(snapshot.items.map(\.title).contains("Sessions: none seen"))
         XCTAssertTrue(snapshot.items.map(\.title).contains(ClosedLidModeAvailability.unavailableTitle))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Claude Code: Installed"))
+        XCTAssertTrue(snapshot.items.map(\.title).contains("Enable Closed-Lid Mode"))
+        XCTAssertTrue(snapshot.items.map(\.title).contains("Disable Closed-Lid Mode"))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Refresh Status"))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Repair Integrations..."))
     }

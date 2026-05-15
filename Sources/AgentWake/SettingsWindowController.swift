@@ -72,7 +72,7 @@ private final class SettingsViewController: NSViewController {
         statusLabel.setAccessibilityLabel("AgentWake runtime status")
 
         let normalProtectionLabel = keyValueLabel(key: "Normal sleep protection", value: "On")
-        let closedLidModeLabel = keyValueLabel(key: "Closed-Lid Mode", value: "Unavailable")
+        let closedLidModeLabel = keyValueLabel(key: "Closed-Lid Mode", value: "Admin controlled")
         closedLidModeStatusLabel.textColor = .secondaryLabelColor
         closedLidModeStatusLabel.setAccessibilityLabel("Closed-Lid Mode validation gates")
 
@@ -145,7 +145,7 @@ private final class SettingsViewController: NSViewController {
         }
 
         statusLabel.stringValue = services.agentMonitor.sessionSummaryMessage()
-        closedLidModeStatusLabel.stringValue = ClosedLidModeAvailability.currentStatus.settingsDetail
+        closedLidModeStatusLabel.stringValue = services.closedLidModeController.statusMessage()
         let snapshots = Dictionary(
             uniqueKeysWithValues: services.integrationManager.snapshots().map { ($0.agentID, $0) }
         )

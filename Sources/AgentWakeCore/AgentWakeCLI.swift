@@ -142,13 +142,13 @@ public struct AgentWakeCLI {
         switch first {
         case "status":
             try requireArgumentCount(arguments, 1, usage: "closed-lid status takes no arguments")
-            return .helperStatus
+            return .closedLidStatus
         case "enable":
             try requireArgumentCount(arguments, 1, usage: "closed-lid enable takes no arguments")
-            return .helperEnableBagMode
+            return .closedLidEnable
         case "disable":
             try requireArgumentCount(arguments, 1, usage: "closed-lid disable takes no arguments")
-            return .helperDisableBagMode
+            return .closedLidDisable
         default:
             throw ControlServerError.invalidRequest("unknown closed-lid subcommand: \(first)")
         }

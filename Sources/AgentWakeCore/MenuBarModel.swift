@@ -3,6 +3,8 @@ import Foundation
 public enum MenuBarItemKind: Equatable, Sendable {
     case status
     case diagnostic
+    case closedLidEnable
+    case closedLidDisable
     case integrationStatus(String)
     case refreshStatus
     case repairIntegrations
@@ -49,6 +51,10 @@ public enum MenuBarModel {
     public static func snapshot(
         currentState: AgentWakeState,
         sessionSummary: String? = nil,
+        closedLidModeStatus: String = ClosedLidModeAvailability.currentStatus.title,
+        closedLidModeDetail: String? = ClosedLidModeAvailability.currentStatus.settingsDetail,
+        enableClosedLidModeEnabled: Bool = true,
+        disableClosedLidModeEnabled: Bool = true,
         integrationStatuses: [IntegrationStatusSnapshot] = []
     ) -> MenuBarSnapshot {
         var items = [
@@ -72,12 +78,27 @@ public enum MenuBarModel {
 
         items.append(
             MenuBarItem(
-                title: ClosedLidModeAvailability.unavailableTitle,
-                detail: ClosedLidModeAvailability.settingsDetail,
+                title: closedLidModeStatus,
+                detail: closedLidModeDetail,
                 isEnabled: false,
                 kind: .diagnostic
             )
         )
+
+        items += [
+            MenuBarItem(
+                title: "Enable Closed-Lid Mode",
+                detail: "Requires macOS administrator approval.",
+                isEnabled: enableClosedLidModeEnabled,
+                kind: .closedLidEnable
+            ),
+            MenuBarItem(
+                title: "Disable Closed-Lid Mode",
+                detail: "Restores only AgentWake-owned closed-lid state.",
+                isEnabled: disableClosedLidModeEnabled,
+                kind: .closedLidDisable
+            )
+        ]
 
         items += integrationStatuses.map { snapshot in
             let title = "\(snapshot.displayName): \(snapshot.status.displayTitle)"

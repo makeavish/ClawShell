@@ -6,6 +6,7 @@ struct AgentWakeCoreChecks {
     static func main() throws {
         try snapshotIncludesRuntimeDiagnostics()
         try snapshotNamesTheCurrentState()
+        try closedLidModeControllerEnablesAndRestoresPrimitive()
         try stateDerivesFromHoldState()
         try lifecycleComponentsCanStartAndStopTogether()
         try processDetectorMatchesBuiltInAgents()
@@ -90,6 +91,8 @@ struct AgentWakeCoreChecks {
         try check(titles.contains("Sessions: none seen"), "Expected session summary in menu")
         try check(titles.contains(ClosedLidModeAvailability.unavailableTitle), "Expected Closed-Lid Mode boundary in menu")
         try check(titles.contains("Claude Code: Installed"), "Expected integration status in menu")
+        try check(titles.contains("Enable Closed-Lid Mode"), "Expected Closed-Lid Mode enable action in menu")
+        try check(titles.contains("Disable Closed-Lid Mode"), "Expected Closed-Lid Mode disable action in menu")
         try check(titles.contains("Refresh Status"), "Expected refresh action in menu")
         try check(titles.contains("Repair Integrations..."), "Expected repair action in menu")
     }
@@ -112,6 +115,90 @@ struct AgentWakeCoreChecks {
             closedLidStatus.commandMessage("status").contains("- Temperature provider:"),
             "Expected Closed-Lid Mode status to name pending provider gate"
         )
+    }
+
+    private static func closedLidModeControllerEnablesAndRestoresPrimitive() throws {
+        let paths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
+        let runner = RecordingClosedLidModeCommandRunner(initialValue: 0)
+        let controller = ClosedLidModeController(
+            paths: paths,
+            commandRunner: runner,
+            now: { Date(timeIntervalSince1970: 123) }
+        )
+
+        let enabled = try controller.enable()
+        try check(enabled.contains("SleepDisabled=1"), "Expected enable message to report SleepDisabled=1")
+        try check(runner.setValues == [1], "Expected enable to set disablesleep=1")
+        try check(FileManager.default.fileExists(atPath: paths.closedLidModeStateURL.path), "Expected enable to record restore state")
+
+        let status = controller.statusMessage()
+        try check(status.contains("Closed-Lid Mode enabled"), "Expected status to report enabled state")
+        try check(status.contains("Restore value=0"), "Expected status to report restore value")
+
+        let disabled = try controller.disable()
+        try check(disabled.contains("SleepDisabled=0"), "Expected disable message to report restore value")
+        try check(runner.setValues == [1, 0], "Expected disable to restore previous disablesleep value")
+        try check(!FileManager.default.fileExists(atPath: paths.closedLidModeStateURL.path), "Expected disable to remove restore state")
+
+        let externalRunner = RecordingClosedLidModeCommandRunner(initialValue: 1)
+        let externalController = ClosedLidModeController(paths: paths, commandRunner: externalRunner)
+        do {
+            _ = try externalController.disable()
+            throw CheckFailure("Expected disable to reject externally owned disablesleep=1")
+        } catch ClosedLidModeError.notAgentWakeOwned {
+            try check(externalRunner.setValues.isEmpty, "Expected externally owned state to remain unchanged")
+        }
+
+        let pendingPaths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: pendingPaths.applicationSupportDirectory) }
+        let pendingState = ClosedLidModeState(
+            previousDisablesleep: 0,
+            enabledAt: Date(timeIntervalSince1970: 222),
+            phase: .pending
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try FileManager.default.createDirectory(
+            at: pendingPaths.closedLidModeStateURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try encoder.encode(pendingState).write(to: pendingPaths.closedLidModeStateURL, options: .atomic)
+        let pendingRunner = RecordingClosedLidModeCommandRunner(initialValue: 1)
+        let pendingController = ClosedLidModeController(paths: pendingPaths, commandRunner: pendingRunner)
+        do {
+            _ = try pendingController.disable()
+            throw CheckFailure("Expected pending ownership to reject externally enabled disablesleep=1")
+        } catch ClosedLidModeError.notAgentWakeOwned {
+            try check(pendingRunner.setValues.isEmpty, "Expected pending state not to restore externally held value")
+        }
+
+        let failingStatus = ClosedLidModeController(
+            paths: paths,
+            commandRunner: RecordingClosedLidModeCommandRunner(initialValue: 0, readError: ClosedLidModeError.pmsetFailed("pmset failed"))
+        )
+        try check(
+            failingStatus.statusMessage().contains("Closed-Lid Mode status unknown"),
+            "Expected status read failure to be visible"
+        )
+
+        let failingPaths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: failingPaths.applicationSupportDirectory) }
+        let failingRunner = RecordingClosedLidModeCommandRunner(
+            initialValue: 0,
+            setError: ClosedLidModeError.authorizationFailed("operator cancelled")
+        )
+        let failingController = ClosedLidModeController(paths: failingPaths, commandRunner: failingRunner)
+        do {
+            _ = try failingController.enable()
+            throw CheckFailure("Expected enable to propagate set failure")
+        } catch ClosedLidModeError.authorizationFailed {
+            try check(failingRunner.setValues == [1], "Expected enable to attempt disablesleep=1")
+            try check(
+                !FileManager.default.fileExists(atPath: failingPaths.closedLidModeStateURL.path),
+                "Expected failed enable to remove provisional restore state"
+            )
+        }
     }
 
     private static func stateDerivesFromHoldState() throws {
@@ -1403,6 +1490,9 @@ struct AgentWakeCoreChecks {
         let defaultDisable = try defaultRouter.route(.helperDisableBagMode, receivedAt: receivedAt)
         let defaultRepair = try defaultRouter.route(.helperRepair, receivedAt: receivedAt)
         let defaultUninstall = try defaultRouter.route(.helperUninstall, receivedAt: receivedAt)
+        let defaultClosedLidStatus = try defaultRouter.route(.closedLidStatus, receivedAt: receivedAt)
+        let defaultClosedLidEnable = try defaultRouter.route(.closedLidEnable, receivedAt: receivedAt)
+        let defaultClosedLidDisable = try defaultRouter.route(.closedLidDisable, receivedAt: receivedAt)
 
         try check(
             defaultStatus.message == ClosedLidModeAvailability.helperCommandMessage("status"),
@@ -1424,6 +1514,18 @@ struct AgentWakeCoreChecks {
             defaultUninstall.message == ClosedLidModeAvailability.helperCommandMessage("uninstall"),
             "Expected default helper uninstall outcome"
         )
+        try check(
+            defaultClosedLidStatus.message == ClosedLidModeAvailability.helperCommandMessage("status"),
+            "Expected default closed-lid status outcome"
+        )
+        try check(
+            defaultClosedLidEnable.message == ClosedLidModeAvailability.helperCommandMessage("enable"),
+            "Expected default closed-lid enable outcome"
+        )
+        try check(
+            defaultClosedLidDisable.message == ClosedLidModeAvailability.helperCommandMessage("disable"),
+            "Expected default closed-lid disable outcome"
+        )
 
         let router = DefaultControlCommandRouter(
             helperStatusProvider: {
@@ -1441,6 +1543,15 @@ struct AgentWakeCoreChecks {
             helperUninstallHandler: { receivedAt in
                 "Helper uninstall checked at \(Int(receivedAt.timeIntervalSince1970))"
             },
+            closedLidStatusProvider: {
+                "Closed-Lid Mode off"
+            },
+            closedLidEnableHandler: { receivedAt in
+                "Closed-Lid enable checked at \(Int(receivedAt.timeIntervalSince1970))"
+            },
+            closedLidDisableHandler: { receivedAt in
+                "Closed-Lid disable checked at \(Int(receivedAt.timeIntervalSince1970))"
+            },
             uninstallHandler: { removeHelper, removeIntegrations, receivedAt in
                 "Uninstall removeHelper=\(removeHelper) removeIntegrations=\(removeIntegrations) at \(Int(receivedAt.timeIntervalSince1970))"
             }
@@ -1451,6 +1562,9 @@ struct AgentWakeCoreChecks {
         let disable = try router.route(.helperDisableBagMode, receivedAt: receivedAt)
         let repair = try router.route(.helperRepair, receivedAt: receivedAt)
         let helperUninstall = try router.route(.helperUninstall, receivedAt: receivedAt)
+        let closedLidStatus = try router.route(.closedLidStatus, receivedAt: receivedAt)
+        let closedLidEnable = try router.route(.closedLidEnable, receivedAt: receivedAt)
+        let closedLidDisable = try router.route(.closedLidDisable, receivedAt: receivedAt)
         let uninstall = try router.route(.uninstall(removeHelper: true, removeIntegrations: true), receivedAt: receivedAt)
 
         try check(status.accepted, "Expected helper status to be accepted")
@@ -1459,6 +1573,9 @@ struct AgentWakeCoreChecks {
         try check(disable.message == "Helper disable checked at 9000", "Expected helper disable handler output")
         try check(repair.message == "Helper repair checked at 9000", "Expected helper repair handler output")
         try check(helperUninstall.message == "Helper uninstall checked at 9000", "Expected helper uninstall handler output")
+        try check(closedLidStatus.message == "Closed-Lid Mode off", "Expected closed-lid status provider output")
+        try check(closedLidEnable.message == "Closed-Lid enable checked at 9000", "Expected closed-lid enable handler output")
+        try check(closedLidDisable.message == "Closed-Lid disable checked at 9000", "Expected closed-lid disable handler output")
         try check(
             uninstall.message == "Uninstall removeHelper=true removeIntegrations=true at 9000",
             "Expected uninstall handler output"
@@ -1694,6 +1811,12 @@ struct AgentWakeCoreChecks {
         try check(client.commands.last == .helperEnableBagMode, "Expected helper enable command")
         _ = try cli.run(arguments: ["agentwake", "helper", "disable"])
         try check(client.commands.last == .helperDisableBagMode, "Expected helper disable command")
+        _ = try cli.run(arguments: ["agentwake", "closed-lid", "status"])
+        try check(client.commands.last == .closedLidStatus, "Expected closed-lid status command")
+        _ = try cli.run(arguments: ["agentwake", "closed-lid", "enable"])
+        try check(client.commands.last == .closedLidEnable, "Expected closed-lid enable command")
+        _ = try cli.run(arguments: ["agentwake", "closed-lid", "disable"])
+        try check(client.commands.last == .closedLidDisable, "Expected closed-lid disable command")
         _ = try cli.run(arguments: ["agentwake", "helper", "repair"])
         try check(client.commands.last == .helperRepair, "Expected helper repair command")
         _ = try cli.run(arguments: ["agentwake", "helper", "uninstall"])
@@ -1719,6 +1842,12 @@ struct AgentWakeCoreChecks {
         }
         try expectThrows("Expected helper status extra argument to be rejected") {
             _ = try cli.parse(arguments: ["helper", "status", "--json"])
+        }
+        try expectThrows("Expected closed-lid status extra argument to be rejected") {
+            _ = try cli.parse(arguments: ["closed-lid", "status", "--json"])
+        }
+        try expectThrows("Expected unknown closed-lid subcommand to be rejected") {
+            _ = try cli.parse(arguments: ["closed-lid", "arm"])
         }
         try expectThrows("Expected helper uninstall extra argument to be rejected") {
             _ = try cli.parse(arguments: ["helper", "uninstall", "--force"])
@@ -3051,6 +3180,34 @@ final class RecordingControlClient: ControlClient {
     func send(_ command: ControlCommand) throws -> ControlResponse {
         commands.append(command)
         return ControlResponse(accepted: true, receiptTimestamp: Date(timeIntervalSince1970: 1), message: "ok")
+    }
+}
+
+final class RecordingClosedLidModeCommandRunner: ClosedLidModeCommandRunning, @unchecked Sendable {
+    var currentValue: Int
+    var setValues: [Int] = []
+    var readError: Error?
+    var setError: Error?
+
+    init(initialValue: Int, readError: Error? = nil, setError: Error? = nil) {
+        self.currentValue = initialValue
+        self.readError = readError
+        self.setError = setError
+    }
+
+    func currentDisablesleep() throws -> Int {
+        if let readError {
+            throw readError
+        }
+        return currentValue
+    }
+
+    func setDisablesleep(_ value: Int) throws {
+        setValues.append(value)
+        if let setError {
+            throw setError
+        }
+        currentValue = value
     }
 }
 
