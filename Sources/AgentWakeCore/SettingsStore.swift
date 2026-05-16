@@ -96,6 +96,16 @@ public final class SettingsStore: StubLifecycleComponent {
         try save(next)
     }
 
+    public func setAgentEnabled(agentID: String, isEnabled: Bool) throws {
+        var next = settings
+        guard let index = next.agents.firstIndex(where: { $0.id == agentID }) else {
+            throw SettingsStoreError.invalidAgentConfiguration(agentID)
+        }
+
+        next.agents[index].isEnabled = isEnabled
+        try save(next)
+    }
+
     public func loadOrRecover() -> AgentWakeSettings {
         do {
             return try load()

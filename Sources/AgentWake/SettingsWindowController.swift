@@ -62,6 +62,8 @@ private final class SettingsViewController: NSViewController {
     private let closedLidSafetyWarningLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeStatusLabel = NSTextField(labelWithString: "")
     private let codexStatusLabel = NSTextField(labelWithString: "")
+    private let claudeEnabledCheckbox = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
+    private let codexEnabledCheckbox = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
     private let claudeDetailsButton = NSButton(title: "Show details", target: nil, action: nil)
     private let codexDetailsButton = NSButton(title: "Show details", target: nil, action: nil)
     private let claudeDetailsLabel = NSTextField(wrappingLabelWithString: "")
@@ -120,6 +122,14 @@ private final class SettingsViewController: NSViewController {
         claudeDetailsLabel.isHidden = true
         codexDetailsLabel.isHidden = true
 
+        claudeEnabledCheckbox.target = self
+        claudeEnabledCheckbox.action = #selector(toggleClaudeEnabled)
+        claudeEnabledCheckbox.setAccessibilityLabel("Enable Claude Code integration")
+
+        codexEnabledCheckbox.target = self
+        codexEnabledCheckbox.action = #selector(toggleCodexEnabled)
+        codexEnabledCheckbox.setAccessibilityLabel("Enable Codex CLI integration")
+
         claudeDetailsButton.target = self
         claudeDetailsButton.action = #selector(toggleClaudeDetails)
         claudeDetailsButton.bezelStyle = .disclosure
@@ -141,9 +151,9 @@ private final class SettingsViewController: NSViewController {
         codexRemoveButton.setAccessibilityLabel("Remove Codex CLI agent hook")
 
         let integrationStack = NSStackView(views: [
-            integrationRow(title: claudeTitle, status: claudeStatusLabel, detailsButton: claudeDetailsButton, removeButton: claudeRemoveButton),
+            integrationRow(title: claudeTitle, enabledCheckbox: claudeEnabledCheckbox, status: claudeStatusLabel, detailsButton: claudeDetailsButton, removeButton: claudeRemoveButton),
             claudeDetailsLabel,
-            integrationRow(title: codexTitle, status: codexStatusLabel, detailsButton: codexDetailsButton, removeButton: codexRemoveButton),
+            integrationRow(title: codexTitle, enabledCheckbox: codexEnabledCheckbox, status: codexStatusLabel, detailsButton: codexDetailsButton, removeButton: codexRemoveButton),
             codexDetailsLabel
         ])
         integrationStack.orientation = .vertical
@@ -268,6 +278,8 @@ private final class SettingsViewController: NSViewController {
         )
         claudeStatusLabel.stringValue = statusText(for: snapshots["claude-code"])
         codexStatusLabel.stringValue = statusText(for: snapshots["codex-cli"])
+        claudeEnabledCheckbox.state = agentEnabledState(agentID: "claude-code") ? .on : .off
+        codexEnabledCheckbox.state = agentEnabledState(agentID: "codex-cli") ? .on : .off
         claudeDetailsLabel.stringValue = detailsText(for: snapshots["claude-code"], preview: previews["claude-code"])
         codexDetailsLabel.stringValue = detailsText(for: snapshots["codex-cli"], preview: previews["codex-cli"])
         claudeRemoveButton.isEnabled = snapshots["claude-code"]?.status == .installed
@@ -334,15 +346,20 @@ private final class SettingsViewController: NSViewController {
 
     private func integrationRow(
         title: NSTextField,
+        enabledCheckbox: NSButton,
         status: NSTextField,
         detailsButton: NSButton,
         removeButton: NSButton
     ) -> NSStackView {
         let spacer = NSView()
-        let stack = rowStack([detailsButton, title, spacer, status, removeButton])
+        let stack = rowStack([detailsButton, title, enabledCheckbox, spacer, status, removeButton])
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         stack.widthAnchor.constraint(greaterThanOrEqualToConstant: 520).isActive = true
         return stack
+    }
+
+    private func agentEnabledState(agentID: String) -> Bool {
+        services.settingsStore.settings.agents.first(where: { $0.id == agentID })?.isEnabled ?? false
     }
 
     private func protectButtonTitle(count: Int) -> String {
@@ -439,6 +456,26 @@ private final class SettingsViewController: NSViewController {
 
     @objc private func removeCodexIntegration() {
         removeIntegration(agentID: "codex-cli", displayName: "Codex CLI")
+    }
+
+    @objc private func toggleClaudeEnabled() {
+        setAgentEnabled(agentID: "claude-code", displayName: "Claude Code", isEnabled: claudeEnabledCheckbox.state == .on)
+    }
+
+    @objc private func toggleCodexEnabled() {
+        setAgentEnabled(agentID: "codex-cli", displayName: "Codex CLI", isEnabled: codexEnabledCheckbox.state == .on)
+    }
+
+    private func setAgentEnabled(agentID: String, displayName: String, isEnabled: Bool) {
+        do {
+            try services.settingsStore.setAgentEnabled(agentID: agentID, isEnabled: isEnabled)
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refresh()
+        } catch {
+            presentAlert(title: "Could not update \(displayName)", message: error.localizedDescription, style: .warning)
+            refresh()
+        }
     }
 
     @objc private func toggleSleepProtectionPause() {

@@ -136,6 +136,10 @@ public final class AgentMonitor: AppLifecycleComponent {
     public func applyIntegrationEvent(_ event: HookAdapterEvent, at now: Date) {
         queue.sync {
             let settings = settingsProvider()
+            guard settings.agents.contains(where: { $0.id == event.agent.rawValue && $0.isEnabled }) else {
+                return
+            }
+
             stateMachine.graceInterval = TimeInterval(settings.defaultGraceSeconds)
             stateMachine.processDetectionHoldInterval = TimeInterval(settings.defaultGraceSeconds)
             stateMachine.applyManualOverrides(settings.manualOverrides, at: now)

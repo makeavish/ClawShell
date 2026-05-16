@@ -380,6 +380,22 @@ struct AgentWakeCoreChecks {
         )
         try check(!observations[3].key.executablePathHashIsVerified, "Expected missing paths to be marked unverified")
         try check(observations[4].key.executablePathHashIsVerified, "Expected resolved paths to be marked verified")
+
+        var disabledCodexSettings = AgentWakeSettings()
+        if let index = disabledCodexSettings.agents.firstIndex(where: { $0.id == "codex-cli" }) {
+            disabledCodexSettings.agents[index].isEnabled = false
+        }
+        let disabledCodexObservations = AgentProcessDetector(settings: disabledCodexSettings).observations(
+            in: [
+                ProcessSnapshot(
+                    pid: 13,
+                    processName: "codex",
+                    executablePath: "/opt/homebrew/bin/codex",
+                    processStartTime: Date(timeIntervalSince1970: 1)
+                )
+            ]
+        )
+        try check(disabledCodexObservations.isEmpty, "Expected disabled agent config to suppress process detection")
     }
 
     private static func processDetectorExcludesCodexAppServerProcesses() throws {
@@ -478,6 +494,28 @@ struct AgentWakeCoreChecks {
             monitor.sessionSummaryMessage() == "Keeping awake for 1 session • 2 more detected",
             "Expected integration-backed activity to protect while process-only sessions remain detected: \(monitor.sessionSummaryMessage())"
         )
+
+        var disabledClaudeSettings = AgentWakeSettings()
+        if let index = disabledClaudeSettings.agents.firstIndex(where: { $0.id == "claude-code" }) {
+            disabledClaudeSettings.agents[index].isEnabled = false
+        }
+        let disabledMonitor = AgentMonitor(
+            snapshotProvider: StaticSnapshotProvider(snapshotsToReturn: []),
+            settingsProvider: { disabledClaudeSettings },
+            now: { now }
+        )
+        disabledMonitor.applyIntegrationEvent(
+            HookAdapterEvent(
+                agent: .claudeCode,
+                host: "claude-code",
+                event: .toolStarted,
+                pid: 24,
+                processStartTime: now,
+                integrationSessionId: "disabled-claude"
+            ),
+            at: now.addingTimeInterval(1)
+        )
+        try check(disabledMonitor.sessions.isEmpty, "Expected disabled agent config to ignore hook events")
     }
 
     private static func processOnlyDetectionsRemainDiagnosticUntilIntegrated() throws {
@@ -3013,6 +3051,16 @@ struct AgentWakeCoreChecks {
         try check(
             !store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll },
             "Expected settings store to clear user pause override"
+        )
+        try store.setAgentEnabled(agentID: "codex-cli", isEnabled: false)
+        try check(
+            store.settings.agents.first(where: { $0.id == "codex-cli" })?.isEnabled == false,
+            "Expected settings store to disable an agent"
+        )
+        try store.setAgentEnabled(agentID: "codex-cli", isEnabled: true)
+        try check(
+            store.settings.agents.first(where: { $0.id == "codex-cli" })?.isEnabled == true,
+            "Expected settings store to re-enable an agent"
         )
 
         let settingsJSON = try String(contentsOf: paths.settingsURL, encoding: .utf8)
