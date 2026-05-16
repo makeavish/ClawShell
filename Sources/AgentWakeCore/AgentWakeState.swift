@@ -15,7 +15,7 @@ public enum AgentWakeState: String, CaseIterable, Equatable, Identifiable, Senda
         case .idle:
             "Idle"
         case .active:
-            "Protecting"
+            "Keeping Mac awake"
         case .bagMode:
             ClosedLidModeAvailability.unavailableTitle
         case .paused:

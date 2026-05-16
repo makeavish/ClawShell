@@ -92,11 +92,11 @@ struct AgentWakeCoreChecks {
         let titles = snapshot.items.map(\.title)
         try check(titles.contains("No sessions"), "Expected session summary in menu")
         try check(titles.contains(ClosedLidModeAvailability.unavailableTitle), "Expected Closed-Lid Mode boundary in menu")
-        try check(!titles.contains("Keep Awake"), "Expected protect action only when sessions are detected")
+        try check(!titles.contains("Keep 1 session awake"), "Expected protect action only when sessions are detected")
         try check(titles.contains("Turn On Lid-Closed Awake"), "Expected Closed-Lid Mode enable action in menu")
         try check(titles.contains("Refresh"), "Expected refresh action in menu")
         try check(!titles.contains("Claude Code: Installed"), "Expected installed integrations to stay out of the short menu")
-        try check(!titles.contains("Repair Integrations..."), "Expected repair action only when an integration needs attention")
+        try check(!titles.contains("Reinstall agent hooks"), "Expected repair action only when an integration needs attention")
 
         let protectableSnapshot = MenuBarModel.snapshot(
             currentState: .idle,
@@ -104,17 +104,17 @@ struct AgentWakeCoreChecks {
         )
         try check(
             protectableSnapshot.items.contains {
-                $0.title == "Keep 2 Awake" && $0.isEnabled
+                $0.title == "Keep 2 sessions awake" && $0.isEnabled
             },
             "Expected protect action to name the number of detected sessions"
         )
 
         let activeSnapshot = MenuBarModel.snapshot(
             currentState: .active,
-            sessionSummary: "1 keeping awake, 2 found"
+            sessionSummary: "Keeping awake for 1 session • 2 more detected"
         )
         try check(
-            activeSnapshot.items.first?.title == "Status: 1 keeping awake, 2 found",
+            activeSnapshot.items.first?.title == "Keeping awake for 1 session • 2 more detected",
             "Expected active menu status to include the protected session count"
         )
         try check(
@@ -134,7 +134,7 @@ struct AgentWakeCoreChecks {
         )
         let degradedTitles = degradedSnapshot.items.map(\.title)
         try check(degradedTitles.contains("Codex CLI: Needs repair"), "Expected broken integration to be visible")
-        try check(degradedTitles.contains("Repair Integrations..."), "Expected repair action for broken integration")
+        try check(degradedTitles.contains("Reinstall agent hooks"), "Expected repair action for broken integration")
     }
 
     private static func snapshotNamesTheCurrentState() throws {
@@ -145,7 +145,7 @@ struct AgentWakeCoreChecks {
         try check(snapshot.statusItemIcon.baseSystemImageName == "moon", "Expected Closed-Lid Mode status icon")
         try check(snapshot.statusItemIcon.tint == .unknown, "Expected unavailable status icon tint")
         try check(
-            snapshot.items.first?.title == "Status: \(ClosedLidModeAvailability.unavailableTitle)",
+            snapshot.items.first?.title == ClosedLidModeAvailability.unavailableTitle,
             "Expected current-state menu row"
         )
         try check(snapshot.items.first?.detail == ClosedLidModeAvailability.settingsDetail, "Expected Closed-Lid Mode unavailable detail")
@@ -272,7 +272,7 @@ struct AgentWakeCoreChecks {
         )
         try check(
             AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [UUID()])) == .active,
-            "Expected held session to derive Protecting"
+            "Expected held session to derive active"
         )
         try check(
             AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isPaused: true)) == .paused,
@@ -448,7 +448,7 @@ struct AgentWakeCoreChecks {
         monitor.poll()
         try check(monitor.visibleSessions.count == 3, "Expected parallel agent processes to remain distinct")
         try check(
-            monitor.sessionSummaryMessage() == "3 found",
+            monitor.sessionSummaryMessage() == "3 sessions detected",
             "Expected process-only matches to stay diagnostic instead of claiming confirmed protection"
         )
 
@@ -464,7 +464,7 @@ struct AgentWakeCoreChecks {
             at: now.addingTimeInterval(1)
         )
         try check(
-            monitor.sessionSummaryMessage() == "1 keeping awake, 2 found",
+            monitor.sessionSummaryMessage() == "Keeping awake for 1 session • 2 more detected",
             "Expected integration-backed activity to protect while process-only sessions remain detected: \(monitor.sessionSummaryMessage())"
         )
     }
@@ -500,21 +500,21 @@ struct AgentWakeCoreChecks {
 
         monitor.poll()
         try check(
-            monitor.sessionSummaryMessage() == "3 found",
+            monitor.sessionSummaryMessage() == "3 sessions detected",
             "Expected process-only detections to remain diagnostic until hook evidence arrives: \(monitor.sessionSummaryMessage())"
         )
         try check(
-            monitor.sessionOverviewMessage().contains("Codex CLI: found"),
+            monitor.sessionOverviewMessage().contains("Codex CLI: detected"),
             "Expected settings overview to hide process diagnostics: \(monitor.sessionOverviewMessage())"
         )
         try check(
-            monitor.sessionListMessage().contains("Codex CLI: found source=processScan pid=32"),
+            monitor.sessionListMessage().contains("Codex CLI: detected source=processScan pid=32"),
             "Expected process-only detection to be labeled detected: \(monitor.sessionListMessage())"
         )
 
         currentDate = currentDate.addingTimeInterval(901)
         try check(
-            monitor.sessionSummaryMessage() == "3 found",
+            monitor.sessionSummaryMessage() == "3 sessions detected",
             "Expected process-only detections to stay diagnostic without hook evidence: \(monitor.sessionSummaryMessage())"
         )
     }
@@ -564,7 +564,7 @@ struct AgentWakeCoreChecks {
 
         let overview = monitor.sessionOverviewMessage()
         try check(
-            overview == "Claude Code: keeping awake, 2 found",
+            overview == "Claude Code: keeping awake, 2 detected",
             "Expected one Claude Code row with combined states, got: \(overview)"
         )
         try check(

@@ -324,21 +324,21 @@ private func runProcessOnlyDetectionsRemainDiagnosticUntilIntegrated() throws {
 
     monitor.poll()
     try check(
-        monitor.sessionSummaryMessage() == "3 found",
+        monitor.sessionSummaryMessage() == "3 sessions detected",
         "Expected process-only detections to remain diagnostic until hook evidence arrives: \(monitor.sessionSummaryMessage())"
     )
     try check(
-        monitor.sessionOverviewMessage().contains("Codex CLI: found"),
+        monitor.sessionOverviewMessage().contains("Codex CLI: detected"),
         "Expected settings overview to hide process diagnostics: \(monitor.sessionOverviewMessage())"
     )
     try check(
-        monitor.sessionListMessage().contains("Codex CLI: found source=processScan pid=32"),
+        monitor.sessionListMessage().contains("Codex CLI: detected source=processScan pid=32"),
         "Expected process-only detection to be labeled detected: \(monitor.sessionListMessage())"
     )
 
     currentDate = currentDate.addingTimeInterval(901)
     try check(
-        monitor.sessionSummaryMessage() == "3 found",
+        monitor.sessionSummaryMessage() == "3 sessions detected",
         "Expected process-only detections to stay diagnostic without hook evidence: \(monitor.sessionSummaryMessage())"
     )
 }
@@ -387,7 +387,7 @@ private func runSessionOverviewCombinesAgentStateBuckets() throws {
 
     let overview = monitor.sessionOverviewMessage()
     try check(
-        overview == "Claude Code: keeping awake, 2 found",
+        overview == "Claude Code: keeping awake, 2 detected",
         "Expected one Claude Code row with combined states, got: \(overview)"
     )
     try check(

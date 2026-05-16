@@ -166,29 +166,21 @@ public final class AgentMonitor: AppLifecycleComponent {
         queue.sync {
             let activeSessions = stateMachine.sessions.filter { $0.state != .finished }
             guard !activeSessions.isEmpty else {
-                return "No sessions"
+                return "No sessions running"
             }
 
             let timestamp = now()
             let heldCount = activeSessions.filter { $0.contributesToHold(at: timestamp) }.count
-            let foundCount = activeSessions.count - heldCount
+            let detectedCount = activeSessions.count - heldCount
             if heldCount == activeSessions.count {
-                return countLabel(activeSessions.count, singular: "keeping awake", plural: "keeping awake")
+                return "Keeping awake for \(countLabel(activeSessions.count, singular: "session", plural: "sessions"))"
             }
 
             if heldCount == 0 {
-                return countLabel(foundCount, singular: "found", plural: "found")
+                return "\(countLabel(detectedCount, singular: "session", plural: "sessions")) detected"
             }
 
-            var parts: [String] = []
-            if heldCount > 0 {
-                parts.append(countLabel(heldCount, singular: "keeping awake", plural: "keeping awake"))
-            }
-            if foundCount > 0 {
-                parts.append(countLabel(foundCount, singular: "found", plural: "found"))
-            }
-
-            return parts.joined(separator: ", ")
+            return "Keeping awake for \(countLabel(heldCount, singular: "session", plural: "sessions")) • \(countLabel(detectedCount, singular: "more detected", plural: "more detected"))"
         }
     }
 
@@ -243,7 +235,7 @@ public final class AgentMonitor: AppLifecycleComponent {
                     sessionDisplayState(session, at: timestamp)
                 }
 
-                let labels = ["keeping awake", "releasing soon", "found"].compactMap { state -> String? in
+                let labels = ["keeping awake", "releasing soon", "detected"].compactMap { state -> String? in
                     guard let count = states[state]?.count, count > 0 else {
                         return nil
                     }
@@ -271,7 +263,7 @@ public final class AgentMonitor: AppLifecycleComponent {
         }
 
         if session.source == .processScan && session.state != .finished {
-            return "found"
+            return "detected"
         }
 
         return sessionProtectingState(session)
@@ -352,7 +344,7 @@ public final class AgentWakeServices {
         self.controlServer = controlServer ?? ControlServerComponent(
             runtimeStore: ControlRuntimeStore(paths: paths),
             router: DefaultControlCommandRouter(statusProvider: {
-                resolvedAgentMonitor.aggregateHoldState.shouldHold ? "AgentWake protecting" : "AgentWake running"
+                resolvedAgentMonitor.aggregateHoldState.shouldHold ? "AgentWake keeping Mac awake" : "AgentWake running"
             }, listProvider: {
                 resolvedAgentMonitor.sessionListMessage()
             }, pauseHandler: { duration, receivedAt in
@@ -395,7 +387,7 @@ public final class AgentWakeServices {
                 if protectedCount == 0 {
                     return "No detected sessions to protect"
                 }
-                return "Protecting \(protectedCount) detected session\(protectedCount == 1 ? "" : "s") until the process exits"
+                return "Keeping \(protectedCount) detected session\(protectedCount == 1 ? "" : "s") awake until the process exits"
             }, uninstallHandler: { removeHelper, removeIntegrations, receivedAt in
                 var outcomes = ["Uninstall requested"]
                 if removeIntegrations {

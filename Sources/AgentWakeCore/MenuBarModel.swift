@@ -177,7 +177,7 @@ public enum MenuBarModel {
             }
             items.append(
                 MenuBarItem(
-                    title: "Repair Integrations...",
+                    title: "Reinstall agent hooks",
                     isEnabled: true,
                     kind: .repairIntegrations
                 )
@@ -249,18 +249,18 @@ public enum MenuBarModel {
         if currentState == .active,
            let sessionSummary,
            statusIncludesSessionSummary(currentState: currentState, sessionSummary: sessionSummary) {
-            return "Status: \(sessionSummary)"
+            return sessionSummary
         }
 
-        return "Status: \(currentState.menuTitle)"
+        return currentState.menuTitle
     }
 
     private static func protectDetectedSessionsTitle(count: Int) -> String {
-        return count == 1 ? "Keep Awake" : "Keep \(count) Awake"
+        return count == 1 ? "Keep 1 session awake" : "Keep \(count) sessions awake"
     }
 
     private static func protectDetectedSessionsDetail(count: Int) -> String {
-        return "Keeps the Mac awake for found sessions."
+        return "Keeps detected sessions awake until they exit."
     }
 
     private static func closedLidStatusTitle(_ status: String) -> String {
@@ -281,7 +281,7 @@ public enum MenuBarModel {
     }
 
     private static func statusIncludesSessionSummary(currentState: AgentWakeState, sessionSummary: String?) -> Bool {
-        currentState == .active && sessionSummary?.contains("keeping awake") == true
+        currentState == .active && sessionSummary?.contains("Keeping awake") == true
     }
 
     private static func separatorItem() -> MenuBarItem {

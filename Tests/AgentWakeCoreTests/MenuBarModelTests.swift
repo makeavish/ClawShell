@@ -20,25 +20,25 @@ struct MenuBarModelTests {
 
         #expect(snapshot.items.map(\.title).contains("No sessions"))
         #expect(snapshot.items.map(\.title).contains(ClosedLidModeAvailability.unavailableTitle))
-        #expect(!snapshot.items.map(\.title).contains("Keep Awake"))
+        #expect(!snapshot.items.map(\.title).contains("Keep 1 session awake"))
         #expect(snapshot.items.map(\.title).contains("Turn On Lid-Closed Awake"))
         #expect(snapshot.items.map(\.title).contains("Refresh"))
         #expect(!snapshot.items.map(\.title).contains("Claude Code: Installed"))
-        #expect(!snapshot.items.map(\.title).contains("Repair Integrations..."))
+        #expect(!snapshot.items.map(\.title).contains("Reinstall agent hooks"))
 
         let protectableSnapshot = MenuBarModel.snapshot(
             currentState: .idle,
             protectableDetectedSessionCount: 2
         )
         #expect(protectableSnapshot.items.contains {
-            $0.title == "Keep 2 Awake" && $0.isEnabled
+            $0.title == "Keep 2 sessions awake" && $0.isEnabled
         })
 
         let activeSnapshot = MenuBarModel.snapshot(
             currentState: .active,
-            sessionSummary: "1 keeping awake, 2 found"
+            sessionSummary: "Keeping awake for 1 session • 2 more detected"
         )
-        #expect(activeSnapshot.items.first?.title == "Status: 1 keeping awake, 2 found")
+        #expect(activeSnapshot.items.first?.title == "Keeping awake for 1 session • 2 more detected")
         #expect(activeSnapshot.items.contains {
             $0.title == "Stop Keeping Awake" && $0.isEnabled
         })
@@ -54,7 +54,7 @@ struct MenuBarModelTests {
             ]
         )
         #expect(degradedSnapshot.items.map(\.title).contains("Codex CLI: Needs repair"))
-        #expect(degradedSnapshot.items.map(\.title).contains("Repair Integrations..."))
+        #expect(degradedSnapshot.items.map(\.title).contains("Reinstall agent hooks"))
     }
 
     @Test func snapshotNamesTheCurrentState() {
@@ -64,7 +64,7 @@ struct MenuBarModelTests {
         #expect(snapshot.statusItemAccessibilityTitle == "AgentWake")
         #expect(snapshot.statusItemIcon.baseSystemImageName == "moon")
         #expect(snapshot.statusItemIcon.tint == .unknown)
-        #expect(snapshot.items.first?.title == "Status: \(ClosedLidModeAvailability.unavailableTitle)")
+        #expect(snapshot.items.first?.title == ClosedLidModeAvailability.unavailableTitle)
         #expect(snapshot.items.first?.detail == ClosedLidModeAvailability.settingsDetail)
     }
 
@@ -141,25 +141,25 @@ final class MenuBarModelTests: XCTestCase {
 
         XCTAssertTrue(snapshot.items.map(\.title).contains("No sessions"))
         XCTAssertTrue(snapshot.items.map(\.title).contains(ClosedLidModeAvailability.unavailableTitle))
-        XCTAssertFalse(snapshot.items.map(\.title).contains("Keep Awake"))
+        XCTAssertFalse(snapshot.items.map(\.title).contains("Keep 1 session awake"))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Turn On Lid-Closed Awake"))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Refresh"))
         XCTAssertFalse(snapshot.items.map(\.title).contains("Claude Code: Installed"))
-        XCTAssertFalse(snapshot.items.map(\.title).contains("Repair Integrations..."))
+        XCTAssertFalse(snapshot.items.map(\.title).contains("Reinstall agent hooks"))
 
         let protectableSnapshot = MenuBarModel.snapshot(
             currentState: .idle,
             protectableDetectedSessionCount: 2
         )
         XCTAssertTrue(protectableSnapshot.items.contains {
-            $0.title == "Keep 2 Awake" && $0.isEnabled
+            $0.title == "Keep 2 sessions awake" && $0.isEnabled
         })
 
         let activeSnapshot = MenuBarModel.snapshot(
             currentState: .active,
-            sessionSummary: "1 keeping awake, 2 found"
+            sessionSummary: "Keeping awake for 1 session • 2 more detected"
         )
-        XCTAssertEqual(activeSnapshot.items.first?.title, "Status: 1 keeping awake, 2 found")
+        XCTAssertEqual(activeSnapshot.items.first?.title, "Keeping awake for 1 session • 2 more detected")
         XCTAssertTrue(activeSnapshot.items.contains {
             $0.title == "Stop Keeping Awake" && $0.isEnabled
         })
@@ -175,7 +175,7 @@ final class MenuBarModelTests: XCTestCase {
             ]
         )
         XCTAssertTrue(degradedSnapshot.items.map(\.title).contains("Codex CLI: Needs repair"))
-        XCTAssertTrue(degradedSnapshot.items.map(\.title).contains("Repair Integrations..."))
+        XCTAssertTrue(degradedSnapshot.items.map(\.title).contains("Reinstall agent hooks"))
     }
 
     func testSnapshotNamesTheCurrentState() {
@@ -185,7 +185,7 @@ final class MenuBarModelTests: XCTestCase {
         XCTAssertEqual(snapshot.statusItemAccessibilityTitle, "AgentWake")
         XCTAssertEqual(snapshot.statusItemIcon.baseSystemImageName, "moon")
         XCTAssertEqual(snapshot.statusItemIcon.tint, .unknown)
-        XCTAssertEqual(snapshot.items.first?.title, "Status: \(ClosedLidModeAvailability.unavailableTitle)")
+        XCTAssertEqual(snapshot.items.first?.title, ClosedLidModeAvailability.unavailableTitle)
         XCTAssertEqual(snapshot.items.first?.detail, ClosedLidModeAvailability.settingsDetail)
     }
 

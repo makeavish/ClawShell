@@ -61,10 +61,10 @@ private final class SettingsViewController: NSViewController {
     private let closedLidModeStatusLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeStatusLabel = NSTextField(labelWithString: "")
     private let codexStatusLabel = NSTextField(labelWithString: "")
-    private let protectButton = NSButton(title: "Keep Awake", target: nil, action: nil)
+    private let protectButton = NSButton(title: "Keep sessions awake", target: nil, action: nil)
     private let enableClosedLidButton = NSButton(title: "Turn On", target: nil, action: nil)
     private let disableClosedLidButton = NSButton(title: "Turn Off", target: nil, action: nil)
-    private let repairButton = NSButton(title: "Repair Integrations", target: nil, action: nil)
+    private let repairButton = NSButton(title: "Reinstall agent hooks", target: nil, action: nil)
     private let refreshButton = NSButton(title: "Refresh", target: nil, action: nil)
     private var closedLidActionInFlight = false
     private var refreshTimer: Timer?
@@ -92,7 +92,7 @@ private final class SettingsViewController: NSViewController {
         sessionListLabel.textColor = .secondaryLabelColor
         sessionListLabel.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         sessionListLabel.maximumNumberOfLines = 4
-        sessionListLabel.setAccessibilityLabel("Found agent sessions")
+        sessionListLabel.setAccessibilityLabel("Detected agent sessions")
 
         closedLidModeStatusLabel.textColor = .secondaryLabelColor
         closedLidModeStatusLabel.setAccessibilityLabel("Closed-Lid Mode status")
@@ -114,7 +114,7 @@ private final class SettingsViewController: NSViewController {
         protectButton.target = self
         protectButton.action = #selector(protectDetectedSessions)
         protectButton.bezelStyle = .rounded
-        protectButton.setAccessibilityLabel("Keep found sessions awake")
+        protectButton.setAccessibilityLabel("Keep detected sessions awake")
 
         enableClosedLidButton.target = self
         enableClosedLidButton.action = #selector(enableClosedLidMode)
@@ -134,7 +134,7 @@ private final class SettingsViewController: NSViewController {
         repairButton.target = self
         repairButton.action = #selector(repairIntegrations)
         repairButton.bezelStyle = .rounded
-        repairButton.setAccessibilityLabel("Repair integrations")
+        repairButton.setAccessibilityLabel("Reinstall agent hooks")
 
         refreshButton.target = self
         refreshButton.action = #selector(refreshAction)
@@ -262,10 +262,10 @@ private final class SettingsViewController: NSViewController {
 
     private func protectButtonTitle(count: Int) -> String {
         guard count > 0 else {
-            return "Keep Awake"
+            return "Keep sessions awake"
         }
 
-        return count == 1 ? "Keep Awake" : "Keep \(count) Awake"
+        return count == 1 ? "Keep 1 session awake" : "Keep \(count) sessions awake"
     }
 
     private func closedLidDisplayText(for message: String) -> String {
