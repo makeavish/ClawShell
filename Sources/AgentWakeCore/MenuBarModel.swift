@@ -36,17 +36,46 @@ public struct MenuBarItem: Equatable, Sendable {
 
 public struct MenuBarSnapshot: Equatable, Sendable {
     public let currentState: AgentWakeState
-    public let statusItemTitle: String
+    public let statusItemAccessibilityTitle: String
+    public let statusItemIcon: MenuBarStatusIcon
     public let items: [MenuBarItem]
 
     public init(
         currentState: AgentWakeState,
-        statusItemTitle: String,
+        statusItemAccessibilityTitle: String,
+        statusItemIcon: MenuBarStatusIcon,
         items: [MenuBarItem]
     ) {
         self.currentState = currentState
-        self.statusItemTitle = statusItemTitle
+        self.statusItemAccessibilityTitle = statusItemAccessibilityTitle
+        self.statusItemIcon = statusItemIcon
         self.items = items
+    }
+}
+
+public enum MenuBarStatusTint: String, Equatable, Sendable {
+    case secondary
+    case accent
+    case warning
+    case unknown
+}
+
+public struct MenuBarStatusIcon: Equatable, Sendable {
+    public let baseSystemImageName: String
+    public let overlaySystemImageName: String?
+    public let tint: MenuBarStatusTint
+    public let accessibilityDescription: String
+
+    public init(
+        baseSystemImageName: String,
+        overlaySystemImageName: String? = nil,
+        tint: MenuBarStatusTint,
+        accessibilityDescription: String
+    ) {
+        self.baseSystemImageName = baseSystemImageName
+        self.overlaySystemImageName = overlaySystemImageName
+        self.tint = tint
+        self.accessibilityDescription = accessibilityDescription
     }
 }
 
@@ -180,9 +209,40 @@ public enum MenuBarModel {
 
         return MenuBarSnapshot(
             currentState: currentState,
-            statusItemTitle: currentState.statusItemTitle,
+            statusItemAccessibilityTitle: "AgentWake",
+            statusItemIcon: statusItemIcon(currentState: currentState, closedLidModeStatus: closedLidModeStatus),
             items: items
         )
+    }
+
+    private static func statusItemIcon(currentState: AgentWakeState, closedLidModeStatus: String) -> MenuBarStatusIcon {
+        switch currentState {
+        case .idle:
+            return MenuBarStatusIcon(
+                baseSystemImageName: closedLidModeStatus == "Closed-Lid Mode enabled outside AgentWake" ? "moon" : "moon.fill",
+                tint: closedLidModeStatus == "Closed-Lid Mode enabled outside AgentWake" ? .unknown : .secondary,
+                accessibilityDescription: "Idle"
+            )
+        case .active:
+            return MenuBarStatusIcon(
+                baseSystemImageName: "bolt.fill",
+                overlaySystemImageName: closedLidModeStatus == "Closed-Lid Mode enabled" ? "lock.fill" : nil,
+                tint: .accent,
+                accessibilityDescription: closedLidModeStatus == "Closed-Lid Mode enabled" ? "Keeping Mac awake with Lid-Closed Awake on" : "Keeping Mac awake"
+            )
+        case .bagMode:
+            return MenuBarStatusIcon(
+                baseSystemImageName: "moon",
+                tint: .unknown,
+                accessibilityDescription: ClosedLidModeAvailability.unavailableTitle
+            )
+        case .paused:
+            return MenuBarStatusIcon(
+                baseSystemImageName: "exclamationmark.triangle.fill",
+                tint: .warning,
+                accessibilityDescription: "Sleep protection paused or safety cutoff active"
+            )
+        }
     }
 
     private static func statusTitle(currentState: AgentWakeState, sessionSummary: String?) -> String {

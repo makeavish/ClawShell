@@ -23,13 +23,6 @@ public enum AgentWakeState: String, CaseIterable, Equatable, Identifiable, Senda
         }
     }
 
-    public var statusItemTitle: String {
-        switch self {
-        case .idle, .active, .bagMode, .paused:
-            "AgentWake"
-        }
-    }
-
     public var placeholderDetail: String {
         switch self {
         case .idle:

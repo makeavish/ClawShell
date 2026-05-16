@@ -61,9 +61,33 @@ struct MenuBarModelTests {
         let snapshot = MenuBarModel.snapshot(currentState: .bagMode)
 
         #expect(snapshot.currentState == .bagMode)
-        #expect(snapshot.statusItemTitle == "AgentWake")
+        #expect(snapshot.statusItemAccessibilityTitle == "AgentWake")
+        #expect(snapshot.statusItemIcon.baseSystemImageName == "moon")
+        #expect(snapshot.statusItemIcon.tint == .unknown)
         #expect(snapshot.items.first?.title == "Status: \(ClosedLidModeAvailability.unavailableTitle)")
         #expect(snapshot.items.first?.detail == ClosedLidModeAvailability.settingsDetail)
+    }
+
+    @Test func snapshotUsesGlanceableStatusIcons() {
+        let idle = MenuBarModel.snapshot(currentState: .idle)
+        #expect(idle.statusItemIcon.baseSystemImageName == "moon.fill")
+        #expect(idle.statusItemIcon.tint == .secondary)
+
+        let active = MenuBarModel.snapshot(currentState: .active)
+        #expect(active.statusItemIcon.baseSystemImageName == "bolt.fill")
+        #expect(active.statusItemIcon.overlaySystemImageName == nil)
+        #expect(active.statusItemIcon.tint == .accent)
+
+        let activeWithClosedLid = MenuBarModel.snapshot(
+            currentState: .active,
+            closedLidModeStatus: "Closed-Lid Mode enabled"
+        )
+        #expect(activeWithClosedLid.statusItemIcon.baseSystemImageName == "bolt.fill")
+        #expect(activeWithClosedLid.statusItemIcon.overlaySystemImageName == "lock.fill")
+
+        let paused = MenuBarModel.snapshot(currentState: .paused)
+        #expect(paused.statusItemIcon.baseSystemImageName == "exclamationmark.triangle.fill")
+        #expect(paused.statusItemIcon.tint == .warning)
     }
 
     @Test func closedLidModeStatusNamesPendingGates() {
@@ -158,9 +182,33 @@ final class MenuBarModelTests: XCTestCase {
         let snapshot = MenuBarModel.snapshot(currentState: .bagMode)
 
         XCTAssertEqual(snapshot.currentState, .bagMode)
-        XCTAssertEqual(snapshot.statusItemTitle, "AgentWake")
+        XCTAssertEqual(snapshot.statusItemAccessibilityTitle, "AgentWake")
+        XCTAssertEqual(snapshot.statusItemIcon.baseSystemImageName, "moon")
+        XCTAssertEqual(snapshot.statusItemIcon.tint, .unknown)
         XCTAssertEqual(snapshot.items.first?.title, "Status: \(ClosedLidModeAvailability.unavailableTitle)")
         XCTAssertEqual(snapshot.items.first?.detail, ClosedLidModeAvailability.settingsDetail)
+    }
+
+    func testSnapshotUsesGlanceableStatusIcons() {
+        let idle = MenuBarModel.snapshot(currentState: .idle)
+        XCTAssertEqual(idle.statusItemIcon.baseSystemImageName, "moon.fill")
+        XCTAssertEqual(idle.statusItemIcon.tint, .secondary)
+
+        let active = MenuBarModel.snapshot(currentState: .active)
+        XCTAssertEqual(active.statusItemIcon.baseSystemImageName, "bolt.fill")
+        XCTAssertNil(active.statusItemIcon.overlaySystemImageName)
+        XCTAssertEqual(active.statusItemIcon.tint, .accent)
+
+        let activeWithClosedLid = MenuBarModel.snapshot(
+            currentState: .active,
+            closedLidModeStatus: "Closed-Lid Mode enabled"
+        )
+        XCTAssertEqual(activeWithClosedLid.statusItemIcon.baseSystemImageName, "bolt.fill")
+        XCTAssertEqual(activeWithClosedLid.statusItemIcon.overlaySystemImageName, "lock.fill")
+
+        let paused = MenuBarModel.snapshot(currentState: .paused)
+        XCTAssertEqual(paused.statusItemIcon.baseSystemImageName, "exclamationmark.triangle.fill")
+        XCTAssertEqual(paused.statusItemIcon.tint, .warning)
     }
 
     func testClosedLidModeStatusNamesPendingGates() {

@@ -6,6 +6,7 @@ struct AgentWakeCoreChecks {
     static func main() throws {
         try snapshotIncludesRuntimeDiagnostics()
         try snapshotNamesTheCurrentState()
+        try snapshotUsesGlanceableStatusIcons()
         try closedLidModeControllerEnablesAndRestoresPrimitive()
         try stateDerivesFromHoldState()
         try lifecycleComponentsCanStartAndStopTogether()
@@ -140,7 +141,9 @@ struct AgentWakeCoreChecks {
         let snapshot = MenuBarModel.snapshot(currentState: .bagMode)
 
         try check(snapshot.currentState == .bagMode, "Expected Closed-Lid Mode as current state")
-        try check(snapshot.statusItemTitle == "AgentWake", "Expected stable status item title")
+        try check(snapshot.statusItemAccessibilityTitle == "AgentWake", "Expected stable status item accessibility title")
+        try check(snapshot.statusItemIcon.baseSystemImageName == "moon", "Expected Closed-Lid Mode status icon")
+        try check(snapshot.statusItemIcon.tint == .unknown, "Expected unavailable status icon tint")
         try check(
             snapshot.items.first?.title == "Status: \(ClosedLidModeAvailability.unavailableTitle)",
             "Expected current-state menu row"
@@ -154,6 +157,28 @@ struct AgentWakeCoreChecks {
             closedLidStatus.commandMessage("status").contains("- Temperature provider:"),
             "Expected Closed-Lid Mode status to name pending provider gate"
         )
+    }
+
+    private static func snapshotUsesGlanceableStatusIcons() throws {
+        let idle = MenuBarModel.snapshot(currentState: .idle)
+        try check(idle.statusItemIcon.baseSystemImageName == "moon.fill", "Expected idle moon status icon")
+        try check(idle.statusItemIcon.tint == .secondary, "Expected idle status icon tint")
+
+        let active = MenuBarModel.snapshot(currentState: .active)
+        try check(active.statusItemIcon.baseSystemImageName == "bolt.fill", "Expected active status icon")
+        try check(active.statusItemIcon.overlaySystemImageName == nil, "Expected no lock overlay when Lid-Closed Awake is off")
+        try check(active.statusItemIcon.tint == .accent, "Expected active status icon tint")
+
+        let activeWithClosedLid = MenuBarModel.snapshot(
+            currentState: .active,
+            closedLidModeStatus: "Closed-Lid Mode enabled"
+        )
+        try check(activeWithClosedLid.statusItemIcon.baseSystemImageName == "bolt.fill", "Expected active status icon with Lid-Closed Awake on")
+        try check(activeWithClosedLid.statusItemIcon.overlaySystemImageName == "lock.fill", "Expected lock overlay when Lid-Closed Awake is on")
+
+        let paused = MenuBarModel.snapshot(currentState: .paused)
+        try check(paused.statusItemIcon.baseSystemImageName == "exclamationmark.triangle.fill", "Expected paused warning status icon")
+        try check(paused.statusItemIcon.tint == .warning, "Expected paused warning tint")
     }
 
     private static func closedLidModeControllerEnablesAndRestoresPrimitive() throws {

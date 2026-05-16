@@ -23,6 +23,7 @@ final class MenuBarApp: NSObject {
         self.settingsWindowController = settingsWindowController ?? SettingsWindowController(services: services)
         self.currentState = initialState
         super.init()
+        self.statusItem.length = NSStatusItem.squareLength
     }
 
     func start() {
@@ -75,11 +76,52 @@ final class MenuBarApp: NSObject {
         )
 
         if let button = statusItem.button {
-            button.title = snapshot.statusItemTitle
-            button.setAccessibilityLabel("AgentWake status: \(snapshot.currentState.menuTitle)")
+            button.title = snapshot.statusItemAccessibilityTitle
+            button.image = statusItemImage(for: snapshot.statusItemIcon)
+            button.imagePosition = .imageOnly
+            button.contentTintColor = statusItemTintColor(snapshot.statusItemIcon.tint)
+            button.setAccessibilityLabel("AgentWake status: \(snapshot.statusItemIcon.accessibilityDescription)")
         }
 
         statusItem.menu = makeMenu(from: snapshot)
+    }
+
+    private func statusItemImage(for icon: MenuBarStatusIcon) -> NSImage? {
+        let baseConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        guard let base = NSImage(
+            systemSymbolName: icon.baseSystemImageName,
+            accessibilityDescription: icon.accessibilityDescription
+        )?.withSymbolConfiguration(baseConfiguration) else {
+            return nil
+        }
+
+        guard let overlayName = icon.overlaySystemImageName,
+              let overlay = NSImage(systemSymbolName: overlayName, accessibilityDescription: nil)?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)) else {
+            base.isTemplate = true
+            return base
+        }
+
+        let image = NSImage(size: NSSize(width: 22, height: 18))
+        image.lockFocus()
+        base.draw(in: NSRect(x: 1, y: 1, width: 16, height: 16))
+        overlay.draw(in: NSRect(x: 13, y: 0, width: 8, height: 8))
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }
+
+    private func statusItemTintColor(_ tint: MenuBarStatusTint) -> NSColor? {
+        switch tint {
+        case .secondary:
+            return .secondaryLabelColor
+        case .accent:
+            return .controlAccentColor
+        case .warning:
+            return .systemOrange
+        case .unknown:
+            return .tertiaryLabelColor
+        }
     }
 
     private var canEnableClosedLidMode: Bool {
