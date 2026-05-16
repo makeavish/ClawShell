@@ -13,6 +13,8 @@ dist/
 *.app
 *.dmg
 *.pkg
+Resources/AgentWake.iconset/
+Resources/AgentWake-Icon.png
 
 # Local config
 .env

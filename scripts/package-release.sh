@@ -98,6 +98,8 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 HOOK_ADAPTER_BINARY="$APP_MACOS/$HOOK_ADAPTER_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+APP_ICON_SOURCE="$ROOT_DIR/Resources/AgentWake.icns"
+APP_ICON_NAME="AgentWake"
 ZIP_PATH="$OUTPUT_DIR/$APP_NAME-$TAG_VERSION-macos.zip"
 SHA_PATH="$ZIP_PATH.sha256"
 MANIFEST_PATH="$OUTPUT_DIR/$APP_NAME-$TAG_VERSION-manifest.txt"
@@ -117,6 +119,7 @@ mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_DIR/$APP_NAME" "$APP_BINARY"
 cp "$BUILD_DIR/$HOOK_ADAPTER_NAME" "$HOOK_ADAPTER_BINARY"
 chmod +x "$APP_BINARY" "$HOOK_ADAPTER_BINARY"
+cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns"
 cp "$ROOT_DIR/README.md" "$APP_RESOURCES/README.md"
 cp "$ROOT_DIR/CHANGELOG.md" "$APP_RESOURCES/CHANGELOG.md"
 
@@ -131,6 +134,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_ICON_NAME</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>

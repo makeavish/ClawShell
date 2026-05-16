@@ -7,6 +7,8 @@ APP_NAME="AgentWake"
 HOOK_ADAPTER_NAME="AgentWakeHookAdapter"
 BUNDLE_ID="com.makeavish.AgentWake"
 MIN_SYSTEM_VERSION="13.0"
+APP_ICON_SOURCE="$ROOT_DIR/Resources/AgentWake.icns"
+APP_ICON_NAME="AgentWake"
 
 usage() {
     cat <<'EOF'
@@ -68,9 +70,10 @@ stage_source_app_bundle() {
         swift build --package-path "$ROOT_DIR" --product "$HOOK_ADAPTER_NAME" &&
         build_dir="$(swift build --package-path "$ROOT_DIR" --show-bin-path)" &&
         rm -rf "$SOURCE_APP_BUNDLE" &&
-        mkdir -p "$SOURCE_APP_MACOS" &&
+        mkdir -p "$SOURCE_APP_MACOS" "$SOURCE_APP_RESOURCES" &&
         cp "$build_dir/$APP_NAME" "$SOURCE_APP_BINARY" &&
         cp "$build_dir/$HOOK_ADAPTER_NAME" "$SOURCE_HOOK_ADAPTER_BINARY" &&
+        cp "$APP_ICON_SOURCE" "$SOURCE_APP_RESOURCES/$APP_ICON_NAME.icns" &&
         chmod +x "$SOURCE_APP_BINARY" "$SOURCE_HOOK_ADAPTER_BINARY" &&
         cat >"$SOURCE_INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -81,6 +84,8 @@ stage_source_app_bundle() {
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_ICON_NAME</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
@@ -265,6 +270,7 @@ EVIDENCE_DIR="$OUTPUT_DIR/evidence"
 SOURCE_APP_BUNDLE="$OUTPUT_DIR/staged/AgentWake.app"
 SOURCE_APP_CONTENTS="$SOURCE_APP_BUNDLE/Contents"
 SOURCE_APP_MACOS="$SOURCE_APP_CONTENTS/MacOS"
+SOURCE_APP_RESOURCES="$SOURCE_APP_CONTENTS/Resources"
 SOURCE_APP_BINARY="$SOURCE_APP_MACOS/$APP_NAME"
 SOURCE_HOOK_ADAPTER_BINARY="$SOURCE_APP_MACOS/$HOOK_ADAPTER_NAME"
 SOURCE_INFO_PLIST="$SOURCE_APP_CONTENTS/Info.plist"

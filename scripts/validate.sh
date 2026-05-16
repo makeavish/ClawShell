@@ -808,6 +808,7 @@ for required_release_packaging_contract in \
     'artifactFormat=agentwake-release-artifact-v1' \
     'bagMode=unavailable' \
     'helperInstalled=false' \
+    'CFBundleIconFile' \
     'CFBundleShortVersionString' \
     'codesign --force --sign -'
 do
@@ -870,6 +871,13 @@ fi
 if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$release_package_app/Contents/Info.plist")" != "0.0.0" ]]; then
     echo "Release packaging Info.plist did not carry the requested short version" >&2
     /usr/bin/plutil -p "$release_package_app/Contents/Info.plist" >&2
+    exit 1
+fi
+if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$release_package_app/Contents/Info.plist")" != "AgentWake" ||
+      ! -s "$release_package_app/Contents/Resources/AgentWake.icns" ]]; then
+    echo "Release packaging did not include the app icon resource" >&2
+    /usr/bin/plutil -p "$release_package_app/Contents/Info.plist" >&2
+    find "$release_package_app/Contents/Resources" -maxdepth 1 -type f -print >&2
     exit 1
 fi
 if [[ -d "$release_package_app/Contents/Library/LaunchDaemons" ]] ||

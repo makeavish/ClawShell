@@ -11,10 +11,13 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 HOOK_ADAPTER_NAME="AgentWakeHookAdapter"
 HOOK_ADAPTER_BINARY="$APP_MACOS/$HOOK_ADAPTER_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+APP_ICON_SOURCE="$ROOT_DIR/Resources/AgentWake.icns"
+APP_ICON_NAME="AgentWake"
 
 cd "$ROOT_DIR"
 
@@ -70,9 +73,10 @@ stage_app() {
     hook_adapter_build_binary="$(swift build --show-bin-path)/$HOOK_ADAPTER_NAME"
 
     rm -rf "$APP_BUNDLE"
-    mkdir -p "$APP_MACOS"
+    mkdir -p "$APP_MACOS" "$APP_RESOURCES"
     cp "$build_binary" "$APP_BINARY"
     cp "$hook_adapter_build_binary" "$HOOK_ADAPTER_BINARY"
+    cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns"
     chmod +x "$APP_BINARY" "$HOOK_ADAPTER_BINARY"
 
     cat >"$INFO_PLIST" <<PLIST
@@ -84,6 +88,8 @@ stage_app() {
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_ICON_NAME</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>

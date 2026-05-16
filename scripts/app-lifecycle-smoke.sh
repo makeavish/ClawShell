@@ -10,9 +10,12 @@ MIN_SYSTEM_VERSION="13.0"
 APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 HOOK_ADAPTER_BINARY="$APP_MACOS/$HOOK_ADAPTER_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+APP_ICON_SOURCE="$ROOT_DIR/Resources/AgentWake.icns"
+APP_ICON_NAME="AgentWake"
 
 usage() {
     cat <<'EOF'
@@ -72,9 +75,10 @@ stage_app_bundle() {
         swift build --package-path "$ROOT_DIR" --product "$HOOK_ADAPTER_NAME" &&
         build_dir="$(swift build --package-path "$ROOT_DIR" --show-bin-path)" &&
         rm -rf "$APP_BUNDLE" &&
-        mkdir -p "$APP_MACOS" &&
+        mkdir -p "$APP_MACOS" "$APP_RESOURCES" &&
         cp "$build_dir/$APP_NAME" "$APP_BINARY" &&
         cp "$build_dir/$HOOK_ADAPTER_NAME" "$HOOK_ADAPTER_BINARY" &&
+        cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns" &&
         chmod +x "$APP_BINARY" "$HOOK_ADAPTER_BINARY" &&
         cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -85,6 +89,8 @@ stage_app_bundle() {
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_ICON_NAME</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
