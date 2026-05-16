@@ -29,6 +29,10 @@ struct AgentSessionStateMachineTests {
         try runProcessOnlyDetectionsRemainDiagnosticUntilIntegrated()
     }
 
+    @Test func sessionOverviewCombinesAgentStateBuckets() throws {
+        try runSessionOverviewCombinesAgentStateBuckets()
+    }
+
     @Test func processOnlyDetectionDoesNotProtectWithoutIntegration() throws {
         try runProcessOnlyDetectionDoesNotProtectWithoutIntegration()
     }
@@ -93,6 +97,10 @@ final class AgentSessionStateMachineTests: XCTestCase {
 
     func testProcessOnlyStartupDetectionHoldsNewestSessionProvisionally() throws {
         try runProcessOnlyDetectionsRemainDiagnosticUntilIntegrated()
+    }
+
+    func testSessionOverviewCombinesAgentStateBuckets() throws {
+        try runSessionOverviewCombinesAgentStateBuckets()
     }
 
     func testReleaseNowSuppressesProcessOnlyProvisionalRehold() throws {
@@ -332,6 +340,59 @@ private func runProcessOnlyDetectionsRemainDiagnosticUntilIntegrated() throws {
     try check(
         monitor.sessionSummaryMessage() == "3 found",
         "Expected process-only detections to stay diagnostic without hook evidence: \(monitor.sessionSummaryMessage())"
+    )
+}
+
+private func runSessionOverviewCombinesAgentStateBuckets() throws {
+    let currentDate = Date(timeIntervalSince1970: 2_100)
+    let firstProcessStart = currentDate.addingTimeInterval(-30)
+    let monitor = AgentMonitor(
+        snapshotProvider: StaticSnapshotProvider(
+            snapshotsToReturn: [
+                ProcessSnapshot(
+                    pid: 41,
+                    processName: "claude",
+                    executablePath: "/opt/homebrew/bin/claude",
+                    processStartTime: firstProcessStart
+                ),
+                ProcessSnapshot(
+                    pid: 42,
+                    processName: "claude",
+                    executablePath: "/opt/homebrew/bin/claude",
+                    processStartTime: currentDate.addingTimeInterval(-60)
+                ),
+                ProcessSnapshot(
+                    pid: 43,
+                    processName: "claude",
+                    executablePath: "/usr/local/bin/claude-code",
+                    processStartTime: currentDate.addingTimeInterval(-90)
+                )
+            ]
+        ),
+        settingsProvider: { AgentWakeSettings(defaultGraceSeconds: 900) },
+        now: { currentDate }
+    )
+
+    monitor.poll()
+    monitor.applyIntegrationEvent(
+        hookEvent(
+            .toolStarted,
+            integrationSessionId: "claude-active",
+            pid: 41,
+            processStartTime: firstProcessStart,
+            agent: .claudeCode
+        ),
+        at: currentDate.addingTimeInterval(1)
+    )
+
+    let overview = monitor.sessionOverviewMessage()
+    try check(
+        overview == "Claude Code: keeping awake, 2 found",
+        "Expected one Claude Code row with combined states, got: \(overview)"
+    )
+    try check(
+        overview.components(separatedBy: "Claude Code:").count == 2,
+        "Expected Claude Code to appear only once, got: \(overview)"
     )
 }
 

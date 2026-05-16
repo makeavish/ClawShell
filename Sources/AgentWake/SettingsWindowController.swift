@@ -8,7 +8,7 @@ final class SettingsWindowController: NSWindowController {
     init(services: AgentWakeServices) {
         let contentViewController = SettingsViewController(services: services)
         self.settingsViewController = contentViewController
-        let window = NSWindow(contentViewController: contentViewController)
+        let window = SettingsWindow(contentViewController: contentViewController)
         window.title = "AgentWake Settings"
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.setContentSize(NSSize(width: 620, height: 500))
@@ -31,6 +31,19 @@ final class SettingsWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
+    }
+}
+
+private final class SettingsWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if modifiers == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "w" {
+            performClose(nil)
+            return true
+        }
+
+        return super.performKeyEquivalent(with: event)
     }
 }
 

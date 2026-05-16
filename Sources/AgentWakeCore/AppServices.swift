@@ -232,19 +232,30 @@ public final class AgentMonitor: AppLifecycleComponent {
             }
 
             let timestamp = now()
-            let grouped = Dictionary(grouping: activeSessions) { session in
-                "\(session.agent.displayName)|\(sessionDisplayState(session, at: timestamp))"
-            }
+            let grouped = Dictionary(grouping: activeSessions, by: \.agent)
 
-            return grouped.keys.sorted().compactMap { key in
-                let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
-                guard parts.count == 2, let count = grouped[key]?.count else {
+            return grouped.keys.sorted { $0.displayName < $1.displayName }.compactMap { agent in
+                guard let sessions = grouped[agent] else {
                     return nil
                 }
 
-                let state = parts[1]
-                let label = count == 1 ? state : "\(count) \(state)"
-                return "\(parts[0]): \(label)"
+                let states = Dictionary(grouping: sessions) { session in
+                    sessionDisplayState(session, at: timestamp)
+                }
+
+                let labels = ["keeping awake", "releasing soon", "found"].compactMap { state -> String? in
+                    guard let count = states[state]?.count, count > 0 else {
+                        return nil
+                    }
+
+                    return count == 1 ? state : "\(count) \(state)"
+                }
+
+                guard !labels.isEmpty else {
+                    return nil
+                }
+
+                return "\(agent.displayName): \(labels.joined(separator: ", "))"
             }
             .joined(separator: "\n")
         }
