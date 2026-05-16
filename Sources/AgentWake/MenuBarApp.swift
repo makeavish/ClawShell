@@ -75,6 +75,7 @@ final class MenuBarApp: NSObject {
             protectableDetectedSessionCount: services.agentMonitor.protectableDetectedSessionCount,
             enableClosedLidModeEnabled: canEnableClosedLidMode,
             disableClosedLidModeEnabled: canDisableClosedLidMode,
+            isSleepProtectionPaused: isSleepProtectionPaused,
             showRefreshStatus: isStatusStale(),
             integrationStatuses: services.integrationManager.snapshots()
         )
@@ -140,6 +141,10 @@ final class MenuBarApp: NSObject {
         !closedLidModeActionInFlight && closedLidModeStatusLine == "Closed-Lid Mode enabled"
     }
 
+    private var isSleepProtectionPaused: Bool {
+        services.agentMonitor.aggregateHoldState.isPaused
+    }
+
     private func isStatusStale(referenceDate: Date = Date()) -> Bool {
         guard let lastPollAt = services.agentMonitor.lastPollAt else {
             return true
@@ -159,6 +164,10 @@ final class MenuBarApp: NSObject {
                 menu.addItem(disabledMenuItem(for: item))
             case .separator:
                 menu.addItem(.separator())
+            case .pauseProtection:
+                menu.addItem(actionMenuItem(for: item, action: #selector(pauseSleepProtection)))
+            case .resumeProtection:
+                menu.addItem(actionMenuItem(for: item, action: #selector(resumeSleepProtection)))
             case .protectDetectedSessions:
                 menu.addItem(actionMenuItem(for: item, action: #selector(protectDetectedSessions)))
             case .releaseProtection:
@@ -233,6 +242,30 @@ final class MenuBarApp: NSObject {
         services.assertionManager.reconcile()
         refreshState()
         settingsWindowController.refresh()
+    }
+
+    @objc private func pauseSleepProtection() {
+        do {
+            try services.settingsStore.pauseSleepProtection()
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refreshState()
+            settingsWindowController.refresh()
+        } catch {
+            presentMessage(title: "Could not pause sleep protection", message: error.localizedDescription, style: .warning)
+        }
+    }
+
+    @objc private func resumeSleepProtection() {
+        do {
+            try services.settingsStore.resumeSleepProtection()
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refreshState()
+            settingsWindowController.refresh()
+        } catch {
+            presentMessage(title: "Could not resume sleep protection", message: error.localizedDescription, style: .warning)
+        }
     }
 
     @objc private func enableClosedLidMode() {

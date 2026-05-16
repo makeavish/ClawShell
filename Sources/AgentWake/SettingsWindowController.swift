@@ -69,6 +69,7 @@ private final class SettingsViewController: NSViewController {
     private let claudeRemoveButton = NSButton(title: "Remove", target: nil, action: nil)
     private let codexRemoveButton = NSButton(title: "Remove", target: nil, action: nil)
     private let protectButton = NSButton(title: "Keep sessions awake", target: nil, action: nil)
+    private let pauseButton = NSButton(title: "Pause Sleep Protection", target: nil, action: nil)
     private let enableClosedLidButton = NSButton(title: "Turn On", target: nil, action: nil)
     private let disableClosedLidButton = NSButton(title: "Turn Off", target: nil, action: nil)
     private let repairButton = NSButton(title: "Reinstall agent hooks", target: nil, action: nil)
@@ -154,6 +155,11 @@ private final class SettingsViewController: NSViewController {
         protectButton.bezelStyle = .rounded
         protectButton.setAccessibilityLabel("Keep detected sessions awake")
 
+        pauseButton.target = self
+        pauseButton.action = #selector(toggleSleepProtectionPause)
+        pauseButton.bezelStyle = .rounded
+        pauseButton.setAccessibilityLabel("Pause or resume sleep protection")
+
         enableClosedLidButton.target = self
         enableClosedLidButton.action = #selector(enableClosedLidMode)
         enableClosedLidButton.bezelStyle = .rounded
@@ -179,7 +185,7 @@ private final class SettingsViewController: NSViewController {
         refreshButton.bezelStyle = .rounded
         refreshButton.setAccessibilityLabel("Refresh status")
 
-        let sessionButtons = rowStack([protectButton, refreshButton])
+        let sessionButtons = rowStack([protectButton, pauseButton, refreshButton])
         let closedLidButtons = rowStack([enableClosedLidButton, disableClosedLidButton])
         let footerButtons = rowStack([NSView(), closeButton])
 
@@ -243,6 +249,7 @@ private final class SettingsViewController: NSViewController {
         sessionListLabel.stringValue = services.agentMonitor.sessionOverviewMessage()
         protectButton.title = protectButtonTitle(count: protectableCount)
         protectButton.isEnabled = protectableCount > 0
+        pauseButton.title = isSleepProtectionPaused ? "Resume Sleep Protection" : "Pause Sleep Protection"
         refreshButton.isHidden = !isStatusStale()
 
         let closedLidStatusMessage = services.closedLidModeController.statusMessage()
@@ -385,6 +392,10 @@ private final class SettingsViewController: NSViewController {
         return firstLine == "Closed-Lid Mode enabled" || firstLine == "Closed-Lid Mode already enabled"
     }
 
+    private var isSleepProtectionPaused: Bool {
+        services.agentMonitor.aggregateHoldState.isPaused
+    }
+
     private func isStatusStale(referenceDate: Date = Date()) -> Bool {
         guard let lastPollAt = services.agentMonitor.lastPollAt else {
             return true
@@ -428,6 +439,21 @@ private final class SettingsViewController: NSViewController {
 
     @objc private func removeCodexIntegration() {
         removeIntegration(agentID: "codex-cli", displayName: "Codex CLI")
+    }
+
+    @objc private func toggleSleepProtectionPause() {
+        do {
+            if isSleepProtectionPaused {
+                try services.settingsStore.resumeSleepProtection()
+            } else {
+                try services.settingsStore.pauseSleepProtection()
+            }
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refresh()
+        } catch {
+            presentAlert(title: "Could not update sleep protection", message: error.localizedDescription, style: .warning)
+        }
     }
 
     private func removeIntegration(agentID: String, displayName: String) {

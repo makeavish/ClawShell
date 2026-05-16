@@ -96,11 +96,15 @@ struct AgentWakeCoreChecks {
         try check(!titles.contains("Keep 1 session awake"), "Expected protect action only when sessions are detected")
         try check(titles.contains("Turn On Lid-Closed Awake"), "Expected Closed-Lid Mode enable action in menu")
         try check(!titles.contains("Refresh"), "Expected refresh action to stay hidden while status is fresh")
+        try check(titles.contains("Pause Sleep Protection"), "Expected menu to expose pause control")
         try check(!titles.contains("Claude Code: Installed"), "Expected installed integrations to stay out of the short menu")
         try check(!titles.contains("Reinstall agent hooks"), "Expected repair action only when an integration needs attention")
 
         let staleSnapshot = MenuBarModel.snapshot(currentState: .idle, showRefreshStatus: true)
         try check(staleSnapshot.items.contains { $0.title == "Refresh" }, "Expected refresh action when status is stale")
+
+        let pausedSnapshot = MenuBarModel.snapshot(currentState: .paused, isSleepProtectionPaused: true)
+        try check(pausedSnapshot.items.contains { $0.title == "Resume Sleep Protection" }, "Expected paused menu to expose resume control")
 
         let protectableSnapshot = MenuBarModel.snapshot(
             currentState: .idle,
@@ -2999,6 +3003,17 @@ struct AgentWakeCoreChecks {
         )
         try check(store.settings.safety.batteryFloorPercent == 15, "Expected default battery floor")
         try check(!store.settings.hasCompletedOnboarding, "Expected onboarding to be incomplete by default")
+
+        try store.pauseSleepProtection()
+        try check(
+            store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll && $0.id == "user-pause" },
+            "Expected settings store to persist user pause override"
+        )
+        try store.resumeSleepProtection()
+        try check(
+            !store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll },
+            "Expected settings store to clear user pause override"
+        )
 
         let settingsJSON = try String(contentsOf: paths.settingsURL, encoding: .utf8)
         try check(settingsJSON.contains("\"helperOwnership\" : null"), "Expected helperOwnership null placeholder")

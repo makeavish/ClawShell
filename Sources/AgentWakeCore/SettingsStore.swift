@@ -81,6 +81,21 @@ public final class SettingsStore: StubLifecycleComponent {
         try save(next)
     }
 
+    public func pauseSleepProtection() throws {
+        var next = settings
+        next.manualOverrides.removeAll { $0.overrideKind == .pauseAll }
+        next.manualOverrides.append(
+            ManualOverride(id: "user-pause", kind: ManualOverrideKind.pauseAll.rawValue)
+        )
+        try save(next)
+    }
+
+    public func resumeSleepProtection() throws {
+        var next = settings
+        next.manualOverrides.removeAll { $0.overrideKind == .pauseAll }
+        try save(next)
+    }
+
     public func loadOrRecover() -> AgentWakeSettings {
         do {
             return try load()

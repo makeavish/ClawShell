@@ -4,6 +4,8 @@ public enum MenuBarItemKind: Equatable, Sendable {
     case status
     case diagnostic
     case separator
+    case pauseProtection
+    case resumeProtection
     case protectDetectedSessions
     case releaseProtection
     case closedLidEnable
@@ -88,6 +90,7 @@ public enum MenuBarModel {
         protectableDetectedSessionCount: Int = 0,
         enableClosedLidModeEnabled: Bool = true,
         disableClosedLidModeEnabled: Bool = false,
+        isSleepProtectionPaused: Bool = false,
         showRefreshStatus: Bool = false,
         integrationStatuses: [IntegrationStatusSnapshot] = []
     ) -> MenuBarSnapshot {
@@ -131,6 +134,15 @@ public enum MenuBarModel {
                 )
             )
         }
+
+        items.append(
+            MenuBarItem(
+                title: isSleepProtectionPaused ? "Resume Sleep Protection" : "Pause Sleep Protection",
+                detail: isSleepProtectionPaused ? "Allows AgentWake to keep the Mac awake again." : "Lets the Mac sleep until you resume.",
+                isEnabled: true,
+                kind: isSleepProtectionPaused ? .resumeProtection : .pauseProtection
+            )
+        )
 
         items.append(separatorItem())
 
