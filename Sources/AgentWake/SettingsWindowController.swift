@@ -59,6 +59,7 @@ private final class SettingsViewController: NSViewController {
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let sessionListLabel = NSTextField(wrappingLabelWithString: "")
     private let closedLidModeStatusLabel = NSTextField(wrappingLabelWithString: "")
+    private let closedLidSafetyWarningLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeStatusLabel = NSTextField(labelWithString: "")
     private let codexStatusLabel = NSTextField(labelWithString: "")
     private let claudeDetailsButton = NSButton(title: "Show details", target: nil, action: nil)
@@ -102,6 +103,10 @@ private final class SettingsViewController: NSViewController {
 
         closedLidModeStatusLabel.textColor = .secondaryLabelColor
         closedLidModeStatusLabel.setAccessibilityLabel("Closed-Lid Mode status")
+        closedLidSafetyWarningLabel.stringValue = "Warning: Battery & thermal cutoffs are not yet enforced. For long overnight runs on battery, plug into AC."
+        closedLidSafetyWarningLabel.textColor = .systemOrange
+        closedLidSafetyWarningLabel.isHidden = true
+        closedLidSafetyWarningLabel.setAccessibilityLabel("Lid-Closed Awake safety warning")
 
         let claudeTitle = keyValueLabel(key: "Claude Code", value: "")
         let codexTitle = keyValueLabel(key: "Codex CLI", value: "")
@@ -187,6 +192,7 @@ private final class SettingsViewController: NSViewController {
             separator(),
             sectionHeader("Lid-Closed Awake"),
             closedLidModeStatusLabel,
+            closedLidSafetyWarningLabel,
             closedLidButtons,
             separator(),
             sectionHeader("Integrations"),
@@ -240,6 +246,7 @@ private final class SettingsViewController: NSViewController {
 
         let closedLidStatusMessage = services.closedLidModeController.statusMessage()
         closedLidModeStatusLabel.stringValue = closedLidDisplayText(for: closedLidStatusMessage)
+        closedLidSafetyWarningLabel.isHidden = !shouldShowSafetyWarning(statusMessage: closedLidStatusMessage)
         enableClosedLidButton.isEnabled = !closedLidActionInFlight &&
             canEnableClosedLidMode(statusMessage: closedLidStatusMessage)
         disableClosedLidButton.isEnabled = !closedLidActionInFlight &&
@@ -372,6 +379,11 @@ private final class SettingsViewController: NSViewController {
         return firstLine == "Closed-Lid Mode enabled" || firstLine == "Closed-Lid Mode already enabled"
     }
 
+    private func shouldShowSafetyWarning(statusMessage: String) -> Bool {
+        let firstLine = statusMessage.split(separator: "\n").first.map(String.init) ?? ""
+        return firstLine == "Closed-Lid Mode enabled" || firstLine == "Closed-Lid Mode already enabled"
+    }
+
     private func presentAlert(title: String, message: String, style: NSAlert.Style = .informational) {
         let alert = NSAlert()
         alert.messageText = title
@@ -497,11 +509,7 @@ private final class SettingsViewController: NSViewController {
     private func confirmClosedLidEnable(currentValue: String, onContinue: @escaping () -> Void) {
         let alert = NSAlert()
         alert.messageText = "Turn On Lid-Closed Awake?"
-        alert.informativeText = """
-        AgentWake will request administrator permission to disable lid sleep via pmset disablesleep. This setting affects all apps system-wide.
-
-        When you turn Lid-Closed Awake off, AgentWake will restore your previous value (currently: \(currentValue)).
-        """
+        alert.informativeText = closedLidEnableConfirmationText(currentValue: currentValue)
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Continue")
         alert.addButton(withTitle: "Cancel")
@@ -516,6 +524,20 @@ private final class SettingsViewController: NSViewController {
         } else if alert.runModal() == .alertFirstButtonReturn {
             onContinue()
         }
+    }
+
+    private func closedLidEnableConfirmationText(currentValue: String) -> String {
+        var message = """
+        AgentWake will request administrator permission to disable lid sleep via pmset disablesleep. This setting affects all apps system-wide.
+
+        When you turn Lid-Closed Awake off, AgentWake will restore your previous value (currently: \(currentValue)).
+        """
+
+        if PowerSourceReader.current() == .battery {
+            message += "\n\nBattery & thermal cutoffs are not yet enforced. For long overnight runs on battery, plug into AC."
+        }
+
+        return message
     }
 
     @objc private func repairIntegrations() {

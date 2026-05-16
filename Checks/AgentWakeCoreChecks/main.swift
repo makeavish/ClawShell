@@ -25,6 +25,7 @@ struct AgentWakeCoreChecks {
         try remainingTransitionRowsAreExecutable()
         try bagModeSafetyPolicyCoversWarningCutoffFailClosedAndHysteresis()
         try bagModeSafetyDiagnosticsCoverUserFacingProviderStates()
+        try powerSourceReaderParsesPmsetBatteryOutput()
         try trustedEventsAreMonotonic()
         try outOfOrderHookEventsAreIgnored()
         try manualOverridePrecedenceAndPersistence()
@@ -1199,6 +1200,21 @@ struct AgentWakeCoreChecks {
             try check(!diagnostic.detail.isEmpty, "Expected \(label) diagnostic detail")
             try check(diagnostic.recoveryAction?.isEmpty == false, "Expected \(label) diagnostic recovery action")
         }
+    }
+
+    private static func powerSourceReaderParsesPmsetBatteryOutput() throws {
+        let batteryOutput = """
+        Now drawing from 'Battery Power'
+         -InternalBattery-0 (id=1234567)\t82%; discharging; 5:12 remaining present: true
+        """
+        let acOutput = """
+        Now drawing from 'AC Power'
+         -InternalBattery-0 (id=1234567)\t82%; charging; 1:03 remaining present: true
+        """
+
+        try check(PowerSourceReader.parse(pmsetBatteryOutput: batteryOutput) == .battery, "Expected pmset battery output to parse as battery")
+        try check(PowerSourceReader.parse(pmsetBatteryOutput: acOutput) == .ac, "Expected pmset AC output to parse as AC")
+        try check(PowerSourceReader.parse(pmsetBatteryOutput: "No power source") == .unknown, "Expected unknown pmset output to stay unknown")
     }
 
     private static func trustedEventsAreMonotonic() throws {

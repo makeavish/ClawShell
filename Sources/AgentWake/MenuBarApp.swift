@@ -293,17 +293,27 @@ final class MenuBarApp: NSObject {
 
         let alert = NSAlert()
         alert.messageText = "Turn On Lid-Closed Awake?"
-        alert.informativeText = """
-        AgentWake will request administrator permission to disable lid sleep via pmset disablesleep. This setting affects all apps system-wide.
-
-        When you turn Lid-Closed Awake off, AgentWake will restore your previous value (currently: \(currentValue)).
-        """
+        alert.informativeText = closedLidEnableConfirmationText(currentValue: currentValue)
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Continue")
         alert.addButton(withTitle: "Cancel")
         let response = alert.runModal()
         NSApp.setActivationPolicy(.accessory)
         return response == .alertFirstButtonReturn
+    }
+
+    private func closedLidEnableConfirmationText(currentValue: String) -> String {
+        var message = """
+        AgentWake will request administrator permission to disable lid sleep via pmset disablesleep. This setting affects all apps system-wide.
+
+        When you turn Lid-Closed Awake off, AgentWake will restore your previous value (currently: \(currentValue)).
+        """
+
+        if PowerSourceReader.current() == .battery {
+            message += "\n\nBattery & thermal cutoffs are not yet enforced. For long overnight runs on battery, plug into AC."
+        }
+
+        return message
     }
 
     private func refreshClosedLidModeStatusAsync() {
