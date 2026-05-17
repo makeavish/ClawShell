@@ -3,6 +3,9 @@ import AgentWakeCore
 
 @MainActor
 final class MenuBarApp: NSObject {
+    private static let pauseTomorrowMorningTag = -1
+    private static let pauseIndefinitelyTag = -2
+
     private let services: AgentWakeServices
     private let statusItem: NSStatusItem
     private let settingsWindowController: SettingsWindowController
@@ -244,8 +247,8 @@ final class MenuBarApp: NSObject {
         addPauseOption("Pause for 30 minutes", tag: 30 * 60, to: submenu)
         addPauseOption("Pause for 1 hour", tag: 60 * 60, to: submenu)
         addPauseOption("Pause for 4 hours", tag: 4 * 60 * 60, to: submenu)
-        addPauseOption("Pause until tomorrow morning", tag: -1, to: submenu)
-        addPauseOption("Pause indefinitely", tag: 0, to: submenu)
+        addPauseOption("Pause until tomorrow morning", tag: Self.pauseTomorrowMorningTag, to: submenu)
+        addPauseOption("Pause indefinitely", tag: Self.pauseIndefinitelyTag, to: submenu)
         menuItem.submenu = submenu
         return menuItem
     }
@@ -278,12 +281,15 @@ final class MenuBarApp: NSObject {
         if tag > 0 {
             return now.addingTimeInterval(TimeInterval(tag))
         }
-        if tag == -1 {
+        if tag == Self.pauseTomorrowMorningTag {
             return Calendar.current.nextDate(
                 after: now,
                 matching: DateComponents(hour: 8, minute: 0, second: 0),
                 matchingPolicy: .nextTime
             )
+        }
+        if tag == Self.pauseIndefinitelyTag {
+            return nil
         }
         return nil
     }
@@ -410,7 +416,7 @@ final class MenuBarApp: NSObject {
         """
 
         if PowerSourceReader.current() == .battery {
-            message += "\n\nBattery & thermal cutoffs are not yet enforced. For long overnight runs on battery, plug into AC."
+            message += "\n\n\(ClosedLidUserFacingCopy.safetyNotice)"
         }
 
         return message

@@ -5,9 +5,13 @@ MODE="${1:-run}"
 APP_NAME="AgentWake"
 BUNDLE_ID="com.makeavish.AgentWake"
 MIN_SYSTEM_VERSION="13.0"
-SHORT_VERSION="0.0.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SHORT_VERSION="${AGENTWAKE_SHORT_VERSION:-}"
+if [[ -z "$SHORT_VERSION" ]]; then
+    SHORT_VERSION="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null | sed 's/^v//' || true)"
+fi
+SHORT_VERSION="${SHORT_VERSION:-0.0.0}"
 BUILD_VERSION="$(git -C "$ROOT_DIR" rev-list --count HEAD 2>/dev/null || date -u +%Y%m%d%H%M)"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"

@@ -55,6 +55,10 @@ extension SettingsWindowController: NSWindowDelegate {
 
 @MainActor
 private final class SettingsViewController: NSViewController {
+    private static let pauseHeaderTag = Int.min
+    private static let pauseTomorrowMorningTag = -1
+    private static let pauseIndefinitelyTag = -2
+
     private let services: AgentWakeServices
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let sessionListLabel = NSTextField(wrappingLabelWithString: "")
@@ -118,7 +122,7 @@ private final class SettingsViewController: NSViewController {
 
         closedLidModeStatusLabel.textColor = .secondaryLabelColor
         closedLidModeStatusLabel.setAccessibilityLabel("Closed-Lid Mode status")
-        closedLidSafetyWarningLabel.stringValue = "Warning: Battery & thermal cutoffs are not yet enforced. For long overnight runs on battery, plug into AC."
+        closedLidSafetyWarningLabel.stringValue = ClosedLidUserFacingCopy.safetyNotice
         closedLidSafetyWarningLabel.textColor = .systemOrange
         closedLidSafetyWarningLabel.isHidden = true
         closedLidSafetyWarningLabel.setAccessibilityLabel("Lid-Closed Awake safety warning")
@@ -396,11 +400,12 @@ private final class SettingsViewController: NSViewController {
         pauseOptionsButton.removeAllItems()
         pauseOptionsButton.addItem(withTitle: "Pause Sleep Protection")
         pauseOptionsButton.menu?.items.first?.isEnabled = false
+        pauseOptionsButton.menu?.items.first?.tag = Self.pauseHeaderTag
         addPauseOption("Pause for 30 minutes", tag: 30 * 60)
         addPauseOption("Pause for 1 hour", tag: 60 * 60)
         addPauseOption("Pause for 4 hours", tag: 4 * 60 * 60)
-        addPauseOption("Pause until tomorrow morning", tag: -1)
-        addPauseOption("Pause indefinitely", tag: 0)
+        addPauseOption("Pause until tomorrow morning", tag: Self.pauseTomorrowMorningTag)
+        addPauseOption("Pause indefinitely", tag: Self.pauseIndefinitelyTag)
         pauseOptionsButton.target = self
         pauseOptionsButton.action = #selector(selectPauseOption(_:))
         pauseOptionsButton.setAccessibilityLabel("Pause sleep protection")
@@ -552,7 +557,7 @@ private final class SettingsViewController: NSViewController {
     }
 
     @objc private func selectPauseOption(_ sender: NSPopUpButton) {
-        guard let selectedItem = sender.selectedItem, selectedItem.tag != 0 || selectedItem.title == "Pause indefinitely" else {
+        guard let selectedItem = sender.selectedItem, selectedItem.tag != Self.pauseHeaderTag else {
             sender.selectItem(at: 0)
             return
         }
@@ -572,12 +577,15 @@ private final class SettingsViewController: NSViewController {
         if tag > 0 {
             return now.addingTimeInterval(TimeInterval(tag))
         }
-        if tag == -1 {
+        if tag == Self.pauseTomorrowMorningTag {
             return Calendar.current.nextDate(
                 after: now,
                 matching: DateComponents(hour: 8, minute: 0, second: 0),
                 matchingPolicy: .nextTime
             )
+        }
+        if tag == Self.pauseIndefinitelyTag {
+            return nil
         }
         return nil
     }
@@ -708,7 +716,7 @@ private final class SettingsViewController: NSViewController {
         """
 
         if PowerSourceReader.current() == .battery {
-            message += "\n\nBattery & thermal cutoffs are not yet enforced. For long overnight runs on battery, plug into AC."
+            message += "\n\n\(ClosedLidUserFacingCopy.safetyNotice)"
         }
 
         return message
