@@ -791,7 +791,7 @@ private final class SettingsViewController: NSViewController {
     @objc private func uninstallAgentWake() {
         let alert = NSAlert()
         alert.messageText = "Uninstall AgentWake?"
-        alert.informativeText = "AgentWake will remove its Claude Code and Codex hooks, restore AgentWake-owned Lid-Closed Awake state, and attempt helper cleanup. The app bundle itself is left for you to delete from Applications."
+        alert.informativeText = "AgentWake will remove its Claude Code and Codex hooks, turn off launch at login, restore AgentWake-owned Lid-Closed Awake state, move the app to Trash, and quit."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Uninstall")
         alert.addButton(withTitle: "Cancel")
@@ -815,11 +815,19 @@ private final class SettingsViewController: NSViewController {
                 results.append("Lid-Closed Awake: \(error.localizedDescription)")
             }
 
+            do {
+                try LaunchAtLoginController.setEnabled(false)
+                try? self.services.settingsStore.setLaunchAtLogin(false)
+                results.append("Launch at login turned off.")
+            } catch {
+                results.append("Launch at login: \(error.localizedDescription)")
+            }
+
             results.append("Production helper: no production helper is installed.")
             self.services.agentMonitor.poll()
             self.services.assertionManager.reconcile()
             self.refresh()
-            self.presentAlert(title: "Uninstall cleanup complete", message: results.joined(separator: "\n"))
+            self.moveAppToTrashAndQuit(cleanupSummary: results)
         }
 
         if let window = view.window {
@@ -832,6 +840,49 @@ private final class SettingsViewController: NSViewController {
         } else if runFrontmostAlert(alert) == .alertFirstButtonReturn {
             runUninstall()
         }
+    }
+
+    private func moveAppToTrashAndQuit(cleanupSummary: [String]) {
+        guard let appBundleURL = currentAppBundleURL() else {
+            presentAlert(
+                title: "Uninstall cleanup complete",
+                message: (cleanupSummary + ["App bundle: not running from a .app bundle, so nothing was moved to Trash."]).joined(separator: "\n")
+            )
+            return
+        }
+
+        NSWorkspace.shared.recycle([appBundleURL]) { _, error in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                if let error {
+                    self.presentAlert(
+                        title: "Uninstall cleanup complete",
+                        message: (cleanupSummary + ["App bundle: could not move to Trash: \(error.localizedDescription)"]).joined(separator: "\n")
+                    )
+                    return
+                }
+
+                self.presentAlert(
+                    title: "AgentWake moved to Trash",
+                    message: (cleanupSummary + ["App bundle moved to Trash.", "AgentWake will quit now."]).joined(separator: "\n")
+                )
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func currentAppBundleURL() -> URL? {
+        var url = Bundle.main.bundleURL
+        while url.path != "/" {
+            if url.pathExtension == "app" {
+                return url
+            }
+            url.deleteLastPathComponent()
+        }
+        return nil
     }
 
     @objc private func closeWindow() {
