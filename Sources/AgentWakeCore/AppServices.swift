@@ -185,14 +185,14 @@ public final class AgentMonitor: AppLifecycleComponent {
             let heldCount = activeSessions.filter { $0.contributesToHold(at: timestamp) }.count
             let detectedCount = activeSessions.count - heldCount
             if heldCount == activeSessions.count {
-                return "Keeping awake for \(countLabel(activeSessions.count, singular: "session", plural: "sessions"))"
+                return "\(countLabel(activeSessions.count, singular: "session", plural: "sessions")) kept awake"
             }
 
             if heldCount == 0 {
                 return "\(countLabel(detectedCount, singular: "session", plural: "sessions")) detected"
             }
 
-            return "Keeping awake for \(countLabel(heldCount, singular: "session", plural: "sessions")) • \(countLabel(detectedCount, singular: "more detected", plural: "more detected"))"
+            return "\(countLabel(heldCount, singular: "session", plural: "sessions")) kept awake; \(countLabel(detectedCount, singular: "detected", plural: "detected"))"
         }
     }
 

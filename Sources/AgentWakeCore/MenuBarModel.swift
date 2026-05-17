@@ -272,7 +272,7 @@ public enum MenuBarModel {
     }
 
     private static func protectDetectedSessionsTitle(count: Int) -> String {
-        return count == 1 ? "Keep 1 session awake" : "Keep \(count) sessions awake"
+        return count == 1 ? "Also keep 1 detected session awake" : "Also keep \(count) detected sessions awake"
     }
 
     private static func protectDetectedSessionsDetail(count: Int) -> String {
@@ -297,7 +297,7 @@ public enum MenuBarModel {
     }
 
     private static func statusIncludesSessionSummary(currentState: AgentWakeState, sessionSummary: String?) -> Bool {
-        currentState == .active && sessionSummary?.contains("Keeping awake") == true
+        currentState == .active && sessionSummary?.contains("kept awake") == true
     }
 
     private static func separatorItem() -> MenuBarItem {

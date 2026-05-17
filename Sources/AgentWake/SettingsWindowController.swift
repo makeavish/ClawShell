@@ -367,7 +367,7 @@ private final class SettingsViewController: NSViewController {
             return "Keep sessions awake"
         }
 
-        return count == 1 ? "Keep 1 session awake" : "Keep \(count) sessions awake"
+        return count == 1 ? "Also keep 1 detected session awake" : "Also keep \(count) detected sessions awake"
     }
 
     private func closedLidDisplayText(for message: String) -> String {

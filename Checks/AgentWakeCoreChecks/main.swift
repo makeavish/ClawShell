@@ -93,7 +93,7 @@ struct AgentWakeCoreChecks {
         let titles = snapshot.items.map(\.title)
         try check(titles.contains("No sessions"), "Expected session summary in menu")
         try check(titles.contains(ClosedLidModeAvailability.unavailableTitle), "Expected Closed-Lid Mode boundary in menu")
-        try check(!titles.contains("Keep 1 session awake"), "Expected protect action only when sessions are detected")
+        try check(!titles.contains("Also keep 1 detected session awake"), "Expected protect action only when sessions are detected")
         try check(titles.contains("Turn On Lid-Closed Awake"), "Expected Closed-Lid Mode enable action in menu")
         try check(!titles.contains("Refresh"), "Expected refresh action to stay hidden while status is fresh")
         try check(titles.contains("Pause Sleep Protection"), "Expected menu to expose pause control")
@@ -112,17 +112,17 @@ struct AgentWakeCoreChecks {
         )
         try check(
             protectableSnapshot.items.contains {
-                $0.title == "Keep 2 sessions awake" && $0.isEnabled
+                $0.title == "Also keep 2 detected sessions awake" && $0.isEnabled
             },
             "Expected protect action to name the number of detected sessions"
         )
 
         let activeSnapshot = MenuBarModel.snapshot(
             currentState: .active,
-            sessionSummary: "Keeping awake for 1 session • 2 more detected"
+            sessionSummary: "1 session kept awake; 2 detected"
         )
         try check(
-            activeSnapshot.items.first?.title == "Keeping awake for 1 session • 2 more detected",
+            activeSnapshot.items.first?.title == "1 session kept awake; 2 detected",
             "Expected active menu status to include the protected session count"
         )
         try check(
@@ -491,7 +491,7 @@ struct AgentWakeCoreChecks {
             at: now.addingTimeInterval(1)
         )
         try check(
-            monitor.sessionSummaryMessage() == "Keeping awake for 1 session • 2 more detected",
+            monitor.sessionSummaryMessage() == "1 session kept awake; 2 detected",
             "Expected integration-backed activity to protect while process-only sessions remain detected: \(monitor.sessionSummaryMessage())"
         )
 
