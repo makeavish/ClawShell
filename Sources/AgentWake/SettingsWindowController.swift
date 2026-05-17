@@ -428,9 +428,9 @@ private final class SettingsViewController: NSViewController {
         alert.alertStyle = style
         alert.addButton(withTitle: "OK")
         if let window = view.window {
-            alert.beginSheetModal(for: window) { _ in }
+            beginFrontmostSheet(alert, for: window) { _ in }
         } else {
-            alert.runModal()
+            runFrontmostAlert(alert)
         }
     }
 
@@ -514,13 +514,13 @@ private final class SettingsViewController: NSViewController {
         }
 
         if let window = view.window {
-            alert.beginSheetModal(for: window) { response in
+            beginFrontmostSheet(alert, for: window) { response in
                 guard response == .alertFirstButtonReturn else {
                     return
                 }
                 runRemoval()
             }
-        } else if alert.runModal() == .alertFirstButtonReturn {
+        } else if runFrontmostAlert(alert) == .alertFirstButtonReturn {
             runRemoval()
         }
     }
@@ -587,13 +587,13 @@ private final class SettingsViewController: NSViewController {
         alert.addButton(withTitle: "Cancel")
 
         if let window = view.window {
-            alert.beginSheetModal(for: window) { response in
+            beginFrontmostSheet(alert, for: window) { response in
                 guard response == .alertFirstButtonReturn else {
                     return
                 }
                 onContinue()
             }
-        } else if alert.runModal() == .alertFirstButtonReturn {
+        } else if runFrontmostAlert(alert) == .alertFirstButtonReturn {
             onContinue()
         }
     }
@@ -633,11 +633,37 @@ private final class SettingsViewController: NSViewController {
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
             if let window = view.window {
-                alert.beginSheetModal(for: window) { _ in }
+                beginFrontmostSheet(alert, for: window) { _ in }
             } else {
-                alert.runModal()
+                runFrontmostAlert(alert)
             }
         }
+    }
+
+    private func beginFrontmostSheet(
+        _ alert: NSAlert,
+        for window: NSWindow,
+        completionHandler: @escaping (NSApplication.ModalResponse) -> Void
+    ) {
+        NSApp.setActivationPolicy(.regular)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        alert.beginSheetModal(for: window, completionHandler: completionHandler)
+    }
+
+    @discardableResult
+    private func runFrontmostAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        let window = alert.window
+        window.level = .modalPanel
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+
+        return alert.runModal()
     }
 
     @objc private func refreshAction() {

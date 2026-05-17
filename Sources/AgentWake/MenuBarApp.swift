@@ -330,16 +330,13 @@ final class MenuBarApp: NSObject {
     }
 
     private func confirmClosedLidEnable(currentValue: String) -> Bool {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-
         let alert = NSAlert()
         alert.messageText = "Turn On Lid-Closed Awake?"
         alert.informativeText = closedLidEnableConfirmationText(currentValue: currentValue)
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Continue")
         alert.addButton(withTitle: "Cancel")
-        let response = alert.runModal()
+        let response = runFrontmostAlert(alert)
         NSApp.setActivationPolicy(.accessory)
         return response == .alertFirstButtonReturn
     }
@@ -395,14 +392,12 @@ final class MenuBarApp: NSObject {
             return
         }
 
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Integration repair failed"
         alert.informativeText = failures.joined(separator: "\n")
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
-        alert.runModal()
+        runFrontmostAlert(alert)
         NSApp.setActivationPolicy(.accessory)
     }
 
@@ -416,15 +411,13 @@ final class MenuBarApp: NSObject {
             return
         }
 
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Welcome to AgentWake"
         alert.informativeText = onboardingMessage()
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Open Settings")
         alert.addButton(withTitle: "Done")
-        let response = alert.runModal()
+        let response = runFrontmostAlert(alert)
 
         settings.hasCompletedOnboarding = true
         try? services.settingsStore.save(settings)
@@ -461,15 +454,28 @@ final class MenuBarApp: NSObject {
     }
 
     private func presentMessage(title: String, message: String, style: NSAlert.Style) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = style
         alert.addButton(withTitle: "OK")
-        alert.runModal()
+        runFrontmostAlert(alert)
         NSApp.setActivationPolicy(.accessory)
+    }
+
+    @discardableResult
+    private func runFrontmostAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+
+        let window = alert.window
+        window.level = .modalPanel
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+
+        return alert.runModal()
     }
 
     @objc private func quit() {
