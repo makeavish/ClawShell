@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.1 - 2026-05-17
+
+Menu bar and first-run UX polish release:
+
+- Replaces the static menu bar wordmark with glanceable state icons.
+- Keeps menu actions enabled in the menu bar app.
+- Uses adaptive menu bar icon tint so the icon remains visible across menu bar
+  appearances.
+- Clarifies session copy, including detected sessions that can also be kept
+  awake.
+- Adds first-run onboarding, integration details, per-agent enable toggles, and
+  pause/resume controls.
+- Explains Lid-Closed Awake administrator permission before macOS asks for it.
+- Shows Lid-Closed Awake safety warnings while battery and thermal cutoffs are
+  still pending.
+- Keeps onboarding and permission prompts frontmost when other apps are active.
+
 ## v0.2.0 - 2026-05-15
 
 Session and UX polish release:
