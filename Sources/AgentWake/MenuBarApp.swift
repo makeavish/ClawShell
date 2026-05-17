@@ -119,14 +119,13 @@ final class MenuBarApp: NSObject {
 
     private func statusItemTintColor(_ tint: MenuBarStatusTint) -> NSColor? {
         switch tint {
-        case .secondary:
-            return .secondaryLabelColor
-        case .accent:
-            return .controlAccentColor
         case .warning:
             return .systemOrange
-        case .unknown:
-            return .tertiaryLabelColor
+        case .secondary, .accent, .unknown:
+            // Let NSStatusBarButton render template images against the actual
+            // menu bar appearance. App-label colors can be nearly invisible
+            // when the menu bar and app appearances differ.
+            return nil
         }
     }
 
