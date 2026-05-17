@@ -155,6 +155,7 @@ final class MenuBarApp: NSObject {
 
     private func makeMenu(from snapshot: MenuBarSnapshot) -> NSMenu {
         let menu = NSMenu(title: "AgentWake")
+        menu.autoenablesItems = false
 
         for item in snapshot.items {
             switch item.kind {

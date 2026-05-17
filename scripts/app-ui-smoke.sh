@@ -157,6 +157,7 @@ tell application "System Events"
             set outputLines to outputLines & {"visible=" & (visible as text)}
             set outputLines to outputLines & {"menuBarCount=" & ((count of menu bars) as text)}
             set statusItemFound to false
+            set enabledActionItemFound to false
             set settingsMenuItemFound to false
             set settingsMenuPressed to false
             repeat with menuBarRef in menu bars
@@ -177,11 +178,19 @@ tell application "System Events"
                         delay 0.3
                         repeat with menuItemRef in menu items of menu 1 of itemRef
                             set menuItemName to ""
+                            set menuItemEnabled to false
                             try
                                 set menuItemName to name of menuItemRef as text
                             end try
+                            try
+                                set menuItemEnabled to enabled of menuItemRef as boolean
+                            end try
                             if menuItemName is not "" and menuItemName is not "missing value" then
                                 set outputLines to outputLines & {"menuItem=" & menuItemName}
+                                set outputLines to outputLines & {"menuItemEnabled=" & menuItemName & "=" & (menuItemEnabled as text)}
+                            end if
+                            if (menuItemName is "Settings..." or menuItemName is "Quit AgentWake" or menuItemName starts with "Keep " or menuItemName starts with "Pause " or menuItemName starts with "Resume " or menuItemName starts with "Turn On " or menuItemName starts with "Turn Off ") and menuItemEnabled then
+                                set enabledActionItemFound to true
                             end if
                             if menuItemName is "Settings..." then
                                 set settingsMenuItemFound to true
@@ -193,6 +202,7 @@ tell application "System Events"
                 end repeat
             end repeat
             set outputLines to outputLines & {"statusItemFound=" & (statusItemFound as text)}
+            set outputLines to outputLines & {"enabledActionItemFound=" & (enabledActionItemFound as text)}
             set outputLines to outputLines & {"settingsMenuItemFound=" & (settingsMenuItemFound as text)}
             set outputLines to outputLines & {"settingsMenuPressed=" & (settingsMenuPressed as text)}
         end tell
@@ -279,7 +289,9 @@ fi
 
 settings_menu_item_found=false
 if grep -q '^settingsMenuItemFound=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &&
-   grep -q '^settingsMenuPressed=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
+   grep -q '^settingsMenuPressed=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &&
+   grep -q '^enabledActionItemFound=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt" &&
+   grep -q '^menuItemEnabled=Settings...=true$' "$EVIDENCE_DIR/accessibility-menu-bar.txt"; then
     settings_menu_item_found=true
 fi
 
