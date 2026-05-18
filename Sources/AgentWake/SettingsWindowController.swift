@@ -66,9 +66,12 @@ private final class SettingsViewController: NSViewController {
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
     private let closedLidModeStatusLabel = NSTextField(wrappingLabelWithString: "")
     private let closedLidSafetyWarningLabel = NSTextField(wrappingLabelWithString: "")
-    private let batteryFloorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let temperatureWarningPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let temperatureCutoffPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let batteryFloorStepper = NSStepper()
+    private let temperatureWarningStepper = NSStepper()
+    private let temperatureCutoffStepper = NSStepper()
+    private let batteryFloorValueLabel = NSTextField(labelWithString: "")
+    private let temperatureWarningValueLabel = NSTextField(labelWithString: "")
+    private let temperatureCutoffValueLabel = NSTextField(labelWithString: "")
     private let safetyDetailLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeStatusLabel = NSTextField(labelWithString: "")
     private let codexStatusLabel = NSTextField(labelWithString: "")
@@ -131,23 +134,29 @@ private final class SettingsViewController: NSViewController {
         closedLidSafetyWarningLabel.isHidden = true
         closedLidSafetyWarningLabel.setAccessibilityLabel("Lid-Closed Awake safety warning")
 
-        configureSafetyPopup(
-            batteryFloorPopup,
+        configureSafetyStepper(
+            batteryFloorStepper,
+            label: batteryFloorValueLabel,
             title: "Battery floor",
-            options: [5, 10, 15, 20, 25, 30],
-            action: #selector(updateSafetySettings)
+            min: 5,
+            max: 30,
+            increment: 5
         )
-        configureSafetyPopup(
-            temperatureWarningPopup,
-            title: "Warn at",
-            options: [70, 75, 80, 85, 90],
-            action: #selector(updateSafetySettings)
+        configureSafetyStepper(
+            temperatureWarningStepper,
+            label: temperatureWarningValueLabel,
+            title: "Temperature warning",
+            min: 70,
+            max: 90,
+            increment: 5
         )
-        configureSafetyPopup(
-            temperatureCutoffPopup,
-            title: "Cut off at",
-            options: [80, 85, 90, 95, 100, 105],
-            action: #selector(updateSafetySettings)
+        configureSafetyStepper(
+            temperatureCutoffStepper,
+            label: temperatureCutoffValueLabel,
+            title: "Temperature cutoff",
+            min: 80,
+            max: 105,
+            increment: 5
         )
         safetyDetailLabel.stringValue = "Battery floor and macOS critical thermal pressure are enforced now. Direct sensor temperature thresholds are saved for the temperature-provider path."
         safetyDetailLabel.textColor = .secondaryLabelColor
@@ -262,14 +271,14 @@ private final class SettingsViewController: NSViewController {
         let sessionButtons = rowStack([protectButton, pauseOptionsButton, pauseButton, refreshButton])
         let closedLidButtons = rowStack([enableClosedLidButton, disableClosedLidButton])
         let generalStack = rowStack([launchAtLoginCheckbox, launchAtLoginStatusLabel])
-        let safetyStack = rowStack([
-            NSTextField(labelWithString: "Battery floor (%)"),
-            batteryFloorPopup,
-            NSTextField(labelWithString: "Temp warning (C)"),
-            temperatureWarningPopup,
-            NSTextField(labelWithString: "Temp cutoff (C)"),
-            temperatureCutoffPopup
+        let safetyStack = NSStackView(views: [
+            safetyRow(title: "Battery floor", valueLabel: batteryFloorValueLabel, stepper: batteryFloorStepper),
+            safetyRow(title: "Temp warning", valueLabel: temperatureWarningValueLabel, stepper: temperatureWarningStepper),
+            safetyRow(title: "Temp cutoff", valueLabel: temperatureCutoffValueLabel, stepper: temperatureCutoffStepper)
         ])
+        safetyStack.orientation = .vertical
+        safetyStack.alignment = .leading
+        safetyStack.spacing = 8
         let supportButtons = rowStack([showEventLogButton, revealEventLogButton, copyDiagnosticsButton, uninstallButton])
         let footerButtons = rowStack([NSView(), closeButton])
 
@@ -453,40 +462,46 @@ private final class SettingsViewController: NSViewController {
         pauseOptionsButton.setAccessibilityLabel("Pause sleep protection")
     }
 
-    private func configureSafetyPopup(
-        _ popup: NSPopUpButton,
+    private func addPauseOption(_ title: String, tag: Int) {
+        pauseOptionsButton.addItem(withTitle: title)
+        pauseOptionsButton.lastItem?.tag = tag
+    }
+
+    private func configureSafetyStepper(
+        _ stepper: NSStepper,
+        label: NSTextField,
         title: String,
-        options: [Int],
-        action: Selector
+        min: Double,
+        max: Double,
+        increment: Double
     ) {
-        popup.removeAllItems()
-        for option in options {
-            popup.addItem(withTitle: "\(option)")
-            popup.lastItem?.tag = option
-        }
-        popup.target = self
-        popup.action = action
-        popup.setAccessibilityLabel(title)
+        stepper.minValue = min
+        stepper.maxValue = max
+        stepper.increment = increment
+        stepper.valueWraps = false
+        stepper.target = self
+        stepper.action = #selector(updateSafetySettings(_:))
+        stepper.setAccessibilityLabel(title)
+        label.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        label.alignment = .right
+        label.setContentHuggingPriority(.required, for: .horizontal)
+    }
+
+    private func safetyRow(title: String, valueLabel: NSTextField, stepper: NSStepper) -> NSStackView {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.widthAnchor.constraint(equalToConstant: 140).isActive = true
+        valueLabel.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        return rowStack([titleLabel, valueLabel, stepper])
     }
 
     private func refreshSafetyControls() {
         let safety = services.settingsStore.settings.safety
-        selectSafetyValue(safety.batteryFloorPercent, in: batteryFloorPopup)
-        selectSafetyValue(safety.temperatureWarningCelsius, in: temperatureWarningPopup)
-        selectSafetyValue(safety.temperatureCutoffCelsius, in: temperatureCutoffPopup)
-    }
-
-    private func selectSafetyValue(_ value: Int, in popup: NSPopUpButton) {
-        if popup.itemArray.first(where: { $0.tag == value }) == nil {
-            popup.addItem(withTitle: "\(value)")
-            popup.lastItem?.tag = value
-        }
-        popup.selectItem(withTag: value)
-    }
-
-    private func addPauseOption(_ title: String, tag: Int) {
-        pauseOptionsButton.addItem(withTitle: title)
-        pauseOptionsButton.lastItem?.tag = tag
+        batteryFloorStepper.integerValue = safety.batteryFloorPercent
+        temperatureWarningStepper.integerValue = safety.temperatureWarningCelsius
+        temperatureCutoffStepper.integerValue = safety.temperatureCutoffCelsius
+        batteryFloorValueLabel.stringValue = "\(safety.batteryFloorPercent)%"
+        temperatureWarningValueLabel.stringValue = "\(safety.temperatureWarningCelsius) C"
+        temperatureCutoffValueLabel.stringValue = "\(safety.temperatureCutoffCelsius) C"
     }
 
     private func integrationRow(
@@ -616,18 +631,18 @@ private final class SettingsViewController: NSViewController {
         }
     }
 
-    @objc private func updateSafetySettings(_ sender: NSPopUpButton) {
+    @objc private func updateSafetySettings(_ sender: NSStepper) {
         var safety = services.settingsStore.settings.safety
-        safety.batteryFloorPercent = batteryFloorPopup.selectedTag()
-        safety.temperatureWarningCelsius = temperatureWarningPopup.selectedTag()
-        safety.temperatureCutoffCelsius = temperatureCutoffPopup.selectedTag()
+        safety.batteryFloorPercent = batteryFloorStepper.integerValue
+        safety.temperatureWarningCelsius = temperatureWarningStepper.integerValue
+        safety.temperatureCutoffCelsius = temperatureCutoffStepper.integerValue
 
-        if sender === temperatureWarningPopup,
+        if sender === temperatureWarningStepper,
            safety.temperatureWarningCelsius >= safety.temperatureCutoffCelsius {
             safety.temperatureCutoffCelsius = min(125, safety.temperatureWarningCelsius + 5)
         }
 
-        if sender === temperatureCutoffPopup,
+        if sender === temperatureCutoffStepper,
            safety.temperatureWarningCelsius >= safety.temperatureCutoffCelsius {
             safety.temperatureWarningCelsius = max(0, safety.temperatureCutoffCelsius - 5)
         }
