@@ -85,7 +85,7 @@ private final class SettingsViewController: NSViewController {
     private let codexRemoveButton = NSButton(title: "Remove", target: nil, action: nil)
     private let protectButton = NSButton(title: "Keep sessions awake", target: nil, action: nil)
     private let pauseButton = NSButton(title: "Resume Sleep Protection", target: nil, action: nil)
-    private let pauseOptionsButton = NSPopUpButton(frame: .zero, pullsDown: true)
+    private let pauseOptionsButton = NSPopUpButton(frame: .zero, pullsDown: false)
     private let enableClosedLidButton = NSButton(title: "Turn On", target: nil, action: nil)
     private let disableClosedLidButton = NSButton(title: "Turn Off", target: nil, action: nil)
     private let repairButton = NSButton(title: "Reinstall agent hooks", target: nil, action: nil)
