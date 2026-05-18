@@ -55,9 +55,15 @@ extension SettingsWindowController: NSWindowDelegate {
 
 @MainActor
 private final class SettingsViewController: NSViewController {
-    private static let pauseHeaderTag = Int.min
     private static let pauseTomorrowMorningTag = -1
     private static let pauseIndefinitelyTag = -2
+    private static let pauseOptions: [(title: String, tag: Int)] = [
+        ("30 minutes", 30 * 60),
+        ("1 hour", 60 * 60),
+        ("4 hours", 4 * 60 * 60),
+        ("Until tomorrow morning", pauseTomorrowMorningTag),
+        ("Indefinitely", pauseIndefinitelyTag)
+    ]
 
     private let services: AgentWakeServices
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
@@ -85,7 +91,7 @@ private final class SettingsViewController: NSViewController {
     private let codexRemoveButton = NSButton(title: "Remove", target: nil, action: nil)
     private let protectButton = NSButton(title: "Keep sessions awake", target: nil, action: nil)
     private let pauseButton = NSButton(title: "Resume Sleep Protection", target: nil, action: nil)
-    private let pauseOptionsButton = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let pauseOptionsButton = NSButton(title: "Pause Sleep Protection...", target: nil, action: nil)
     private let enableClosedLidButton = NSButton(title: "Turn On", target: nil, action: nil)
     private let disableClosedLidButton = NSButton(title: "Turn Off", target: nil, action: nil)
     private let repairButton = NSButton(title: "Reinstall agent hooks", target: nil, action: nil)
@@ -450,23 +456,10 @@ private final class SettingsViewController: NSViewController {
     }
 
     private func configurePauseOptionsButton() {
-        pauseOptionsButton.removeAllItems()
-        pauseOptionsButton.addItem(withTitle: "Pause Sleep Protection")
-        pauseOptionsButton.menu?.items.first?.isEnabled = true
-        pauseOptionsButton.menu?.items.first?.tag = Self.pauseHeaderTag
-        addPauseOption("Pause for 30 minutes", tag: 30 * 60)
-        addPauseOption("Pause for 1 hour", tag: 60 * 60)
-        addPauseOption("Pause for 4 hours", tag: 4 * 60 * 60)
-        addPauseOption("Pause until tomorrow morning", tag: Self.pauseTomorrowMorningTag)
-        addPauseOption("Pause indefinitely", tag: Self.pauseIndefinitelyTag)
         pauseOptionsButton.target = self
-        pauseOptionsButton.action = #selector(selectPauseOption(_:))
+        pauseOptionsButton.action = #selector(showPauseOptions)
+        pauseOptionsButton.bezelStyle = .rounded
         pauseOptionsButton.setAccessibilityLabel("Pause sleep protection")
-    }
-
-    private func addPauseOption(_ title: String, tag: Int) {
-        pauseOptionsButton.addItem(withTitle: title)
-        pauseOptionsButton.lastItem?.tag = tag
     }
 
     private func configureSafetyStepper(
@@ -671,21 +664,43 @@ private final class SettingsViewController: NSViewController {
         }
     }
 
-    @objc private func selectPauseOption(_ sender: NSPopUpButton) {
-        guard let selectedItem = sender.selectedItem, selectedItem.tag != Self.pauseHeaderTag else {
-            sender.selectItem(at: 0)
-            return
+    @objc private func showPauseOptions() {
+        let alert = NSAlert()
+        alert.messageText = "Pause Sleep Protection"
+        alert.informativeText = "Choose how long AgentWake should let the Mac sleep."
+        alert.alertStyle = .informational
+        for option in Self.pauseOptions {
+            alert.addButton(withTitle: option.title)
+        }
+        alert.addButton(withTitle: "Cancel")
+
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else {
+                return
+            }
+            let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            guard Self.pauseOptions.indices.contains(index) else {
+                return
+            }
+            self.applyPauseOption(Self.pauseOptions[index].tag)
         }
 
+        if let window = view.window {
+            beginFrontmostSheet(alert, for: window, completionHandler: handleResponse)
+        } else {
+            handleResponse(runFrontmostAlert(alert))
+        }
+    }
+
+    private func applyPauseOption(_ tag: Int) {
         do {
-            try services.settingsStore.pauseSleepProtection(until: pauseExpiration(forTag: selectedItem.tag, from: Date()))
+            try services.settingsStore.pauseSleepProtection(until: pauseExpiration(forTag: tag, from: Date()))
             services.agentMonitor.poll()
             services.assertionManager.reconcile()
             refresh()
         } catch {
             presentAlert(title: "Could not pause sleep protection", message: error.localizedDescription, style: .warning)
         }
-        sender.selectItem(at: 0)
     }
 
     private func pauseExpiration(forTag tag: Int, from now: Date) -> Date? {
