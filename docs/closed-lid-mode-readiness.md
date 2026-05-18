@@ -21,17 +21,18 @@ They feed final app E2E validation in #120.
 
 ## Latest #120 Support Evidence
 
-The app can now expose an explicit local/admin-approved Closed-Lid Mode toggle
-using the `pmset disablesleep` primitive. It still must not claim automated
-thermal-provider readiness until #120 is closed, but the following support
-slices are now covered on `main`:
+The app exposes an explicit local/admin-approved Closed-Lid Mode toggle using
+the `pmset disablesleep` primitive. It now has release-only runtime safety for
+the configured battery floor and macOS critical thermal pressure. It still must
+not claim direct numeric temperature-provider readiness until #120 is closed,
+but the following support slices are now covered on `main`:
 
 | Area | Current support evidence | Still open in #120 |
 |---|---|---|
-| App launch and UI | Staged app launch, clean-install copy launch, Accessibility-visible menu bar ownership, Settings window opening, lifecycle relaunch after quit/SIGTERM/SIGKILL, and product copy showing `Closed-Lid Mode` controls are covered by PRs #122, #126, #127, #128, #129, #133, and #138 plus the local admin-approved controller slice. | Human visual confirmation on target display configurations, reboot behavior for the full app, and final release package behavior. |
+| App launch and UI | Staged app launch, clean-install copy launch, Accessibility-visible menu bar ownership, Settings window opening, lifecycle relaunch after quit/SIGTERM/SIGKILL, Settings safety controls, duration-based pause sheet, launch-at-login copy, and product copy showing `Closed-Lid Mode` controls are covered by local smoke plus the local admin-approved controller slice. | Human visual confirmation on target display configurations, reboot behavior for the full app, and final release package behavior. |
 | Integrations and helper CLI surface | Codex CLI owned-block recovery, helper command routing, uninstall routing, helper dry-run auth failure probes, and helper/app disagreement gating are covered by PRs #123, #124, #136, and #137. | Installed-helper enable/disable/repair/uninstall behavior, production repair conflicts, helper-owned Closed-Lid Mode cleanup, and final verifier-complete helper package. |
 | Primitive lifecycle | Battery/internal closed-lid reopen recovery passed in final E2E artifacts. AC/internal remains structurally complete but operator-inconclusive for lid-close sleep blocking. Reboot-held, app-quit while held, and app-crash while held passed for Apple Silicon battery/internal open-lid lifecycle artifacts. | External-display/no-external-display rows where physically available, broader hardware coverage, and any final manual release sign-off rows. |
-| Provider and safety gate | Safety policy fail-closed behavior is covered, IOReport remains a candidate but not verifier-complete, and Closed-Lid Mode is explicitly user/admin controlled until live provider automation is complete. | Live provider scale, freshness, cadence, closed-bag coverage, timeout behavior, and final provider verifier success before automatic safety cutoff claims. |
+| Provider and safety gate | Safety policy fail-closed behavior is covered. Runtime release is wired for configured battery floor and macOS critical thermal pressure. IOReport remains a direct-temperature candidate but is not verifier-complete. | Live direct-temperature provider scale, freshness, cadence, closed-bag coverage, timeout behavior, and final provider verifier success before direct-temperature cutoff claims. |
 | Packaging consent | Static staged-app/repo audit proves no detected silent privileged-helper activation path in the current sources and staged bundle. | Real Homebrew cask/package install, upgrade, uninstall, Gatekeeper/quarantine, and helper-consent lifecycle evidence. |
 
 ## Primitive Validation
@@ -365,7 +366,13 @@ scripts/temperature-provider-smappservice-proof.sh \
 
 This records follow-up status, `launchctl`, and unified log output for cleanup.
 
-The mocked fail-closed safety contract is covered in `BagModeSafetyPolicy` and `AgentWakeCoreChecks`: warning, cutoff, stale, unavailable, permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout, insufficient closed-bag coverage, missing/invalid battery, battery floor, and hysteresis transitions are executable checks. This does not select or validate the no-membership helper temperature provider.
+The safety contract is covered in `BagModeSafetyPolicy` and
+`AgentWakeCoreChecks`: warning, cutoff, stale, unavailable,
+permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout,
+insufficient closed-bag coverage, missing/invalid battery, battery floor, and
+hysteresis transitions are executable checks. Runtime release is wired for the
+configured battery floor and macOS critical thermal pressure. This does not
+select or validate the no-membership helper direct-temperature provider.
 
 Before attaching helper provider proof, run:
 
@@ -391,6 +398,8 @@ Required notes:
 - Feasibility of 5 second active sampling and 30 second idle sampling
 - Stale, unavailable, permission-denied, and parse-failed cases
 - Evidence that fail-closed behavior blocks Closed-Lid Mode before arming or releases it when armed
+- Evidence that configured battery floor and macOS thermal-pressure release
+  remain visible in the product UI and audit log
 
 Thermal cutoff tests must use mocks or simulated providers. Do not intentionally overheat hardware.
 

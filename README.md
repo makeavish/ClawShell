@@ -11,6 +11,8 @@ Codex CLI work:
 - can keep detected already-running sessions awake manually
 - supports explicit admin-approved Lid-Closed Awake with release-only battery and
   thermal safety cutoffs
+- lets you pause protection for a chosen duration when you intentionally want
+  macOS to sleep
 
 It is designed for developers using tools like Claude Code and Codex CLI on a MacBook as their main machine.
 
@@ -26,6 +28,7 @@ AgentWake is in early public release, focused on Claude Code and Codex CLI.
 | Lid-closed on battery | Works, release-only safety cutoffs | Works, release-only safety cutoffs |
 | Manual protection | Protect detected sessions | Protect detected sessions |
 | Pause / resume | Supported | Supported |
+| Launch at login | Optional Settings toggle | Optional Settings toggle |
 
 ## Why
 
@@ -58,12 +61,14 @@ Current safeguards include:
 
 - First-run consent before closed-lid battery mode is enabled
 - A visible menu bar state when guarded mode is active
-- Battery floor release
+- Configurable battery floor release, defaulting to 15%
 - Critical macOS thermal-pressure release
+- Configurable direct-temperature warning and cutoff values stored in Settings
 
 Planned safeguards include:
 
-- A richer live temperature provider and warning thresholds
+- A richer live direct-temperature provider that uses the stored temperature
+  warning and cutoff thresholds
 - A privileged helper only for the closed-lid battery path
 
 Normal sleep prevention should work without admin privileges. macOS authorization is planned only when installing the privileged helper needed for closed-lid battery support.
@@ -71,6 +76,20 @@ Normal sleep prevention should work without admin privileges. macOS authorizatio
 The CLI vocabulary is `agentwake closed-lid status|enable|disable`. Enable and
 disable may show a macOS administrator prompt because the closed-lid primitive
 requires privileged power-setting changes.
+
+## Settings
+
+Settings exposes:
+
+- Launch at login
+- Per-agent enable/disable toggles for Claude Code and Codex CLI
+- Integration details, including config paths and owned changes
+- Safety thresholds for Lid-Closed Awake
+- Pause Sleep Protection with duration choices
+- Event log, diagnostic copy, and uninstall actions
+
+Uninstall removes AgentWake-owned hooks, turns off launch at login, restores
+AgentWake-owned Lid-Closed Awake state, moves the app bundle to Trash, and quits.
 
 ## Privacy Model
 
@@ -109,7 +128,7 @@ release scope and Closed-Lid Mode boundaries.
 Build a local release ZIP:
 
 ```sh
-scripts/package-release.sh --version v0.2.1
+scripts/package-release.sh --version v0.2.2
 ```
 
 The generated artifact is ad-hoc signed and does not install/register privileged
@@ -118,7 +137,9 @@ user enables or disables it.
 
 ## Development
 
-This repo now contains the first SwiftPM menu bar app skeleton. See [docs/development.md](docs/development.md) for local run and check commands.
+This repo contains the SwiftPM menu bar app, hook adapter, CLI, and validation
+scripts. See [docs/development.md](docs/development.md) for local run and check
+commands.
 
 ## License
 

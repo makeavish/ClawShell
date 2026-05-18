@@ -96,6 +96,11 @@ the `Settings...` menu item, and verifies that CoreGraphics reports an onscreen
 smoke, not a substitute for a human visual pass on the target display
 configuration.
 
+For Settings changes, pair the smoke with a human click-through of the affected
+controls. Recent regressions in popup-style controls were visible only through
+manual interaction, so duration sheets, steppers, and launch-at-login copy
+should be clicked after automated smoke passes.
+
 For repeatable local evidence that the packaged app launches from a clean
 install copy, run:
 

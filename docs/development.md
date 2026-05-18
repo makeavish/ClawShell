@@ -1,6 +1,6 @@
 # Development
 
-AgentWake is currently a native macOS menu bar app skeleton built with SwiftPM.
+AgentWake is a native macOS menu bar app built with SwiftPM.
 
 ## Requirements
 
@@ -10,10 +10,18 @@ AgentWake is currently a native macOS menu bar app skeleton built with SwiftPM.
 ## Run Locally
 
 ```sh
-swift run AgentWake
+./script/build_and_run.sh
 ```
 
-The app starts as an accessory menu bar process and does not request admin privileges.
+This builds `AgentWake` and `AgentWakeHookAdapter`, stages
+`dist/AgentWake.app`, and opens it as a real app bundle. Prefer this path for
+menu bar, Settings, launch-at-login, and prompt behavior. Direct
+`swift run AgentWake` runs the executable without the normal bundle context and
+is only useful for narrow smoke/debug work.
+
+The app starts as an accessory menu bar process. Normal sleep protection does
+not require admin privileges. Lid-Closed Awake can prompt for administrator
+approval because it changes `pmset disablesleep`.
 
 ## Check
 
@@ -21,8 +29,11 @@ The app starts as an accessory menu bar process and does not request admin privi
 scripts/validate.sh
 ```
 
-The first checks cover the state/menu model, lifecycle component boundaries, persistence/privacy contracts, and a short AppKit launch smoke. AppKit behavior is intentionally thin until the detection, assertion, and integration issues add real behavior.
-The portable checks now also cover the V1 integration primitives: adapter redaction/no-op behavior, Claude Code and Codex config patching, native Codex hook reduction, owned-block removal, and integration removal suppression.
+The portable checks cover the state/menu model, lifecycle component boundaries,
+persistence/privacy contracts, safety policy behavior, CLI parsing, AppKit
+launch smoke, and V1 integration primitives: adapter redaction/no-op behavior,
+Claude Code and Codex config patching, native Codex hook reduction,
+owned-block removal, and integration removal suppression.
 
 The local Command Line Tools environment may lack `Testing` and `XCTest`, so `AgentWakeCoreChecks` remains the portable assertion gate for those machines. When full Xcode is installed under `/Applications`, `scripts/validate.sh` uses it through `DEVELOPER_DIR` for SwiftPM tests without requiring `sudo xcode-select`. On CI and full toolchains with `Testing` or `XCTest`, `swift test` runs the standard SwiftPM test targets.
 
@@ -36,6 +47,13 @@ AgentWake stores local state under `~/Library/Application Support/AgentWake/`:
 - `logs/audit.jsonl` contains bounded local audit events.
 - `run/hook-token` is a per-launch adapter token and is removed when the control server stops.
 - `cwd-hash-salt` is an app-local salt used to HMAC agent cwd values before they reach the state machine.
+
+User-facing Settings currently manage launch-at-login preference, per-agent
+enablement, pause duration, and Lid-Closed Awake safety thresholds. The safety
+settings are persisted in `settings.json`; battery floor and macOS critical
+thermal pressure are enforced by the runtime release-only safety monitor, while
+direct temperature thresholds are stored for the future temperature-provider
+path.
 
 Pre-release ClawShell state under `~/Library/Application Support/ClawShell/` is
 not migrated. The integration patchers still recognize and remove legacy

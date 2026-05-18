@@ -111,7 +111,14 @@ Production Closed-Lid Mode must fail closed for:
 
 The harness records these as evidence fields but does not enable production behavior.
 
-The mocked fail-closed contract is now executable in `BagModeSafetyPolicy` and covered by the portable `AgentWakeCoreChecks` gate. Those checks cover warning, cutoff, stale, unavailable, permission-denied, parse-failed, helper-crashed, unsupported-hardware, timeout, coverage-insufficient, missing/invalid battery, battery floor, and hysteresis behavior. They do not select a production provider or prove helper-side sampling.
+The fail-closed contract is executable in `BagModeSafetyPolicy` and covered by
+the portable `AgentWakeCoreChecks` gate. Those checks cover warning, cutoff,
+stale, unavailable, permission-denied, parse-failed, helper-crashed,
+unsupported-hardware, timeout, coverage-insufficient, missing/invalid battery,
+battery floor, and hysteresis behavior. Runtime release is wired for the
+configured battery floor and macOS critical thermal pressure. These checks do
+not select a production direct-temperature provider or prove helper-side
+sampling.
 
 ## Helper-Equivalent Readiness
 
