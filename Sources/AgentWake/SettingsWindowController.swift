@@ -119,6 +119,7 @@ private final class SettingsViewController: NSViewController {
         launchAtLoginCheckbox.action = #selector(toggleLaunchAtLogin)
         launchAtLoginCheckbox.setAccessibilityLabel("Launch AgentWake at login")
         launchAtLoginStatusLabel.textColor = .secondaryLabelColor
+        launchAtLoginStatusLabel.setAccessibilityLabel("Launch at login status")
 
         statusLabel.font = .preferredFont(forTextStyle: .title3)
         statusLabel.setAccessibilityLabel("AgentWake runtime status")
@@ -353,6 +354,7 @@ private final class SettingsViewController: NSViewController {
 
         launchAtLoginCheckbox.state = LaunchAtLoginController.isEnabled ? .on : .off
         launchAtLoginStatusLabel.stringValue = LaunchAtLoginController.statusText
+        launchAtLoginStatusLabel.isHidden = LaunchAtLoginController.statusText.isEmpty
 
         let protectableCount = services.agentMonitor.protectableDetectedSessionCount
         statusLabel.stringValue = services.agentMonitor.sessionSummaryMessage()
