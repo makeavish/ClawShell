@@ -102,6 +102,12 @@ public final class SettingsStore: StubLifecycleComponent {
         try save(next)
     }
 
+    public func setSafety(_ safety: SafetySettings) throws {
+        var next = settings
+        next.safety = safety
+        try save(next)
+    }
+
     public func setAgentEnabled(agentID: String, isEnabled: Bool) throws {
         var next = settings
         guard let index = next.agents.firstIndex(where: { $0.id == agentID }) else {

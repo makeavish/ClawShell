@@ -416,7 +416,7 @@ final class MenuBarApp: NSObject {
         """
 
         if PowerSourceReader.current() == .battery {
-            message += "\n\n\(ClosedLidUserFacingCopy.safetyNotice)"
+            message += "\n\n\(ClosedLidUserFacingCopy.safetyNotice(settings: services.settingsStore.settings.safety))"
         }
 
         return message

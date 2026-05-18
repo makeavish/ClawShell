@@ -3137,6 +3137,17 @@ struct AgentWakeCoreChecks {
         try check(store.settings.safety.batteryFloorPercent == 15, "Expected default battery floor")
         try check(!store.settings.hasCompletedOnboarding, "Expected onboarding to be incomplete by default")
 
+        try store.setSafety(
+            SafetySettings(
+                temperatureWarningCelsius: 80,
+                temperatureCutoffCelsius: 90,
+                batteryFloorPercent: 20
+            )
+        )
+        try check(store.settings.safety.batteryFloorPercent == 20, "Expected settings store to persist battery floor changes")
+        try check(store.settings.safety.temperatureWarningCelsius == 80, "Expected settings store to persist temperature warning changes")
+        try check(store.settings.safety.temperatureCutoffCelsius == 90, "Expected settings store to persist temperature cutoff changes")
+
         try store.pauseSleepProtection()
         try check(
             store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll && $0.id == "user-pause" },

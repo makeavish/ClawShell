@@ -11,7 +11,7 @@ final class SettingsWindowController: NSWindowController {
         let window = SettingsWindow(contentViewController: contentViewController)
         window.title = "AgentWake Settings"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 700, height: 640))
+        window.setContentSize(NSSize(width: 760, height: 720))
         window.center()
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
@@ -66,6 +66,10 @@ private final class SettingsViewController: NSViewController {
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
     private let closedLidModeStatusLabel = NSTextField(wrappingLabelWithString: "")
     private let closedLidSafetyWarningLabel = NSTextField(wrappingLabelWithString: "")
+    private let batteryFloorPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let temperatureWarningPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let temperatureCutoffPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let safetyDetailLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeStatusLabel = NSTextField(labelWithString: "")
     private let codexStatusLabel = NSTextField(labelWithString: "")
     private let claudeEnabledCheckbox = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
@@ -122,10 +126,32 @@ private final class SettingsViewController: NSViewController {
 
         closedLidModeStatusLabel.textColor = .secondaryLabelColor
         closedLidModeStatusLabel.setAccessibilityLabel("Closed-Lid Mode status")
-        closedLidSafetyWarningLabel.stringValue = ClosedLidUserFacingCopy.safetyNotice
+        closedLidSafetyWarningLabel.stringValue = ClosedLidUserFacingCopy.safetyNotice(settings: AgentWakeSettings().safety)
         closedLidSafetyWarningLabel.textColor = .systemOrange
         closedLidSafetyWarningLabel.isHidden = true
         closedLidSafetyWarningLabel.setAccessibilityLabel("Lid-Closed Awake safety warning")
+
+        configureSafetyPopup(
+            batteryFloorPopup,
+            title: "Battery floor",
+            options: [5, 10, 15, 20, 25, 30],
+            action: #selector(updateSafetySettings)
+        )
+        configureSafetyPopup(
+            temperatureWarningPopup,
+            title: "Warn at",
+            options: [70, 75, 80, 85, 90],
+            action: #selector(updateSafetySettings)
+        )
+        configureSafetyPopup(
+            temperatureCutoffPopup,
+            title: "Cut off at",
+            options: [80, 85, 90, 95, 100, 105],
+            action: #selector(updateSafetySettings)
+        )
+        safetyDetailLabel.stringValue = "Battery floor and macOS critical thermal pressure are enforced now. Direct sensor temperature thresholds are saved for the temperature-provider path."
+        safetyDetailLabel.textColor = .secondaryLabelColor
+        safetyDetailLabel.setAccessibilityLabel("Safety settings detail")
 
         let claudeTitle = keyValueLabel(key: "Claude Code", value: "")
         let codexTitle = keyValueLabel(key: "Codex CLI", value: "")
@@ -236,6 +262,14 @@ private final class SettingsViewController: NSViewController {
         let sessionButtons = rowStack([protectButton, pauseOptionsButton, pauseButton, refreshButton])
         let closedLidButtons = rowStack([enableClosedLidButton, disableClosedLidButton])
         let generalStack = rowStack([launchAtLoginCheckbox, launchAtLoginStatusLabel])
+        let safetyStack = rowStack([
+            NSTextField(labelWithString: "Battery floor (%)"),
+            batteryFloorPopup,
+            NSTextField(labelWithString: "Temp warning (C)"),
+            temperatureWarningPopup,
+            NSTextField(labelWithString: "Temp cutoff (C)"),
+            temperatureCutoffPopup
+        ])
         let supportButtons = rowStack([showEventLogButton, revealEventLogButton, copyDiagnosticsButton, uninstallButton])
         let footerButtons = rowStack([NSView(), closeButton])
 
@@ -253,6 +287,10 @@ private final class SettingsViewController: NSViewController {
             closedLidModeStatusLabel,
             closedLidSafetyWarningLabel,
             closedLidButtons,
+            separator(),
+            sectionHeader("Safety"),
+            safetyStack,
+            safetyDetailLabel,
             separator(),
             sectionHeader("Integrations"),
             integrationStack,
@@ -278,6 +316,8 @@ private final class SettingsViewController: NSViewController {
             sessionButtons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             closedLidButtons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             generalStack.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
+            safetyStack.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
+            safetyDetailLabel.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             integrationStack.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             supportButtons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48),
             footerButtons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48)
@@ -316,11 +356,13 @@ private final class SettingsViewController: NSViewController {
 
         let closedLidStatus = services.closedLidModeController.status()
         closedLidModeStatusLabel.stringValue = closedLidDisplayText(for: closedLidStatus)
+        closedLidSafetyWarningLabel.stringValue = ClosedLidUserFacingCopy.safetyNotice(settings: services.settingsStore.settings.safety)
         closedLidSafetyWarningLabel.isHidden = !shouldShowSafetyWarning(status: closedLidStatus)
         enableClosedLidButton.isEnabled = !closedLidActionInFlight &&
             canEnableClosedLidMode(status: closedLidStatus)
         disableClosedLidButton.isEnabled = !closedLidActionInFlight &&
             canDisableClosedLidMode(status: closedLidStatus)
+        refreshSafetyControls()
 
         let snapshots = Dictionary(
             uniqueKeysWithValues: services.integrationManager.snapshots().map { ($0.agentID, $0) }
@@ -409,6 +451,37 @@ private final class SettingsViewController: NSViewController {
         pauseOptionsButton.target = self
         pauseOptionsButton.action = #selector(selectPauseOption(_:))
         pauseOptionsButton.setAccessibilityLabel("Pause sleep protection")
+    }
+
+    private func configureSafetyPopup(
+        _ popup: NSPopUpButton,
+        title: String,
+        options: [Int],
+        action: Selector
+    ) {
+        popup.removeAllItems()
+        for option in options {
+            popup.addItem(withTitle: "\(option)")
+            popup.lastItem?.tag = option
+        }
+        popup.target = self
+        popup.action = action
+        popup.setAccessibilityLabel(title)
+    }
+
+    private func refreshSafetyControls() {
+        let safety = services.settingsStore.settings.safety
+        selectSafetyValue(safety.batteryFloorPercent, in: batteryFloorPopup)
+        selectSafetyValue(safety.temperatureWarningCelsius, in: temperatureWarningPopup)
+        selectSafetyValue(safety.temperatureCutoffCelsius, in: temperatureCutoffPopup)
+    }
+
+    private func selectSafetyValue(_ value: Int, in popup: NSPopUpButton) {
+        if popup.itemArray.first(where: { $0.tag == value }) == nil {
+            popup.addItem(withTitle: "\(value)")
+            popup.lastItem?.tag = value
+        }
+        popup.selectItem(withTag: value)
     }
 
     private func addPauseOption(_ title: String, tag: Int) {
@@ -539,6 +612,31 @@ private final class SettingsViewController: NSViewController {
             refresh()
         } catch {
             presentAlert(title: "Could not update \(displayName)", message: error.localizedDescription, style: .warning)
+            refresh()
+        }
+    }
+
+    @objc private func updateSafetySettings(_ sender: NSPopUpButton) {
+        var safety = services.settingsStore.settings.safety
+        safety.batteryFloorPercent = batteryFloorPopup.selectedTag()
+        safety.temperatureWarningCelsius = temperatureWarningPopup.selectedTag()
+        safety.temperatureCutoffCelsius = temperatureCutoffPopup.selectedTag()
+
+        if sender === temperatureWarningPopup,
+           safety.temperatureWarningCelsius >= safety.temperatureCutoffCelsius {
+            safety.temperatureCutoffCelsius = min(125, safety.temperatureWarningCelsius + 5)
+        }
+
+        if sender === temperatureCutoffPopup,
+           safety.temperatureWarningCelsius >= safety.temperatureCutoffCelsius {
+            safety.temperatureWarningCelsius = max(0, safety.temperatureCutoffCelsius - 5)
+        }
+
+        do {
+            try services.settingsStore.setSafety(safety)
+            refresh()
+        } catch {
+            presentAlert(title: "Could not update safety settings", message: error.localizedDescription, style: .warning)
             refresh()
         }
     }
@@ -716,7 +814,7 @@ private final class SettingsViewController: NSViewController {
         """
 
         if PowerSourceReader.current() == .battery {
-            message += "\n\n\(ClosedLidUserFacingCopy.safetyNotice)"
+            message += "\n\n\(ClosedLidUserFacingCopy.safetyNotice(settings: services.settingsStore.settings.safety))"
         }
 
         return message
