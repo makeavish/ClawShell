@@ -147,7 +147,7 @@ private final class SettingsViewController: NSViewController {
             title: "Battery floor",
             min: 5,
             max: 30,
-            increment: 5
+            increment: 1
         )
         configureSafetyStepper(
             temperatureWarningStepper,
@@ -155,7 +155,7 @@ private final class SettingsViewController: NSViewController {
             title: "Temperature warning",
             min: 70,
             max: 90,
-            increment: 5
+            increment: 1
         )
         configureSafetyStepper(
             temperatureCutoffStepper,
@@ -163,7 +163,7 @@ private final class SettingsViewController: NSViewController {
             title: "Temperature cutoff",
             min: 80,
             max: 105,
-            increment: 5
+            increment: 1
         )
         safetyDetailLabel.stringValue = "Battery floor and macOS critical thermal pressure are enforced now. Direct sensor temperature thresholds are saved for the temperature-provider path."
         safetyDetailLabel.textColor = .secondaryLabelColor
