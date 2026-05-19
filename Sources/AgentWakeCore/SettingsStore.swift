@@ -181,8 +181,26 @@ public final class SettingsStore: StubLifecycleComponent {
 
         let data = try Data(contentsOf: paths.settingsURL)
         let loaded = try decoder.decode(AgentWakeSettings.self, from: data)
-        try validate(loaded)
-        return loaded
+        let migrated = migrateIfNeeded(loaded)
+        try validate(migrated)
+        if migrated != loaded {
+            try save(migrated)
+        }
+        return migrated
+    }
+
+    private func migrateIfNeeded(_ settings: AgentWakeSettings) -> AgentWakeSettings {
+        guard settings.schemaVersion < AgentWakeSettings.currentSchemaVersion else {
+            return settings
+        }
+
+        var migrated = settings
+        if migrated.schemaVersion == 1,
+           migrated.defaultGraceSeconds == AgentWakeSettings.legacyDefaultGraceSeconds {
+            migrated.defaultGraceSeconds = AgentWakeSettings.defaultGraceSeconds
+        }
+        migrated.schemaVersion = AgentWakeSettings.currentSchemaVersion
+        return migrated
     }
 
     private func validate(_ settings: AgentWakeSettings) throws {

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.5 - 2026-05-19
+
+- Aligns Claude Code and Codex CLI completion behavior so `Stop` releases the
+  protected turn immediately for both agents.
+- Allows a later Claude Code prompt in the same native session to start a fresh
+  AgentWake turn, while `SessionEnd` remains terminal.
+- Reduces the default fallback release window to 1 minute and migrates the
+  legacy 15-minute default.
+
 ## v0.2.4 - 2026-05-19
 
 - Fixes the Settings window so long content scrolls inside the window instead

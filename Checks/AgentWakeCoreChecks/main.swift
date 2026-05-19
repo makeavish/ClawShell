@@ -69,6 +69,7 @@ struct AgentWakeCoreChecks {
         try integrationManagerAppliesConfigPatchesAndRemovesThem()
         try integrationManagerSurfacesFailedInstallReasons()
         try settingsPersistWithExpectedSchema()
+        try legacyDefaultGraceMigratesToPromptReleaseDefault()
         try freshInstallSettingsCleanupClearsAutoInstallSuppressions()
         try corruptSettingsRecoverToDefaults()
         try unsupportedSchemaDoesNotRecoverAsCorrupt()
@@ -829,15 +830,12 @@ struct AgentWakeCoreChecks {
 
         let turnFinishedAt = baseline.addingTimeInterval(60)
         machine.applyTrustedEvent(.turnFinished, to: firstSessionID, at: turnFinishedAt)
-        try check(machine.sessions[0].state == .standingBy, "Expected turn finish to enter standing by")
-        try check(
-            machine.sessions[0].standingByExpiresAt == turnFinishedAt.addingTimeInterval(900),
-            "Expected default 15-minute standing-by grace"
-        )
+        try check(machine.sessions[0].state == .finished, "Expected turn finish to release the protected turn")
+        try check(machine.sessions[0].standingByExpiresAt == nil, "Expected turn finish not to keep a grace hold")
+        try check(!machine.aggregateHoldState(at: turnFinishedAt.addingTimeInterval(1)).shouldHold, "Expected completed turn not to hold")
 
         machine.applyTrustedEvent(.toolStarted, to: firstSessionID, at: baseline.addingTimeInterval(90))
-        try check(machine.sessions[0].state == .active, "Expected trusted activity to reactivate")
-        try check(machine.sessions[0].standingByExpiresAt == nil, "Expected trusted activity to clear grace expiry")
+        try check(machine.sessions[0].state == .finished, "Expected later activity on the finished turn not to reactivate it")
 
         let restartedAt = baseline.addingTimeInterval(120)
         machine.applyProcessObservations(
@@ -872,10 +870,10 @@ struct AgentWakeCoreChecks {
         machine.applyTrustedEvent(.turnFinished, to: activeSessionID, at: restartedAt.addingTimeInterval(10))
         machine.applyTrustedEvent(.keepHolding, to: activeSessionID, at: restartedAt.addingTimeInterval(20))
         try check(
-            machine.sessions.first(where: { $0.id == activeSessionID })?.standingByExpiresAt == restartedAt.addingTimeInterval(10 + 1_800),
-            "Expected keep holding to extend by one grace window"
+            machine.sessions.first(where: { $0.id == activeSessionID })?.state == .finished,
+            "Expected keepHolding not to extend a completed turn"
         )
-        try check(machine.aggregateHoldState(at: restartedAt.addingTimeInterval(30)).shouldHold, "Expected standing-by session to hold before expiry")
+        try check(!machine.aggregateHoldState(at: restartedAt.addingTimeInterval(30)).shouldHold, "Expected completed turn not to hold")
 
         machine.refreshExpirations(at: restartedAt.addingTimeInterval(1_811))
         try check(!machine.aggregateHoldState(at: restartedAt.addingTimeInterval(1_811)).shouldHold, "Expected aggregate hold to release after all sessions finish or expire")
@@ -900,19 +898,20 @@ struct AgentWakeCoreChecks {
         )
         let sessionID = try checkNotNil(machine.sessions.first?.id, "Expected fallback process session")
         machine.applyTrustedEvent(.turnFinished, to: sessionID, at: baseline.addingTimeInterval(10))
-        let expiry = try checkNotNil(machine.sessions.first?.standingByExpiresAt, "Expected standing-by expiry")
+        try check(machine.sessions.first?.state == .finished, "Expected turn completion to finish the process-backed turn")
+        try check(machine.sessions.first?.standingByExpiresAt == nil, "Expected turn completion not to keep a grace hold")
 
         machine.applyProcessObservations(
             [observation(pid: 43, start: baseline, path: "/opt/homebrew/bin/claude", agent: .claudeCode)],
             at: baseline.addingTimeInterval(20)
         )
 
-        try check(machine.sessions.count == 1, "Expected path hash upgrade not to split the same pid/start process")
+        try check(machine.sessions.count == 2, "Expected live process polling after turn completion to create a diagnostic process session")
         try check(machine.sessions[0].id == sessionID, "Expected path hash upgrade to preserve session identity")
-        try check(machine.sessions[0].state == .standingBy, "Expected path hash upgrade not to reactivate the session")
-        try check(machine.sessions[0].standingByExpiresAt == expiry, "Expected path hash upgrade not to reset grace")
-        try check(machine.sessions[0].key.executablePathHash == StablePathHash.sha256("/opt/homebrew/bin/claude"), "Expected verified path hash to upgrade")
-        try check(machine.sessions[0].key.executablePathHashIsVerified, "Expected upgraded path hash to be marked verified")
+        try check(machine.sessions[0].state == .finished, "Expected path hash upgrade not to reactivate the finished turn")
+        try check(machine.sessions[1].source == .processScan, "Expected replacement session to stay process-detected only")
+        try check(machine.sessions[1].key.executablePathHash == StablePathHash.sha256("/opt/homebrew/bin/claude"), "Expected verified path hash to be recorded on the diagnostic process session")
+        try check(machine.sessions[1].key.executablePathHashIsVerified, "Expected diagnostic path hash to be marked verified")
     }
 
     private static func executablePathHashParticipatesInVerifiedIdentity() throws {
@@ -951,16 +950,19 @@ struct AgentWakeCoreChecks {
         )
         let sessionID = try checkNotNil(machine.sessions.first?.id, "Expected active CPU diagnostic session")
         machine.applyTrustedEvent(.turnFinished, to: sessionID, at: baseline.addingTimeInterval(10))
-        let originalExpiry = try checkNotNil(machine.sessions[0].standingByExpiresAt, "Expected standing-by expiry")
+        try check(machine.sessions[0].state == .finished, "Expected turn completion to finish the protected turn")
+        try check(machine.sessions[0].standingByExpiresAt == nil, "Expected turn completion not to keep a grace hold")
 
         machine.applyProcessObservations(
             [observation(pid: 60, start: baseline, path: "/opt/homebrew/bin/claude", agent: .claudeCode, cpuPercent: 95)],
             at: baseline.addingTimeInterval(20)
         )
 
-        try check(machine.sessions[0].state == .standingBy, "Expected CPU load not to reactivate standing-by session")
-        try check(machine.sessions[0].standingByExpiresAt == originalExpiry, "Expected CPU load not to extend grace")
-        try check(machine.sessions[0].diagnosticCPUPercent == 95, "Expected CPU load to be diagnostic only")
+        try check(machine.sessions[0].state == .finished, "Expected CPU load not to reactivate the finished turn")
+        try check(
+            machine.sessions.contains { $0.source == .processScan && $0.state == .active && !$0.hasIntegratedEvidence },
+            "Expected live process presence to remain diagnostic only"
+        )
     }
 
     private static func remainingTransitionRowsAreExecutable() throws {
@@ -1434,7 +1436,7 @@ struct AgentWakeCoreChecks {
 
         machine.applyTrustedEvent(.turnFinished, to: sessionID, at: baseline.addingTimeInterval(30))
         machine.applyTrustedEvent(.keepHolding, to: sessionID, at: baseline.addingTimeInterval(931))
-        try check(machine.sessions[0].state == .finished, "Expected expired grace to finish before keepHolding is considered")
+        try check(machine.sessions[0].state == .finished, "Expected turn completion to finish before keepHolding is considered")
 
         machine.applyTrustedEvent(.agentResumed, to: sessionID, at: baseline.addingTimeInterval(940))
         try check(machine.sessions[0].state == .finished, "Expected terminal finished session not to reactivate")
@@ -1567,6 +1569,41 @@ struct AgentWakeCoreChecks {
         try check(terminalMachine.sessions.count == 1, "Expected post-terminal hook not to create a replacement session")
         try check(terminalMachine.sessions[0].state == .finished, "Expected post-terminal hook not to reactivate a finished session")
 
+        let claudeEndedMachine = AgentSessionStateMachine(graceInterval: 900)
+        let endedClaudeSessionID = "claude-ended-session"
+        claudeEndedMachine.applyIntegrationEvent(
+            hookEvent(
+                .turnStarted,
+                integrationSessionId: endedClaudeSessionID,
+                pid: 104,
+                processStartTime: processStart,
+                agent: .claudeCode
+            ),
+            at: baseline.addingTimeInterval(20)
+        )
+        claudeEndedMachine.applyIntegrationEvent(
+            hookEvent(
+                .sessionFinished,
+                integrationSessionId: endedClaudeSessionID,
+                pid: 104,
+                processStartTime: processStart,
+                agent: .claudeCode
+            ),
+            at: baseline.addingTimeInterval(30)
+        )
+        claudeEndedMachine.applyIntegrationEvent(
+            hookEvent(
+                .turnStarted,
+                integrationSessionId: endedClaudeSessionID,
+                pid: 104,
+                processStartTime: processStart,
+                agent: .claudeCode
+            ),
+            at: baseline.addingTimeInterval(40)
+        )
+        try check(claudeEndedMachine.sessions.count == 1, "Expected Claude UserPromptSubmit after SessionEnd not to create a new turn")
+        try check(claudeEndedMachine.sessions[0].state == .finished, "Expected ended Claude session to remain finished")
+
         let multiTurnMachine = AgentSessionStateMachine(graceInterval: 5)
         let claudeSessionID = "claude-session-1"
         multiTurnMachine.applyIntegrationEvent(
@@ -1589,8 +1626,8 @@ struct AgentWakeCoreChecks {
             ),
             at: baseline.addingTimeInterval(1)
         )
-        multiTurnMachine.refreshExpirations(at: baseline.addingTimeInterval(7))
-        try check(multiTurnMachine.sessions[0].state == .finished, "Expected grace expiry to finish the first Claude turn")
+        try check(multiTurnMachine.sessions[0].state == .finished, "Expected Claude Stop to finish the first turn immediately")
+        try check(multiTurnMachine.sessions[0].standingByExpiresAt == nil, "Expected Claude Stop not to keep a grace hold")
 
         multiTurnMachine.applyIntegrationEvent(
             hookEvent(
@@ -1600,7 +1637,7 @@ struct AgentWakeCoreChecks {
                 processStartTime: processStart,
                 agent: .claudeCode
             ),
-            at: baseline.addingTimeInterval(8)
+            at: baseline.addingTimeInterval(2)
         )
         try check(multiTurnMachine.sessions.count == 2, "Expected later Claude prompt with the same session id to create a new turn")
         try check(multiTurnMachine.sessions[1].state == .active, "Expected later same-session Claude prompt to become active")
@@ -3234,9 +3271,9 @@ struct AgentWakeCoreChecks {
         store.start()
 
         try check(FileManager.default.fileExists(atPath: paths.settingsURL.path), "Expected settings.json to exist")
-        try check(store.settings.schemaVersion == 1, "Expected schema version 1")
+        try check(store.settings.schemaVersion == 2, "Expected schema version 2")
         try check(!store.settings.launchAtLogin, "Expected launch at login to default off until the user opts in")
-        try check(store.settings.defaultGraceSeconds == 900, "Expected default grace to be 900 seconds")
+        try check(store.settings.defaultGraceSeconds == 60, "Expected default grace to be 60 seconds")
         try check(store.settings.agents.map(\.id) == ["claude-code", "codex-cli"], "Expected Claude and Codex agent defaults")
         try check(
             store.settings.agents.first?.executableNames == ["claude", "claude-code"],
@@ -3299,6 +3336,59 @@ struct AgentWakeCoreChecks {
         let settingsJSON = try String(contentsOf: paths.settingsURL, encoding: .utf8)
         try check(settingsJSON.contains("\"helperOwnership\" : null"), "Expected helperOwnership null placeholder")
         try check(settingsJSON.contains("\"hasCompletedOnboarding\" : false"), "Expected onboarding completion to be persisted")
+    }
+
+    private static func legacyDefaultGraceMigratesToPromptReleaseDefault() throws {
+        let paths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: paths.applicationSupportDirectory) }
+
+        let legacySettings = """
+        {
+          "schemaVersion": 1,
+          "launchAtLogin": true,
+          "defaultGraceSeconds": 900,
+          "agents": [
+            {
+              "id": "claude-code",
+              "displayName": "Claude Code",
+              "executableNames": ["claude", "claude-code"],
+              "isEnabled": true
+            },
+            {
+              "id": "codex-cli",
+              "displayName": "Codex CLI",
+              "executableNames": ["codex"],
+              "isEnabled": true
+            }
+          ],
+          "customAgents": [],
+          "integrationSuppressions": {},
+          "integrationStates": {},
+          "safety": {
+            "temperatureWarningCelsius": 85,
+            "temperatureCutoffCelsius": 95,
+            "batteryFloorPercent": 15
+          },
+          "manualOverrides": [],
+          "helperOwnership": null,
+          "hasCompletedOnboarding": true
+        }
+        """
+
+        try FileManager.default.createDirectory(at: paths.applicationSupportDirectory, withIntermediateDirectories: true)
+        try Data(legacySettings.utf8).write(to: paths.settingsURL)
+
+        let logStore = LogStore(paths: paths)
+        let store = SettingsStore(paths: paths, logStore: logStore)
+        logStore.start()
+        store.start()
+
+        try check(store.settings.schemaVersion == 2, "Expected legacy settings to migrate to schema 2")
+        try check(store.settings.defaultGraceSeconds == 60, "Expected legacy default grace to migrate to 60 seconds")
+
+        let migratedJSON = try String(contentsOf: paths.settingsURL, encoding: .utf8)
+        try check(migratedJSON.contains("\"schemaVersion\" : 2"), "Expected migrated schema version to be persisted")
+        try check(migratedJSON.contains("\"defaultGraceSeconds\" : 60"), "Expected migrated grace default to be persisted")
     }
 
     private static func freshInstallSettingsCleanupClearsAutoInstallSuppressions() throws {
@@ -3488,6 +3578,13 @@ struct AgentWakeCoreChecks {
         try check(store.settings.defaultGraceSeconds == 600, "Expected import to apply normal settings")
         try check(store.settings.helperOwnership == settings.helperOwnership, "Expected import to preserve local helper ownership")
         try check(store.settings.integrationStates == settings.integrationStates, "Expected import to preserve local integration states")
+
+        let legacyImportJSON = importJSON.replacingOccurrences(
+            of: "\"defaultGraceSeconds\": 600",
+            with: "\"defaultGraceSeconds\": 900"
+        )
+        try store.importData(Data(legacyImportJSON.utf8))
+        try check(store.settings.defaultGraceSeconds == 60, "Expected legacy imported default grace to migrate to 60 seconds")
     }
 
     private static func logsRedactSensitiveFields() throws {

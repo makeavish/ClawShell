@@ -32,7 +32,7 @@ coverage.
 - Session transition matrix: covered by `AgentSessionStateMachineTests`
 - PID reuse and process restart dedupe: covered by `AgentSessionStateMachineTests`
 - Out-of-order hook events
-- Grace timer reset and non-reset rules: covered by `AgentSessionStateMachineTests`
+- Turn completion and non-reactivation rules: covered by `AgentSessionStateMachineTests`
 - Manual override precedence and persistence: covered by `AgentSessionStateMachineTests`
 - Normal assertion ownership/release and failed-release retry behavior: covered by `AssertionManagerTests`
 - Safety transitions, stale sensors, unavailable sensors, and hysteresis: covered by `BagModeSafetyPolicy` checks in `AgentWakeCoreChecks`

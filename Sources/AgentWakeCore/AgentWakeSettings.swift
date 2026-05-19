@@ -1,7 +1,9 @@
 import Foundation
 
 public struct AgentWakeSettings: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    public static let currentSchemaVersion = 2
+    public static let defaultGraceSeconds = 60
+    public static let legacyDefaultGraceSeconds = 900
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -32,7 +34,7 @@ public struct AgentWakeSettings: Codable, Equatable, Sendable {
     public init(
         schemaVersion: Int = AgentWakeSettings.currentSchemaVersion,
         launchAtLogin: Bool = false,
-        defaultGraceSeconds: Int = 900,
+        defaultGraceSeconds: Int = AgentWakeSettings.defaultGraceSeconds,
         agents: [AgentConfiguration] = AgentConfiguration.v1Defaults,
         customAgents: [CustomAgentConfiguration] = [],
         integrationSuppressions: [String: IntegrationSuppression] = [:],
@@ -256,10 +258,15 @@ public struct SettingsExport: Codable, Equatable, Sendable {
     }
 
     public func applying(to settings: AgentWakeSettings) -> AgentWakeSettings {
-        AgentWakeSettings(
-            schemaVersion: schemaVersion,
+        let migratedDefaultGraceSeconds =
+            schemaVersion == 1 && defaultGraceSeconds == AgentWakeSettings.legacyDefaultGraceSeconds
+            ? AgentWakeSettings.defaultGraceSeconds
+            : defaultGraceSeconds
+
+        return AgentWakeSettings(
+            schemaVersion: AgentWakeSettings.currentSchemaVersion,
             launchAtLogin: launchAtLogin,
-            defaultGraceSeconds: defaultGraceSeconds,
+            defaultGraceSeconds: migratedDefaultGraceSeconds,
             agents: agents,
             customAgents: settings.customAgents,
             integrationSuppressions: integrationSuppressions,

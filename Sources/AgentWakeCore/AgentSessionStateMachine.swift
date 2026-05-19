@@ -13,8 +13,8 @@ public final class AgentSessionStateMachine {
     public private(set) var manualKeepAwakeIsIndefinite: Bool
 
     public init(
-        graceInterval: TimeInterval = 15 * 60,
-        processDetectionHoldInterval: TimeInterval = 15 * 60,
+        graceInterval: TimeInterval = TimeInterval(AgentWakeSettings.defaultGraceSeconds),
+        processDetectionHoldInterval: TimeInterval = TimeInterval(AgentWakeSettings.defaultGraceSeconds),
         codexPostToolIdleTimeout: TimeInterval = 90,
         sessions: [AgentSession] = [],
         pauseAllExpiresAt: Date? = nil,
@@ -302,13 +302,8 @@ public final class AgentSessionStateMachine {
                 return
             }
 
-            if sessions[index].agent == .codexCLI {
-                sessions[index].state = .finished
-                sessions[index].standingByExpiresAt = nil
-            } else {
-                sessions[index].state = .standingBy
-                sessions[index].standingByExpiresAt = now.addingTimeInterval(graceInterval)
-            }
+            sessions[index].state = .finished
+            sessions[index].standingByExpiresAt = nil
             sessions[index].lastEvent = SessionEvent(kind: kind, occurredAt: now)
 
         case .sessionFinished, .processDisappeared, .releaseNow:
@@ -519,6 +514,17 @@ public final class AgentSessionStateMachine {
     private func hasFinishedIntegrationSession(matching event: HookAdapterEvent) -> Bool {
         guard let integrationSessionId = event.integrationSessionId else {
             return false
+        }
+
+        if event.agent == .claudeCode && event.event == .turnStarted {
+            return sessions.contains {
+                $0.agent == event.agent
+                    && $0.key.integrationSessionId == integrationSessionId
+                    && $0.state == .finished
+                    && isTerminalIntegrationEndEvent($0.lastEvent?.kind)
+                    && $0.lastEvent?.kind != .turnFinished
+                    && eventProcessEvidenceMatches(session: $0, event: event)
+            }
         }
 
         return sessions.contains {

@@ -41,8 +41,8 @@ struct AgentSessionStateMachineTests {
         try runAgentMonitorStartUsesTimerCadence()
     }
 
-    @Test func transitionMatrixCoversActivityStandbyGraceAndFinish() throws {
-        try runTransitionMatrixCoversActivityStandbyGraceAndFinish()
+    @Test func transitionMatrixCoversActivityTurnCompletionAndFinish() throws {
+        try runTransitionMatrixCoversActivityTurnCompletionAndFinish()
     }
 
     @Test func cpuDiagnosticsDoNotResetActivityOrGrace() throws {
@@ -111,8 +111,8 @@ final class AgentSessionStateMachineTests: XCTestCase {
         try runAgentMonitorStartUsesTimerCadence()
     }
 
-    func testTransitionMatrixCoversActivityStandbyGraceAndFinish() throws {
-        try runTransitionMatrixCoversActivityStandbyGraceAndFinish()
+    func testTransitionMatrixCoversActivityTurnCompletionAndFinish() throws {
+        try runTransitionMatrixCoversActivityTurnCompletionAndFinish()
     }
 
     func testCPUDiagnosticsDoNotResetActivityOrGrace() throws {
@@ -238,19 +238,20 @@ private func runPathLookupVolatilityDoesNotSplitSessions() throws {
     )
     let sessionID = try checkNotNil(machine.sessions.first?.id, "Expected fallback process session")
     machine.applyTrustedEvent(.turnFinished, to: sessionID, at: baseline.addingTimeInterval(10))
-    let expiry = try checkNotNil(machine.sessions.first?.standingByExpiresAt, "Expected standing-by expiry")
+    try check(machine.sessions.first?.state == .finished, "Expected turn completion to finish the process-backed turn")
+    try check(machine.sessions.first?.standingByExpiresAt == nil, "Expected turn completion not to keep a grace hold")
 
     machine.applyProcessObservations(
         [observation(pid: 43, start: baseline, path: "/opt/homebrew/bin/claude", agent: .claudeCode)],
         at: baseline.addingTimeInterval(20)
     )
 
-    try check(machine.sessions.count == 1, "Expected path hash upgrade not to split the same pid/start process")
+    try check(machine.sessions.count == 2, "Expected live process polling after turn completion to create a diagnostic process session")
     try check(machine.sessions[0].id == sessionID, "Expected path hash upgrade to preserve session identity")
-    try check(machine.sessions[0].state == .standingBy, "Expected path hash upgrade not to reactivate the session")
-    try check(machine.sessions[0].standingByExpiresAt == expiry, "Expected path hash upgrade not to reset grace")
-    try check(machine.sessions[0].key.executablePathHash == StablePathHash.sha256("/opt/homebrew/bin/claude"), "Expected path hash to upgrade when a verified path appears")
-    try check(machine.sessions[0].key.executablePathHashIsVerified, "Expected upgraded path hash to be marked verified")
+    try check(machine.sessions[0].state == .finished, "Expected path hash upgrade not to reactivate the finished turn")
+    try check(machine.sessions[1].source == .processScan, "Expected replacement session to stay process-detected only")
+    try check(machine.sessions[1].key.executablePathHash == StablePathHash.sha256("/opt/homebrew/bin/claude"), "Expected path hash to be recorded on the diagnostic process session")
+    try check(machine.sessions[1].key.executablePathHashIsVerified, "Expected diagnostic path hash to be marked verified")
 }
 
 private func runExecutablePathHashParticipatesInVerifiedIdentity() throws {
@@ -458,7 +459,7 @@ private func runAgentMonitorStartUsesTimerCadence() throws {
     try check(monitor.scheduledPollInterval == nil, "Expected stop() to cancel the scheduled poll")
 }
 
-private func runTransitionMatrixCoversActivityStandbyGraceAndFinish() throws {
+private func runTransitionMatrixCoversActivityTurnCompletionAndFinish() throws {
     let machine = AgentSessionStateMachine(graceInterval: 900)
     machine.applyProcessObservations(
         [observation(pid: 50, start: baseline, path: "/opt/homebrew/bin/claude", agent: .claudeCode)],
@@ -487,25 +488,21 @@ private func runTransitionMatrixCoversActivityStandbyGraceAndFinish() throws {
 
     let turnFinishedAt = baseline.addingTimeInterval(10)
     machine.applyTrustedEvent(.turnFinished, to: sessionID, at: turnFinishedAt)
-    try check(machine.sessions[0].state == .standingBy, "Expected turn finish to enter standing by")
-    try check(machine.sessions[0].standingByExpiresAt == turnFinishedAt.addingTimeInterval(900), "Expected default 15 minute grace")
+    try check(machine.sessions[0].state == .finished, "Expected turn finish to release the protected turn")
+    try check(machine.sessions[0].standingByExpiresAt == nil, "Expected turn finish not to keep a grace hold")
+    try check(!machine.aggregateHoldState(at: turnFinishedAt.addingTimeInterval(1)).shouldHold, "Expected completed turn not to hold")
 
     let resumedAt = baseline.addingTimeInterval(20)
     machine.applyTrustedEvent(.agentResumed, to: sessionID, at: resumedAt)
-    try check(machine.sessions[0].state == .active, "Expected trusted resumed event to reactivate")
-    try check(machine.sessions[0].lastActivityAt == resumedAt, "Expected trusted activity to reset last activity")
-    try check(machine.sessions[0].standingByExpiresAt == nil, "Expected trusted activity to clear standing-by expiry")
+    try check(machine.sessions[0].state == .finished, "Expected later activity on the finished turn not to reactivate it")
 
     let secondTurnFinishedAt = baseline.addingTimeInterval(30)
     machine.applyTrustedEvent(.turnFinished, to: sessionID, at: secondTurnFinishedAt)
     machine.applyTrustedEvent(.keepHolding, to: sessionID, at: baseline.addingTimeInterval(40))
-    try check(
-        machine.sessions[0].standingByExpiresAt == secondTurnFinishedAt.addingTimeInterval(1_800),
-        "Expected keep holding to extend by one additional grace window"
-    )
+    try check(machine.sessions[0].state == .finished, "Expected keepHolding not to extend a completed turn")
 
     machine.refreshExpirations(at: secondTurnFinishedAt.addingTimeInterval(1_801))
-    try check(machine.sessions[0].state == .finished, "Expected grace expiry to finish hold decisions")
+    try check(machine.sessions[0].state == .finished, "Expected completed turn to remain finished")
     try check(!machine.aggregateHoldState(at: secondTurnFinishedAt.addingTimeInterval(1_801)).shouldHold, "Expected expired session not to hold")
 }
 
@@ -525,14 +522,18 @@ private func runCPUDiagnosticsDoNotResetActivityOrGrace() throws {
 
     let turnFinishedAt = baseline.addingTimeInterval(180)
     machine.applyTrustedEvent(.turnFinished, to: sessionID, at: turnFinishedAt)
-    let originalExpiry = try checkNotNil(machine.sessions[0].standingByExpiresAt, "Expected standing-by expiry")
+    try check(machine.sessions[0].state == .finished, "Expected turn completion to finish the protected turn")
+    try check(machine.sessions[0].standingByExpiresAt == nil, "Expected turn completion not to keep a grace hold")
 
     machine.applyProcessObservations(
         [observation(pid: 60, start: baseline, path: "/opt/homebrew/bin/claude", agent: .claudeCode, cpuPercent: 0)],
         at: baseline.addingTimeInterval(240)
     )
-    try check(machine.sessions[0].state == .standingBy, "Expected process presence not to reactivate standing-by session")
-    try check(machine.sessions[0].standingByExpiresAt == originalExpiry, "Expected CPU/process polling not to extend grace")
+    try check(machine.sessions[0].state == .finished, "Expected process presence not to reactivate the finished turn")
+    try check(
+        machine.sessions.contains { $0.source == .processScan && $0.state == .active && !$0.hasIntegratedEvidence },
+        "Expected live process presence to remain diagnostic only"
+    )
 }
 
 private func runAggregateHoldRequiresEverySessionToFinishOrExpire() throws {
@@ -572,10 +573,7 @@ private func runAggregateHoldRequiresEverySessionToFinishOrExpire() throws {
 
     machine.applyTrustedEvent(.turnFinished, to: claudeID, at: baseline.addingTimeInterval(10))
     machine.applyTrustedEvent(.sessionFinished, to: codexID, at: baseline.addingTimeInterval(20))
-    try check(machine.aggregateHoldState(at: baseline.addingTimeInterval(30)).shouldHold, "Expected standing-by Claude session to keep aggregate hold active")
-
-    machine.refreshExpirations(at: baseline.addingTimeInterval(911))
-    try check(!machine.aggregateHoldState(at: baseline.addingTimeInterval(911)).shouldHold, "Expected aggregate hold to release only after all sessions finish or expire")
+    try check(!machine.aggregateHoldState(at: baseline.addingTimeInterval(30)).shouldHold, "Expected aggregate hold to release when all active turns finish")
 }
 
 private func runRemainingTransitionRowsAreExecutable() throws {
@@ -648,7 +646,7 @@ private func runTrustedEventsAreMonotonic() throws {
 
     machine.applyTrustedEvent(.turnFinished, to: sessionID, at: baseline.addingTimeInterval(30))
     machine.applyTrustedEvent(.keepHolding, to: sessionID, at: baseline.addingTimeInterval(931))
-    try check(machine.sessions[0].state == .finished, "Expected expired grace to finish before keepHolding is considered")
+    try check(machine.sessions[0].state == .finished, "Expected turn completion to finish before keepHolding is considered")
 
     machine.applyTrustedEvent(.agentResumed, to: sessionID, at: baseline.addingTimeInterval(940))
     try check(machine.sessions[0].state == .finished, "Expected terminal finished session not to reactivate from later stale lifecycle activity")
@@ -780,6 +778,41 @@ private func runOutOfOrderHookEventsAreIgnored() throws {
     try check(terminalMachine.sessions.count == 1, "Expected post-terminal hook not to create a replacement session with the same integration id")
     try check(terminalMachine.sessions[0].state == .finished, "Expected post-terminal hook not to reactivate a finished integration session")
 
+    let claudeEndedMachine = AgentSessionStateMachine(graceInterval: 900)
+    let endedClaudeSessionID = "claude-ended-session"
+    claudeEndedMachine.applyIntegrationEvent(
+        hookEvent(
+            .turnStarted,
+            integrationSessionId: endedClaudeSessionID,
+            pid: 104,
+            processStartTime: processStart,
+            agent: .claudeCode
+        ),
+        at: baseline.addingTimeInterval(20)
+    )
+    claudeEndedMachine.applyIntegrationEvent(
+        hookEvent(
+            .sessionFinished,
+            integrationSessionId: endedClaudeSessionID,
+            pid: 104,
+            processStartTime: processStart,
+            agent: .claudeCode
+        ),
+        at: baseline.addingTimeInterval(30)
+    )
+    claudeEndedMachine.applyIntegrationEvent(
+        hookEvent(
+            .turnStarted,
+            integrationSessionId: endedClaudeSessionID,
+            pid: 104,
+            processStartTime: processStart,
+            agent: .claudeCode
+        ),
+        at: baseline.addingTimeInterval(40)
+    )
+    try check(claudeEndedMachine.sessions.count == 1, "Expected Claude UserPromptSubmit after SessionEnd not to create a new turn")
+    try check(claudeEndedMachine.sessions[0].state == .finished, "Expected ended Claude session to remain finished")
+
     let multiTurnMachine = AgentSessionStateMachine(graceInterval: 5)
     let claudeSessionID = "claude-session-1"
     multiTurnMachine.applyIntegrationEvent(
@@ -802,8 +835,8 @@ private func runOutOfOrderHookEventsAreIgnored() throws {
         ),
         at: baseline.addingTimeInterval(1)
     )
-    multiTurnMachine.refreshExpirations(at: baseline.addingTimeInterval(7))
-    try check(multiTurnMachine.sessions[0].state == .finished, "Expected grace expiry to finish the first Claude turn")
+    try check(multiTurnMachine.sessions[0].state == .finished, "Expected Claude Stop to finish the first turn immediately")
+    try check(multiTurnMachine.sessions[0].standingByExpiresAt == nil, "Expected Claude Stop not to keep a grace hold")
 
     multiTurnMachine.applyIntegrationEvent(
         hookEvent(
@@ -813,9 +846,9 @@ private func runOutOfOrderHookEventsAreIgnored() throws {
             processStartTime: processStart,
             agent: .claudeCode
         ),
-        at: baseline.addingTimeInterval(8)
+        at: baseline.addingTimeInterval(2)
     )
-    try check(multiTurnMachine.sessions.count == 2, "Expected a later Claude prompt with the same session id to create a new turn after grace expiry")
+    try check(multiTurnMachine.sessions.count == 2, "Expected a later Claude prompt with the same session id to create a new turn")
     try check(multiTurnMachine.sessions[1].state == .active, "Expected the later same-session Claude prompt to become active")
 }
 
