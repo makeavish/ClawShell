@@ -6,7 +6,6 @@ enum LaunchAtLoginController {
         case off
         case on
         case needsApproval
-        case requiresInstalledApp
         case unknown
     }
 
@@ -20,10 +19,8 @@ enum LaunchAtLoginController {
             return .on
         case .requiresApproval:
             return .needsApproval
-        case .notRegistered:
+        case .notRegistered, .notFound:
             return .off
-        case .notFound:
-            return .requiresInstalledApp
         @unknown default:
             return .unknown
         }
@@ -35,8 +32,6 @@ enum LaunchAtLoginController {
             return "On"
         case .needsApproval:
             return "Needs approval in Login Items"
-        case .requiresInstalledApp:
-            return "Install in Applications to enable"
         case .unknown:
             return "Unknown"
         case .off:
