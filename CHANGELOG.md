@@ -8,6 +8,9 @@
   AgentWake turn, while `SessionEnd` remains terminal.
 - Reduces the default fallback release window to 1 minute and migrates the
   legacy 15-minute default.
+- Wires Lid-Closed Awake safety to a direct IOReport temperature provider for
+  cutoff preflight/release when samples are usable, with fail-closed handling for
+  untrusted provider output.
 
 ## v0.2.4 - 2026-05-19
 
@@ -96,8 +99,8 @@ Closed-Lid Mode status:
   administrator approval.
 - The implementation toggles `pmset disablesleep`, records the prior value, and
   restores that value when disabled.
-- Live temperature-provider cutoff automation remains deferred; users should
-  treat this as an explicit local/admin-approved mode.
+- In this first release, live temperature-provider cutoff automation was
+  deferred; users should treat this as an explicit local/admin-approved mode.
 - The CLI accepts the product-facing `agentwake closed-lid status|enable|disable`
   path.
 

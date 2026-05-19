@@ -208,7 +208,7 @@ private final class SettingsViewController: NSViewController {
             max: 105,
             increment: 1
         )
-        safetyDetailLabel.stringValue = "Battery floor and macOS critical thermal pressure are enforced now. Direct sensor temperature thresholds are saved for the temperature-provider path."
+        safetyDetailLabel.stringValue = "Battery floor, direct sensor temperature cutoff, and macOS critical thermal pressure are enforced now."
         safetyDetailLabel.textColor = .secondaryLabelColor
         safetyDetailLabel.setAccessibilityLabel("Safety settings detail")
 
@@ -908,8 +908,12 @@ private final class SettingsViewController: NSViewController {
     @objc private func enableClosedLidMode() {
         let controller = services.closedLidModeController
         confirmClosedLidEnable(currentValue: currentDisablesleepText(controller)) { [weak self] in
-            self?.runClosedLidModeAction {
-                try controller.enable()
+            guard let self else {
+                return
+            }
+            let services = self.services
+            self.runClosedLidModeAction {
+                try services.enableClosedLidMode()
             }
         }
     }

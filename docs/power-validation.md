@@ -52,8 +52,10 @@ Attach generated harness directories to the relevant issue or PR when validating
 
 Closed-Lid Mode uses a separate readiness workflow because it may require privileged power-setting changes and real lid-close hardware checks.
 In the app, Lid-Closed Awake is explicit and admin-approved. Runtime safety
-release is wired for the configured battery floor and macOS critical thermal
-pressure. Direct temperature-provider cutoff remains a separate readiness track.
+release is wired for the configured battery floor, direct IOReport temperature
+cutoff for usable samples, provider fail-closed states, and macOS critical
+thermal pressure. Hardware validation still needs real lid-close evidence before
+broader release claims.
 
 Baseline-only capture is non-mutating:
 

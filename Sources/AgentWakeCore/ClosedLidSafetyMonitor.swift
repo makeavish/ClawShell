@@ -13,6 +13,7 @@ public final class ClosedLidSafetyMonitor: AppLifecycleComponent {
     private let agentMonitor: AgentMonitor
     private let assertionManager: AssertionManager
     private let logStore: LogStore
+    private let temperatureReadingProvider: (Date) -> BagModeTemperatureReading
     private let batteryPercentProvider: () -> Int?
     private let thermalPressureProvider: () -> BagModeAppThermalPressure?
     private let now: () -> Date
@@ -29,10 +30,13 @@ public final class ClosedLidSafetyMonitor: AppLifecycleComponent {
         agentMonitor: AgentMonitor,
         assertionManager: AssertionManager,
         logStore: LogStore,
+        temperatureReadingProvider: @escaping (Date) -> BagModeTemperatureReading = { timestamp in
+            DirectTemperatureProvider().currentReading(capturedAt: timestamp)
+        },
         batteryPercentProvider: @escaping () -> Int? = PowerSourceReader.currentBatteryPercent,
         thermalPressureProvider: @escaping () -> BagModeAppThermalPressure? = ClosedLidSafetyMonitor.currentThermalPressure,
         now: @escaping () -> Date = Date.init,
-        pollInterval: TimeInterval = 15,
+        pollInterval: TimeInterval = 10,
         queue: DispatchQueue = DispatchQueue(label: "wtf.vishal.agentwake.closed-lid-safety-monitor")
     ) {
         self.settingsProvider = settingsProvider
@@ -40,6 +44,7 @@ public final class ClosedLidSafetyMonitor: AppLifecycleComponent {
         self.agentMonitor = agentMonitor
         self.assertionManager = assertionManager
         self.logStore = logStore
+        self.temperatureReadingProvider = temperatureReadingProvider
         self.batteryPercentProvider = batteryPercentProvider
         self.thermalPressureProvider = thermalPressureProvider
         self.now = now
@@ -87,7 +92,7 @@ public final class ClosedLidSafetyMonitor: AppLifecycleComponent {
         let decision = policy.evaluate(
             previous: safetyState,
             input: BagModeSafetyInput(
-                temperature: .sample(BagModeTemperatureSample(celsius: 0, capturedAt: timestamp)),
+                temperature: temperatureReadingProvider(timestamp),
                 appThermalPressure: thermalPressureProvider(),
                 batteryPercent: batteryPercentProvider(),
                 now: timestamp

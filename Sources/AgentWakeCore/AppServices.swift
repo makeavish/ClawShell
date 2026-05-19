@@ -362,7 +362,24 @@ public final class AgentMonitor: AppLifecycleComponent {
     }
 }
 
-public final class AgentWakeServices {
+public enum ClosedLidModeSafetyError: Error, Equatable, LocalizedError {
+    case blocked(BagModeSafetyDiagnostic)
+
+    public var errorDescription: String? {
+        switch self {
+        case .blocked(let diagnostic):
+            return [
+                diagnostic.title,
+                diagnostic.detail,
+                diagnostic.recoveryAction
+            ]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+        }
+    }
+}
+
+public final class AgentWakeServices: @unchecked Sendable {
     public let agentMonitor: AgentMonitor
     public let controlServer: ControlServerComponent
     public let assertionManager: AssertionManager
@@ -371,6 +388,9 @@ public final class AgentWakeServices {
     public let logStore: LogStore
     public let closedLidModeController: ClosedLidModeController
     public let closedLidSafetyMonitor: ClosedLidSafetyMonitor
+    private let temperatureReadingProvider: (Date) -> BagModeTemperatureReading
+    private let batteryPercentProvider: () -> Int?
+    private let thermalPressureProvider: () -> BagModeAppThermalPressure?
 
     public init(
         agentMonitor: AgentMonitor? = nil,
@@ -380,9 +400,17 @@ public final class AgentWakeServices {
         closedLidModeController: ClosedLidModeController? = nil,
         settingsStore: SettingsStore? = nil,
         logStore: LogStore? = nil,
+        temperatureReadingProvider: @escaping (Date) -> BagModeTemperatureReading = { timestamp in
+            DirectTemperatureProvider().currentReading(capturedAt: timestamp)
+        },
+        batteryPercentProvider: @escaping () -> Int? = PowerSourceReader.currentBatteryPercent,
+        thermalPressureProvider: @escaping () -> BagModeAppThermalPressure? = ClosedLidSafetyMonitor.currentThermalPressure,
         paths: AgentWakePaths = .defaultPaths(),
         autoInstallIntegrations: Bool = false
     ) {
+        self.temperatureReadingProvider = temperatureReadingProvider
+        self.batteryPercentProvider = batteryPercentProvider
+        self.thermalPressureProvider = thermalPressureProvider
         let resolvedLogStore = logStore ?? LogStore(paths: paths)
         self.logStore = resolvedLogStore
         let resolvedSettingsStore = settingsStore ?? SettingsStore(paths: paths, logStore: resolvedLogStore)
@@ -409,9 +437,24 @@ public final class AgentWakeServices {
             closedLidModeController: resolvedClosedLidModeController,
             agentMonitor: resolvedAgentMonitor,
             assertionManager: resolvedAssertionManager,
-            logStore: resolvedLogStore
+            logStore: resolvedLogStore,
+            temperatureReadingProvider: temperatureReadingProvider,
+            batteryPercentProvider: batteryPercentProvider,
+            thermalPressureProvider: thermalPressureProvider
         )
         self.closedLidSafetyMonitor = resolvedClosedLidSafetyMonitor
+        let closedLidEnableWithSafetyCheck: (Date) throws -> String = { receivedAt in
+            try Self.validateCanArmClosedLidMode(
+                settings: resolvedSettingsStore.settings.safety,
+                temperature: temperatureReadingProvider(receivedAt),
+                batteryPercent: batteryPercentProvider(),
+                thermalPressure: thermalPressureProvider(),
+                at: receivedAt
+            )
+            let message = try resolvedClosedLidModeController.enable()
+            resolvedClosedLidSafetyMonitor.evaluateNow()
+            return message
+        }
         self.controlServer = controlServer ?? ControlServerComponent(
             runtimeStore: ControlRuntimeStore(paths: paths),
             router: DefaultControlCommandRouter(statusProvider: {
@@ -448,8 +491,8 @@ public final class AgentWakeServices {
                 "Production helper uninstall unavailable: no production helper is installed."
             }, closedLidStatusProvider: {
                 resolvedClosedLidModeController.statusMessage()
-            }, closedLidEnableHandler: { _ in
-                try resolvedClosedLidModeController.enable()
+            }, closedLidEnableHandler: { receivedAt in
+                try closedLidEnableWithSafetyCheck(receivedAt)
             }, closedLidDisableHandler: { _ in
                 try resolvedClosedLidModeController.disable()
             }, protectDetectedSessionsHandler: { receivedAt in
@@ -515,6 +558,19 @@ public final class AgentWakeServices {
         lifecycleComponents.reversed().forEach { $0.stop() }
     }
 
+    public func enableClosedLidMode(at timestamp: Date = Date()) throws -> String {
+        try Self.validateCanArmClosedLidMode(
+            settings: settingsStore.settings.safety,
+            temperature: temperatureReadingProvider(timestamp),
+            batteryPercent: batteryPercentProvider(),
+            thermalPressure: thermalPressureProvider(),
+            at: timestamp
+        )
+        let message = try closedLidModeController.enable()
+        closedLidSafetyMonitor.evaluateNow()
+        return message
+    }
+
     public func diagnosticInfo() -> String {
         Self.diagnosticInfo(
             agentMonitor: agentMonitor,
@@ -558,6 +614,9 @@ public final class AgentWakeServices {
         Lid-Closed Awake:
         \(closedLidModeController.statusMessage())
 
+        Direct temperature:
+        \(directTemperatureStatusMessage())
+
         Integrations:
         \(integrations.isEmpty ? "No integration status" : integrations)
 
@@ -586,5 +645,54 @@ public final class AgentWakeServices {
         let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         let error = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         return output.isEmpty ? error : output
+    }
+
+    private static func validateCanArmClosedLidMode(
+        settings: SafetySettings,
+        temperature: BagModeTemperatureReading,
+        batteryPercent: Int?,
+        thermalPressure: BagModeAppThermalPressure?,
+        at timestamp: Date
+    ) throws {
+        let decision = BagModeSafetyPolicy(settings: settings).evaluate(
+            input: BagModeSafetyInput(
+                temperature: temperature,
+                appThermalPressure: thermalPressure,
+                batteryPercent: batteryPercent,
+                now: timestamp
+            ),
+            isBagModeArmed: false
+        )
+
+        guard decision.canArmBagMode else {
+            let diagnostic = BagModeSafetyDiagnostic.userFacing(for: decision) ?? BagModeSafetyDiagnostic(
+                title: "Closed-Lid Mode unavailable",
+                detail: "AgentWake could not confirm that Closed-Lid Mode is safe to use right now.",
+                recoveryAction: "Try again after the safety state refreshes."
+            )
+            throw ClosedLidModeSafetyError.blocked(diagnostic)
+        }
+    }
+
+    private static func directTemperatureStatusMessage() -> String {
+        let status = DirectTemperatureProvider().currentStatus()
+        let sampleDetail = "source=\(status.source) samples=\(status.sampleCount) scaleVerified=\(status.scaleVerifiedCount)/\(status.sampleCount)"
+        switch status.reading {
+        case .sample(let sample):
+            let coverage = sample.coversClosedBagRisk ? "closedBagCoverage=usable" : "closedBagCoverage=unproven"
+            return "\(Int(sample.celsius.rounded())) C \(sampleDetail) \(coverage)"
+        case .unavailable:
+            return "temperature provider unavailable \(sampleDetail) apiFailures=\(status.apiFailureCount)"
+        case .permissionDenied:
+            return "temperature provider permission denied \(sampleDetail)"
+        case .parseFailed:
+            return "temperature provider parse failed \(sampleDetail) invalidSamples=\(status.invalidSampleCount)"
+        case .helperCrashed:
+            return "temperature helper crashed \(sampleDetail)"
+        case .unsupportedHardware:
+            return "temperature provider unsupported on this Mac \(sampleDetail)"
+        case .timedOut:
+            return "temperature provider timed out \(sampleDetail)"
+        }
     }
 }

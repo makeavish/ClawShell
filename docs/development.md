@@ -51,9 +51,9 @@ AgentWake stores local state under `~/Library/Application Support/AgentWake/`:
 User-facing Settings currently manage launch-at-login preference, per-agent
 enablement, manual Mac Active duration, pause duration, and Lid-Closed Awake
 safety thresholds. The safety settings are persisted in `settings.json`; battery
-floor and macOS critical thermal pressure are enforced by the runtime
-release-only safety monitor, while direct temperature thresholds are stored for
-the future temperature-provider path.
+floor, direct IOReport temperature cutoff for usable samples, provider
+fail-closed states, and macOS critical thermal pressure are enforced by the
+runtime release-only safety monitor.
 
 Removing an agent hook records an auto-install suppression in `settings.json` so
 AgentWake does not silently reinstall a hook the user removed. The app uninstall

@@ -25,7 +25,9 @@ struct AgentWakeCoreChecks {
         try cpuDiagnosticsDoNotDriveTransitions()
         try remainingTransitionRowsAreExecutable()
         try bagModeSafetyPolicyCoversWarningCutoffFailClosedAndHysteresis()
+        try directTemperatureProviderReturnsBoundedStatusOrFailClosed()
         try closedLidSafetyMonitorReleasesOnCutoff()
+        try closedLidEnablePreflightsSafety()
         try bagModeSafetyDiagnosticsCoverUserFacingProviderStates()
         try powerSourceReaderParsesPmsetBatteryOutput()
         try trustedEventsAreMonotonic()
@@ -1238,6 +1240,9 @@ struct AgentWakeCoreChecks {
             agentMonitor: monitor,
             assertionManager: assertionManager,
             logStore: logStore,
+            temperatureReadingProvider: { timestamp in
+                .sample(BagModeTemperatureSample(celsius: 70, capturedAt: timestamp))
+            },
             batteryPercentProvider: { 10 },
             thermalPressureProvider: { .nominal },
             now: { Date(timeIntervalSince1970: 5_001) }
@@ -1248,6 +1253,43 @@ struct AgentWakeCoreChecks {
         try check(!controller.isAgentWakeOwnedEnabled(), "Expected safety release to remove AgentWake-owned Closed-Lid Mode")
         try check(monitor.aggregateHoldState.isSafetyCutoffActive, "Expected safety cutoff to suppress further assertions")
         try check(logStore.events.contains { $0.kind == .safetyCutoff && $0.metadata["cutoff"] == "battery" }, "Expected safety cutoff event to be logged")
+
+        let temperatureRunner = RecordingClosedLidModeCommandRunner(initialValue: 0)
+        let temperatureController = ClosedLidModeController(
+            paths: paths,
+            commandRunner: temperatureRunner,
+            now: { Date(timeIntervalSince1970: 5_010) }
+        )
+        _ = try temperatureController.enable()
+        let temperatureMonitor = AgentMonitor(
+            snapshotProvider: StaticSnapshotProvider(snapshotsToReturn: []),
+            settingsProvider: { settings },
+            now: { Date(timeIntervalSince1970: 5_011) }
+        )
+        let temperatureAssertionManager = AssertionManager(
+            controller: RecordingPowerAssertionController(),
+            holdStateProvider: { temperatureMonitor.aggregateHoldState }
+        )
+        let temperatureSafetyMonitor = ClosedLidSafetyMonitor(
+            settingsProvider: { settings },
+            closedLidModeController: temperatureController,
+            agentMonitor: temperatureMonitor,
+            assertionManager: temperatureAssertionManager,
+            logStore: logStore,
+            temperatureReadingProvider: { timestamp in
+                .sample(BagModeTemperatureSample(celsius: 96, capturedAt: timestamp))
+            },
+            batteryPercentProvider: { 80 },
+            thermalPressureProvider: { .nominal },
+            now: { Date(timeIntervalSince1970: 5_011) }
+        )
+        temperatureSafetyMonitor.evaluateNow()
+        try check(temperatureRunner.setValues == [1, 0], "Expected direct temperature cutoff to restore disablesleep")
+        try check(!temperatureController.isAgentWakeOwnedEnabled(), "Expected direct temperature cutoff to release Closed-Lid Mode")
+        try check(
+            logStore.events.contains { $0.kind == .safetyCutoff && $0.metadata["cutoff"] == "temperature" },
+            "Expected direct temperature cutoff event to be logged"
+        )
 
         let unarmedMonitor = AgentMonitor(
             snapshotProvider: StaticSnapshotProvider(snapshotsToReturn: []),
@@ -1261,12 +1303,106 @@ struct AgentWakeCoreChecks {
             agentMonitor: unarmedMonitor,
             assertionManager: unarmedAssertionManager,
             logStore: logStore,
+            temperatureReadingProvider: { timestamp in
+                .sample(BagModeTemperatureSample(celsius: 70, capturedAt: timestamp))
+            },
             batteryPercentProvider: { nil },
             thermalPressureProvider: { .nominal },
             now: { Date(timeIntervalSince1970: 5_002) }
         )
         unarmedSafetyMonitor.evaluateNow()
         try check(!unarmedMonitor.aggregateHoldState.isSafetyCutoffActive, "Expected missing battery while unarmed not to suppress normal sleep protection")
+    }
+
+    private static func directTemperatureProviderReturnsBoundedStatusOrFailClosed() throws {
+        let startedAt = Date()
+        let status = DirectTemperatureProvider(timeoutSeconds: 1).currentStatus(capturedAt: startedAt)
+        let elapsed = Date().timeIntervalSince(startedAt)
+        try check(elapsed < 2, "Expected direct temperature provider to return within its timeout budget")
+
+        switch status.reading {
+        case .sample(let sample):
+            try check(sample.celsius.isFinite, "Expected direct temperature sample to be finite")
+            try check((-40...125).contains(sample.celsius), "Expected direct temperature sample to be bounded")
+            try check(status.sampleCount > 0, "Expected direct temperature sample metadata to include samples")
+            if sample.coversClosedBagRisk {
+                try check(status.scaleVerified, "Expected closed-bag usable samples to have verified scale metadata")
+            } else {
+                try check(!status.scaleVerified, "Expected unverified scale metadata to be marked coverage-insufficient")
+            }
+        case .unavailable, .permissionDenied, .parseFailed, .helperCrashed, .unsupportedHardware, .timedOut:
+            try check(status.sampleCount >= 0, "Expected fail-closed provider status to preserve metadata shape")
+        }
+    }
+
+    private static func closedLidEnablePreflightsSafety() throws {
+        let now = Date(timeIntervalSince1970: 5_100)
+        let settings = AgentWakeSettings(
+            safety: SafetySettings(
+                temperatureWarningCelsius: 85,
+                temperatureCutoffCelsius: 95,
+                batteryFloorPercent: 15
+            )
+        )
+
+        let blockedPaths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: blockedPaths.applicationSupportDirectory) }
+        let blockedRunner = RecordingClosedLidModeCommandRunner(initialValue: 0)
+        let blockedLogStore = LogStore(paths: blockedPaths)
+        let blockedSettingsStore = SettingsStore(settings: settings, paths: blockedPaths, logStore: blockedLogStore)
+        let blockedController = ClosedLidModeController(
+            paths: blockedPaths,
+            commandRunner: blockedRunner,
+            now: { now }
+        )
+        let blockedServices = AgentWakeServices(
+            closedLidModeController: blockedController,
+            settingsStore: blockedSettingsStore,
+            logStore: blockedLogStore,
+            temperatureReadingProvider: { timestamp in
+                .sample(BagModeTemperatureSample(celsius: 96, capturedAt: timestamp))
+            },
+            batteryPercentProvider: { 80 },
+            thermalPressureProvider: { .nominal },
+            paths: blockedPaths
+        )
+
+        do {
+            _ = try blockedServices.enableClosedLidMode(at: now)
+            try check(false, "Expected unsafe direct temperature to block Closed-Lid Mode before pmset")
+        } catch ClosedLidModeSafetyError.blocked(let diagnostic) {
+            try check(
+                diagnostic.title.localizedCaseInsensitiveContains("temperature"),
+                "Expected preflight diagnostic to explain temperature block"
+            )
+        }
+        try check(blockedRunner.setValues.isEmpty, "Expected failed preflight not to mutate disablesleep")
+
+        let allowedPaths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: allowedPaths.applicationSupportDirectory) }
+        let allowedRunner = RecordingClosedLidModeCommandRunner(initialValue: 0)
+        let allowedLogStore = LogStore(paths: allowedPaths)
+        let allowedSettingsStore = SettingsStore(settings: settings, paths: allowedPaths, logStore: allowedLogStore)
+        let allowedController = ClosedLidModeController(
+            paths: allowedPaths,
+            commandRunner: allowedRunner,
+            now: { now }
+        )
+        let allowedServices = AgentWakeServices(
+            closedLidModeController: allowedController,
+            settingsStore: allowedSettingsStore,
+            logStore: allowedLogStore,
+            temperatureReadingProvider: { timestamp in
+                .sample(BagModeTemperatureSample(celsius: 70, capturedAt: timestamp))
+            },
+            batteryPercentProvider: { 80 },
+            thermalPressureProvider: { .nominal },
+            paths: allowedPaths
+        )
+
+        let message = try allowedServices.enableClosedLidMode(at: now)
+        try check(message.contains("Closed-Lid Mode enabled"), "Expected safe preflight to allow Closed-Lid Mode enable")
+        try check(allowedRunner.setValues == [1], "Expected safe preflight to mutate disablesleep once")
     }
 
     private static func bagModeSafetyDiagnosticsCoverUserFacingProviderStates() throws {

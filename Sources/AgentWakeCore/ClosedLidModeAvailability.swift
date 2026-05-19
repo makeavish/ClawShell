@@ -28,13 +28,14 @@ public enum ClosedLidModeGate: String, CaseIterable, Codable, Equatable, Identif
         case .helperLifecycle:
             "install, enable, disable, repair, update, and cleanup still need final validation"
         case .temperatureProvider:
-            "live temperature freshness, cadence, scale, timeout, and fail-closed behavior still need final validation"
+            "direct sensor sampling is wired, but scale, coverage, and timeout validation still need final app evidence"
         case .primitiveMatrix:
             "AC power, display-topology, reboot, and app lifecycle cases still need final app evidence"
         case .packagingConsent:
             "release packaging must prove the helper is never activated before explicit user consent"
         }
     }
+
 }
 
 public struct ClosedLidModeStatus: Equatable, Sendable {

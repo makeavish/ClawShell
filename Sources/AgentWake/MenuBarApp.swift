@@ -413,8 +413,9 @@ final class MenuBarApp: NSObject {
         guard confirmClosedLidEnable(currentValue: currentDisablesleepText(controller)) else {
             return
         }
+        let services = self.services
         runClosedLidAction {
-            try controller.enable()
+            try services.enableClosedLidMode()
         }
     }
 

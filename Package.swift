@@ -39,7 +39,17 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "AgentWakeCore"
+            name: "AgentWakeCore",
+            dependencies: ["AgentWakeTemperatureIOReport"]
+        ),
+        .target(
+            name: "AgentWakeTemperatureIOReport",
+            cSettings: [
+                .unsafeFlags(["-fblocks"])
+            ],
+            linkerSettings: [
+                .linkedFramework("CoreFoundation")
+            ]
         ),
         .executableTarget(
             name: "AgentWake",

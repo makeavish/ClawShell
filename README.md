@@ -62,13 +62,13 @@ Current safeguards include:
 - First-run consent before closed-lid battery mode is enabled
 - A visible menu bar state when guarded mode is active
 - Configurable battery floor release, defaulting to 15%
+- Direct IOReport temperature cutoff preflight/release using the stored Settings
+  threshold when the provider returns a usable sample, with fail-closed behavior
+  otherwise
 - Critical macOS thermal-pressure release
-- Configurable direct-temperature warning and cutoff values stored in Settings
 
 Planned safeguards include:
 
-- A richer live direct-temperature provider that uses the stored temperature
-  warning and cutoff thresholds
 - A privileged helper only for the closed-lid battery path
 
 Normal sleep prevention should work without admin privileges. macOS authorization is planned only when installing the privileged helper needed for closed-lid battery support.
