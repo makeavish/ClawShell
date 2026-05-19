@@ -21,8 +21,8 @@ struct MenuBarModelTests {
         #expect(snapshot.items.map(\.title).contains("No sessions"))
         #expect(snapshot.items.map(\.title).contains(ClosedLidModeAvailability.unavailableTitle))
         #expect(!snapshot.items.map(\.title).contains("Keep 1 session awake"))
+        #expect(snapshot.items.map(\.title).contains("Keep Mac Active"))
         #expect(snapshot.items.map(\.title).contains("Turn On Lid-Closed Awake"))
-        #expect(snapshot.items.map(\.title).contains("Refresh"))
         #expect(!snapshot.items.map(\.title).contains("Claude Code: Installed"))
         #expect(!snapshot.items.map(\.title).contains("Reinstall agent hooks"))
 
@@ -30,18 +30,23 @@ struct MenuBarModelTests {
             currentState: .idle,
             protectableDetectedSessionCount: 2
         )
-        #expect(protectableSnapshot.items.contains {
-            $0.title == "Keep 2 sessions awake" && $0.isEnabled
-        })
+        #expect(!protectableSnapshot.items.contains { $0.title.contains("detected sessions awake") })
 
         let activeSnapshot = MenuBarModel.snapshot(
             currentState: .active,
-            sessionSummary: "Keeping awake for 1 session • 2 more detected"
+            sessionSummary: "1 session kept awake; 2 detected"
         )
-        #expect(activeSnapshot.items.first?.title == "Keeping awake for 1 session • 2 more detected")
-        #expect(activeSnapshot.items.contains {
-            $0.title == "Stop Keeping Awake" && $0.isEnabled
-        })
+        #expect(activeSnapshot.items.first?.title == "1 session kept awake; 2 detected")
+        #expect(!activeSnapshot.items.contains { $0.title == "Stop Keeping Awake" })
+
+        let manualActiveSnapshot = MenuBarModel.snapshot(
+            currentState: .active,
+            sessionSummary: "No sessions running",
+            isManualKeepMacActive: true,
+            manualKeepMacActiveDetail: "Manual Mac-active hold is on indefinitely."
+        )
+        #expect(manualActiveSnapshot.items.first?.title == "Keeping Mac active")
+        #expect(manualActiveSnapshot.items.contains { $0.title == "Stop Keeping Mac Active" && $0.isEnabled })
 
         let degradedSnapshot = MenuBarModel.snapshot(
             currentState: .idle,
@@ -80,7 +85,7 @@ struct MenuBarModelTests {
 
         let activeWithClosedLid = MenuBarModel.snapshot(
             currentState: .active,
-            closedLidModeStatus: "Closed-Lid Mode enabled"
+            closedLidStatus: .enabledByAgentWake
         )
         #expect(activeWithClosedLid.statusItemIcon.baseSystemImageName == "bolt.fill")
         #expect(activeWithClosedLid.statusItemIcon.overlaySystemImageName == "lock.fill")
@@ -103,6 +108,7 @@ struct MenuBarModelTests {
     @Test func stateDerivesFromHoldState() {
         #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: false, heldSessionIDs: [])) == .idle)
         #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [UUID()])) == .active)
+        #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isManuallyKeepingAwake: true)) == .active)
         #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isPaused: true)) == .paused)
         #expect(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isSafetyCutoffActive: true)) == .paused)
     }
@@ -142,8 +148,8 @@ final class MenuBarModelTests: XCTestCase {
         XCTAssertTrue(snapshot.items.map(\.title).contains("No sessions"))
         XCTAssertTrue(snapshot.items.map(\.title).contains(ClosedLidModeAvailability.unavailableTitle))
         XCTAssertFalse(snapshot.items.map(\.title).contains("Keep 1 session awake"))
+        XCTAssertTrue(snapshot.items.map(\.title).contains("Keep Mac Active"))
         XCTAssertTrue(snapshot.items.map(\.title).contains("Turn On Lid-Closed Awake"))
-        XCTAssertTrue(snapshot.items.map(\.title).contains("Refresh"))
         XCTAssertFalse(snapshot.items.map(\.title).contains("Claude Code: Installed"))
         XCTAssertFalse(snapshot.items.map(\.title).contains("Reinstall agent hooks"))
 
@@ -151,18 +157,23 @@ final class MenuBarModelTests: XCTestCase {
             currentState: .idle,
             protectableDetectedSessionCount: 2
         )
-        XCTAssertTrue(protectableSnapshot.items.contains {
-            $0.title == "Keep 2 sessions awake" && $0.isEnabled
-        })
+        XCTAssertFalse(protectableSnapshot.items.contains { $0.title.contains("detected sessions awake") })
 
         let activeSnapshot = MenuBarModel.snapshot(
             currentState: .active,
-            sessionSummary: "Keeping awake for 1 session • 2 more detected"
+            sessionSummary: "1 session kept awake; 2 detected"
         )
-        XCTAssertEqual(activeSnapshot.items.first?.title, "Keeping awake for 1 session • 2 more detected")
-        XCTAssertTrue(activeSnapshot.items.contains {
-            $0.title == "Stop Keeping Awake" && $0.isEnabled
-        })
+        XCTAssertEqual(activeSnapshot.items.first?.title, "1 session kept awake; 2 detected")
+        XCTAssertFalse(activeSnapshot.items.contains { $0.title == "Stop Keeping Awake" })
+
+        let manualActiveSnapshot = MenuBarModel.snapshot(
+            currentState: .active,
+            sessionSummary: "No sessions running",
+            isManualKeepMacActive: true,
+            manualKeepMacActiveDetail: "Manual Mac-active hold is on indefinitely."
+        )
+        XCTAssertEqual(manualActiveSnapshot.items.first?.title, "Keeping Mac active")
+        XCTAssertTrue(manualActiveSnapshot.items.contains { $0.title == "Stop Keeping Mac Active" && $0.isEnabled })
 
         let degradedSnapshot = MenuBarModel.snapshot(
             currentState: .idle,
@@ -201,7 +212,7 @@ final class MenuBarModelTests: XCTestCase {
 
         let activeWithClosedLid = MenuBarModel.snapshot(
             currentState: .active,
-            closedLidModeStatus: "Closed-Lid Mode enabled"
+            closedLidStatus: .enabledByAgentWake
         )
         XCTAssertEqual(activeWithClosedLid.statusItemIcon.baseSystemImageName, "bolt.fill")
         XCTAssertEqual(activeWithClosedLid.statusItemIcon.overlaySystemImageName, "lock.fill")
@@ -224,6 +235,7 @@ final class MenuBarModelTests: XCTestCase {
     func testStateDerivesFromHoldState() {
         XCTAssertEqual(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: false, heldSessionIDs: [])), .idle)
         XCTAssertEqual(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [UUID()])), .active)
+        XCTAssertEqual(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isManuallyKeepingAwake: true)), .active)
         XCTAssertEqual(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isPaused: true)), .paused)
         XCTAssertEqual(AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isSafetyCutoffActive: true)), .paused)
     }

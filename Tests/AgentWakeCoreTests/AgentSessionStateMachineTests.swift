@@ -863,6 +863,30 @@ private func runManualOverridePrecedenceAndPersistence() throws {
     machine.applyManualOverrides(settings.manualOverrides, at: current)
     try check(machine.aggregateHoldState(at: current).isPaused, "Expected manual pause override to suppress direct state-machine holds")
 
+    let keepAwakeExpiresAt = current.addingTimeInterval(120)
+    machine.applyManualOverrides(
+        [
+            ManualOverride(id: "keep-awake", kind: ManualOverrideKind.keepAwake.rawValue, expiresAt: keepAwakeExpiresAt)
+        ],
+        at: current
+    )
+    let manualKeepAwake = machine.aggregateHoldState(at: current)
+    try check(manualKeepAwake.shouldHold, "Expected manual Mac-active override to hold without a session")
+    try check(manualKeepAwake.heldSessionIDs.isEmpty, "Expected manual Mac-active override not to invent a held session")
+    try check(manualKeepAwake.isManuallyKeepingAwake, "Expected manual Mac-active override to be visible in aggregate state")
+    try check(manualKeepAwake.manualKeepAwakeExpiresAt == keepAwakeExpiresAt, "Expected manual Mac-active expiry to be preserved")
+
+    machine.applyManualOverrides(
+        [
+            ManualOverride(id: "pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(60)),
+            ManualOverride(id: "keep-awake", kind: ManualOverrideKind.keepAwake.rawValue, expiresAt: keepAwakeExpiresAt)
+        ],
+        at: current
+    )
+    let pauseDuringManualKeepAwake = machine.aggregateHoldState(at: current)
+    try check(pauseDuringManualKeepAwake.isPaused, "Expected pause override to suppress manual Mac-active hold")
+    try check(!pauseDuringManualKeepAwake.shouldHold, "Expected pause override to release manual Mac-active assertions")
+
     machine.setSafetyCutoffActive(true)
     let safetyDuringPause = machine.aggregateHoldState(at: current)
     try check(safetyDuringPause.isSafetyCutoffActive, "Expected safety cutoff to take precedence over manual pause")
@@ -893,6 +917,19 @@ private func runManualOverridePrecedenceAndPersistence() throws {
     ]
     monitor.poll()
     try check(monitor.aggregateHoldState.shouldHold, "Expected expired persisted pause override not to suppress holds")
+
+    settings.manualOverrides = [
+        ManualOverride(id: "indefinite-keep", kind: ManualOverrideKind.keepAwake.rawValue)
+    ]
+    let emptyManualKeepAwakeMonitor = AgentMonitor(
+        snapshotProvider: StaticSnapshotProvider(snapshotsToReturn: []),
+        settingsProvider: { settings },
+        now: { current }
+    )
+    emptyManualKeepAwakeMonitor.poll()
+    try check(emptyManualKeepAwakeMonitor.aggregateHoldState.shouldHold, "Expected indefinite Mac-active override to hold without sessions")
+    try check(emptyManualKeepAwakeMonitor.aggregateHoldState.isManuallyKeepingAwake, "Expected indefinite Mac-active override to be visible")
+    try check(emptyManualKeepAwakeMonitor.aggregateHoldState.manualKeepAwakeExpiresAt == nil, "Expected indefinite Mac-active override to have no expiry")
 
     settings.manualOverrides = [
         ManualOverride(id: "fallback-pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(60))

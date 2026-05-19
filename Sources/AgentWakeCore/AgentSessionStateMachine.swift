@@ -9,6 +9,8 @@ public final class AgentSessionStateMachine {
     public private(set) var manualPauseAllExpiresAt: Date?
     public private(set) var safetyCutoffActive: Bool
     public private(set) var manualSafetyCutoffExpiresAt: Date?
+    public private(set) var manualKeepAwakeExpiresAt: Date?
+    public private(set) var manualKeepAwakeIsIndefinite: Bool
 
     public init(
         graceInterval: TimeInterval = 15 * 60,
@@ -18,7 +20,9 @@ public final class AgentSessionStateMachine {
         pauseAllExpiresAt: Date? = nil,
         manualPauseAllExpiresAt: Date? = nil,
         safetyCutoffActive: Bool = false,
-        manualSafetyCutoffExpiresAt: Date? = nil
+        manualSafetyCutoffExpiresAt: Date? = nil,
+        manualKeepAwakeExpiresAt: Date? = nil,
+        manualKeepAwakeIsIndefinite: Bool = false
     ) {
         self.graceInterval = graceInterval
         self.processDetectionHoldInterval = processDetectionHoldInterval
@@ -28,6 +32,8 @@ public final class AgentSessionStateMachine {
         self.manualPauseAllExpiresAt = manualPauseAllExpiresAt
         self.safetyCutoffActive = safetyCutoffActive
         self.manualSafetyCutoffExpiresAt = manualSafetyCutoffExpiresAt
+        self.manualKeepAwakeExpiresAt = manualKeepAwakeExpiresAt
+        self.manualKeepAwakeIsIndefinite = manualKeepAwakeIsIndefinite
     }
 
     public func applyProcessObservations(_ observations: [AgentProcessObservation], at now: Date) {
@@ -206,6 +212,14 @@ public final class AgentSessionStateMachine {
             .filter { $0.overrideKind == .safetyCutoff }
             .map { $0.expiresAt ?? .distantFuture }
         manualSafetyCutoffExpiresAt = safetyOverrideExpirations.max()
+
+        let keepAwakeOverrides = activeOverrides.filter { $0.overrideKind == .keepAwake }
+        manualKeepAwakeIsIndefinite = keepAwakeOverrides.contains { $0.expiresAt == nil }
+        if manualKeepAwakeIsIndefinite {
+            manualKeepAwakeExpiresAt = nil
+        } else {
+            manualKeepAwakeExpiresAt = keepAwakeOverrides.compactMap(\.expiresAt).max()
+        }
     }
 
     public func refreshExpirations(at now: Date) {
@@ -219,6 +233,11 @@ public final class AgentSessionStateMachine {
 
         if let manualSafetyCutoffExpiresAt, manualSafetyCutoffExpiresAt <= now {
             self.manualSafetyCutoffExpiresAt = nil
+        }
+
+        if let manualKeepAwakeExpiresAt, manualKeepAwakeExpiresAt <= now {
+            self.manualKeepAwakeExpiresAt = nil
+            manualKeepAwakeIsIndefinite = false
         }
 
         for index in sessions.indices {
@@ -255,6 +274,15 @@ public final class AgentSessionStateMachine {
         let isManuallyPaused = manualPauseAllExpiresAt.map { $0 > now } ?? false
         if isPaused || isManuallyPaused {
             return AgentAggregateHoldState(shouldHold: false, heldSessionIDs: [], isPaused: true)
+        }
+
+        if manualKeepAwakeIsIndefinite || (manualKeepAwakeExpiresAt.map { $0 > now } ?? false) {
+            return AgentAggregateHoldState(
+                shouldHold: true,
+                heldSessionIDs: [],
+                isManuallyKeepingAwake: true,
+                manualKeepAwakeExpiresAt: manualKeepAwakeExpiresAt
+            )
         }
 
         let heldSessionIDs = sessions

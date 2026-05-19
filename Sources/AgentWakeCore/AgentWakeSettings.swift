@@ -225,6 +225,7 @@ public struct ManualOverride: Codable, Equatable, Sendable {
 public enum ManualOverrideKind: String, Codable, Equatable, Sendable {
     case pauseAll
     case safetyCutoff
+    case keepAwake
 }
 
 public struct HelperOwnership: Codable, Equatable, Sendable {

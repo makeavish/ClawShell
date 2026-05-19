@@ -8,6 +8,7 @@ struct AgentWakeCoreChecks {
         try snapshotNamesTheCurrentState()
         try snapshotUsesGlanceableStatusIcons()
         try closedLidModeControllerEnablesAndRestoresPrimitive()
+        try closedLidModeControllerReadsLiveSleepDisabled()
         try stateDerivesFromHoldState()
         try lifecycleComponentsCanStartAndStopTogether()
         try processDetectorMatchesBuiltInAgents()
@@ -95,7 +96,8 @@ struct AgentWakeCoreChecks {
         let titles = snapshot.items.map(\.title)
         try check(titles.contains("No sessions"), "Expected session summary in menu")
         try check(titles.contains(ClosedLidModeAvailability.unavailableTitle), "Expected Closed-Lid Mode boundary in menu")
-        try check(!titles.contains("Also keep 1 detected session awake"), "Expected protect action only when sessions are detected")
+        try check(!titles.contains("Also keep 1 detected session awake"), "Expected session-scoped protect action to stay out of the menu")
+        try check(titles.contains("Keep Mac Active"), "Expected menu to expose manual Mac-active durations")
         try check(titles.contains("Turn On Lid-Closed Awake"), "Expected Closed-Lid Mode enable action in menu")
         try check(!titles.contains("Refresh"), "Expected refresh action to stay out of the menu")
         try check(titles.contains("Pause Sleep Protection"), "Expected menu to expose pause control")
@@ -110,10 +112,8 @@ struct AgentWakeCoreChecks {
             protectableDetectedSessionCount: 2
         )
         try check(
-            protectableSnapshot.items.contains {
-                $0.title == "Also keep 2 detected sessions awake" && $0.isEnabled
-            },
-            "Expected protect action to name the number of detected sessions"
+            !protectableSnapshot.items.contains { $0.title.contains("detected sessions awake") },
+            "Expected detected-session protection to stay out of the visible menu"
         )
 
         let activeSnapshot = MenuBarModel.snapshot(
@@ -127,6 +127,21 @@ struct AgentWakeCoreChecks {
         try check(
             !activeSnapshot.items.contains { $0.title == "Stop Keeping Awake" },
             "Expected active menu to avoid a second sleep-control action"
+        )
+
+        let manualActiveSnapshot = MenuBarModel.snapshot(
+            currentState: .active,
+            sessionSummary: "No sessions running",
+            isManualKeepMacActive: true,
+            manualKeepMacActiveDetail: "Manual Mac-active hold is on indefinitely."
+        )
+        try check(
+            manualActiveSnapshot.items.first?.title == "Keeping Mac active",
+            "Expected manual hold to make the menu status explicit"
+        )
+        try check(
+            manualActiveSnapshot.items.contains { $0.title == "Stop Keeping Mac Active" && $0.isEnabled },
+            "Expected manual hold to expose a stop action"
         )
 
         let degradedSnapshot = MenuBarModel.snapshot(
@@ -283,6 +298,54 @@ struct AgentWakeCoreChecks {
                 "Expected failed enable to remove provisional restore state"
             )
         }
+
+        let unstuckPaths = try makeTemporaryPaths()
+        defer { try? FileManager.default.removeItem(at: unstuckPaths.applicationSupportDirectory) }
+        let unstuckRunner = RecordingClosedLidModeCommandRunner(initialValue: 0, setDoesNotStick: true)
+        let unstuckController = ClosedLidModeController(paths: unstuckPaths, commandRunner: unstuckRunner)
+        do {
+            _ = try unstuckController.enable()
+            throw CheckFailure("Expected enable to fail when SleepDisabled does not change")
+        } catch ClosedLidModeError.pmsetFailed(let message) {
+            try check(message.contains("Expected SleepDisabled=1"), "Expected verification error to name the missing enabled state")
+            try check(unstuckRunner.setValues == [1], "Expected enable to attempt disablesleep=1 before verification")
+            try check(
+                !FileManager.default.fileExists(atPath: unstuckPaths.closedLidModeStateURL.path),
+                "Expected failed verification to remove provisional restore state"
+            )
+        }
+    }
+
+    private static func closedLidModeControllerReadsLiveSleepDisabled() throws {
+        let liveEnabledOutput = """
+        System-wide power settings:
+         SleepDisabled        1
+        Currently in use:
+         sleep                1
+        """
+        try check(
+            PmsetClosedLidModeCommandRunner.parseDisablesleepValue(from: liveEnabledOutput) == 1,
+            "Expected live SleepDisabled output to parse as enabled"
+        )
+
+        let customEnabledOutput = """
+        AC Power:
+         disablesleep         1
+         sleep                1
+        """
+        try check(
+            PmsetClosedLidModeCommandRunner.parseDisablesleepValue(from: customEnabledOutput) == 1,
+            "Expected custom disablesleep output to parse as enabled"
+        )
+
+        let liveDisabledOutput = """
+        System-wide power settings:
+         SleepDisabled        0
+        """
+        try check(
+            PmsetClosedLidModeCommandRunner.parseDisablesleepValue(from: liveDisabledOutput) == 0,
+            "Expected live SleepDisabled output to parse as disabled"
+        )
     }
 
     private static func stateDerivesFromHoldState() throws {
@@ -293,6 +356,10 @@ struct AgentWakeCoreChecks {
         try check(
             AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [UUID()])) == .active,
             "Expected held session to derive active"
+        )
+        try check(
+            AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isManuallyKeepingAwake: true)) == .active,
+            "Expected manual Mac-active hold to derive active"
         )
         try check(
             AgentWakeState.derived(from: AgentAggregateHoldState(shouldHold: true, heldSessionIDs: [], isPaused: true)) == .paused,
@@ -1583,6 +1650,30 @@ struct AgentWakeCoreChecks {
         machine.applyManualOverrides(settings.manualOverrides, at: current)
         try check(machine.aggregateHoldState(at: current).isPaused, "Expected manual pause override to suppress direct state-machine holds")
 
+        let keepAwakeExpiresAt = current.addingTimeInterval(120)
+        machine.applyManualOverrides(
+            [
+                ManualOverride(id: "keep-awake", kind: ManualOverrideKind.keepAwake.rawValue, expiresAt: keepAwakeExpiresAt)
+            ],
+            at: current
+        )
+        let manualKeepAwake = machine.aggregateHoldState(at: current)
+        try check(manualKeepAwake.shouldHold, "Expected manual Mac-active override to hold without a session")
+        try check(manualKeepAwake.heldSessionIDs.isEmpty, "Expected manual Mac-active override not to invent a held session")
+        try check(manualKeepAwake.isManuallyKeepingAwake, "Expected manual Mac-active override to be visible in aggregate state")
+        try check(manualKeepAwake.manualKeepAwakeExpiresAt == keepAwakeExpiresAt, "Expected manual Mac-active expiry to be preserved")
+
+        machine.applyManualOverrides(
+            [
+                ManualOverride(id: "pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(60)),
+                ManualOverride(id: "keep-awake", kind: ManualOverrideKind.keepAwake.rawValue, expiresAt: keepAwakeExpiresAt)
+            ],
+            at: current
+        )
+        let pauseDuringManualKeepAwake = machine.aggregateHoldState(at: current)
+        try check(pauseDuringManualKeepAwake.isPaused, "Expected pause override to suppress manual Mac-active hold")
+        try check(!pauseDuringManualKeepAwake.shouldHold, "Expected pause override to release manual Mac-active assertions")
+
         machine.setSafetyCutoffActive(true)
         let safetyDuringPause = machine.aggregateHoldState(at: current)
         try check(safetyDuringPause.isSafetyCutoffActive, "Expected safety cutoff to take precedence over manual pause")
@@ -1613,6 +1704,19 @@ struct AgentWakeCoreChecks {
         ]
         monitor.poll()
         try check(monitor.aggregateHoldState.shouldHold, "Expected expired persisted pause override not to suppress holds")
+
+        settings.manualOverrides = [
+            ManualOverride(id: "indefinite-keep", kind: ManualOverrideKind.keepAwake.rawValue)
+        ]
+        let emptyManualKeepAwakeMonitor = AgentMonitor(
+            snapshotProvider: StaticSnapshotProvider(snapshotsToReturn: []),
+            settingsProvider: { settings },
+            now: { current }
+        )
+        emptyManualKeepAwakeMonitor.poll()
+        try check(emptyManualKeepAwakeMonitor.aggregateHoldState.shouldHold, "Expected indefinite Mac-active override to hold without sessions")
+        try check(emptyManualKeepAwakeMonitor.aggregateHoldState.isManuallyKeepingAwake, "Expected indefinite Mac-active override to be visible")
+        try check(emptyManualKeepAwakeMonitor.aggregateHoldState.manualKeepAwakeExpiresAt == nil, "Expected indefinite Mac-active override to have no expiry")
 
         settings.manualOverrides = [
             ManualOverride(id: "fallback-pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: current.addingTimeInterval(60))
@@ -3157,6 +3261,21 @@ struct AgentWakeCoreChecks {
             store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll && $0.id == "user-pause" },
             "Expected settings store to persist user pause override"
         )
+        try store.keepMacAwake(until: Date(timeIntervalSince1970: 10_000))
+        try check(
+            store.settings.manualOverrides.contains { $0.overrideKind == .keepAwake && $0.id == "user-keep-awake" },
+            "Expected settings store to persist user Mac-active override"
+        )
+        try check(
+            !store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll },
+            "Expected Mac-active override to clear conflicting pause override"
+        )
+        try store.stopKeepingMacAwake()
+        try check(
+            !store.settings.manualOverrides.contains { $0.overrideKind == .keepAwake },
+            "Expected settings store to clear user Mac-active override"
+        )
+        try store.pauseSleepProtection()
         try store.resumeSleepProtection()
         try check(
             !store.settings.manualOverrides.contains { $0.overrideKind == .pauseAll },
@@ -3631,11 +3750,13 @@ final class RecordingClosedLidModeCommandRunner: ClosedLidModeCommandRunning, @u
     var setValues: [Int] = []
     var readError: Error?
     var setError: Error?
+    var setDoesNotStick: Bool
 
-    init(initialValue: Int, readError: Error? = nil, setError: Error? = nil) {
+    init(initialValue: Int, readError: Error? = nil, setError: Error? = nil, setDoesNotStick: Bool = false) {
         self.currentValue = initialValue
         self.readError = readError
         self.setError = setError
+        self.setDoesNotStick = setDoesNotStick
     }
 
     func currentDisablesleep() throws -> Int {
@@ -3649,6 +3770,9 @@ final class RecordingClosedLidModeCommandRunner: ClosedLidModeCommandRunning, @u
         setValues.append(value)
         if let setError {
             throw setError
+        }
+        guard !setDoesNotStick else {
+            return
         }
         currentValue = value
     }

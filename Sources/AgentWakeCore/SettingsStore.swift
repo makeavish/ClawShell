@@ -95,6 +95,7 @@ public final class SettingsStore: StubLifecycleComponent {
     public func pauseSleepProtection(until expiresAt: Date? = nil) throws {
         var next = settings
         next.manualOverrides.removeAll { $0.overrideKind == .pauseAll }
+        next.manualOverrides.removeAll { $0.overrideKind == .keepAwake }
         next.manualOverrides.append(
             ManualOverride(id: "user-pause", kind: ManualOverrideKind.pauseAll.rawValue, expiresAt: expiresAt)
         )
@@ -104,6 +105,22 @@ public final class SettingsStore: StubLifecycleComponent {
     public func resumeSleepProtection() throws {
         var next = settings
         next.manualOverrides.removeAll { $0.overrideKind == .pauseAll }
+        try save(next)
+    }
+
+    public func keepMacAwake(until expiresAt: Date? = nil) throws {
+        var next = settings
+        next.manualOverrides.removeAll { $0.overrideKind == .keepAwake }
+        next.manualOverrides.removeAll { $0.overrideKind == .pauseAll }
+        next.manualOverrides.append(
+            ManualOverride(id: "user-keep-awake", kind: ManualOverrideKind.keepAwake.rawValue, expiresAt: expiresAt)
+        )
+        try save(next)
+    }
+
+    public func stopKeepingMacAwake() throws {
+        var next = settings
+        next.manualOverrides.removeAll { $0.overrideKind == .keepAwake }
         try save(next)
     }
 

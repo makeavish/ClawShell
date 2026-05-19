@@ -233,16 +233,22 @@ public struct AgentAggregateHoldState: Equatable, Sendable {
     public var heldSessionIDs: [UUID]
     public var isPaused: Bool
     public var isSafetyCutoffActive: Bool
+    public var isManuallyKeepingAwake: Bool
+    public var manualKeepAwakeExpiresAt: Date?
 
     public init(
         shouldHold: Bool,
         heldSessionIDs: [UUID],
         isPaused: Bool = false,
-        isSafetyCutoffActive: Bool = false
+        isSafetyCutoffActive: Bool = false,
+        isManuallyKeepingAwake: Bool = false,
+        manualKeepAwakeExpiresAt: Date? = nil
     ) {
         self.shouldHold = shouldHold
         self.heldSessionIDs = heldSessionIDs
         self.isPaused = isPaused
         self.isSafetyCutoffActive = isSafetyCutoffActive
+        self.isManuallyKeepingAwake = isManuallyKeepingAwake
+        self.manualKeepAwakeExpiresAt = manualKeepAwakeExpiresAt
     }
 }

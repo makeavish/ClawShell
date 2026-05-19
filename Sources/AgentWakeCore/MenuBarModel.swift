@@ -6,6 +6,8 @@ public enum MenuBarItemKind: Equatable, Sendable {
     case separator
     case pauseProtection
     case resumeProtection
+    case keepMacActive
+    case stopKeepingMacActive
     case protectDetectedSessions
     case closedLidEnable
     case closedLidDisable
@@ -91,12 +93,18 @@ public enum MenuBarModel {
         disableClosedLidModeEnabled: Bool = false,
         takeClosedLidOwnershipEnabled: Bool = false,
         isSleepProtectionPaused: Bool = false,
+        isManualKeepMacActive: Bool = false,
+        manualKeepMacActiveDetail: String? = nil,
         integrationStatuses: [IntegrationStatusSnapshot] = []
     ) -> MenuBarSnapshot {
         var items = [
             MenuBarItem(
-                title: statusTitle(currentState: currentState, sessionSummary: sessionSummary),
-                detail: currentState.placeholderDetail,
+                title: statusTitle(
+                    currentState: currentState,
+                    sessionSummary: sessionSummary,
+                    isManualKeepMacActive: isManualKeepMacActive
+                ),
+                detail: isManualKeepMacActive ? (manualKeepMacActiveDetail ?? "Manual Mac-active hold is on.") : currentState.placeholderDetail,
                 isEnabled: false,
                 kind: .status
             )
@@ -112,16 +120,16 @@ public enum MenuBarModel {
             )
         }
 
-        if protectableDetectedSessionCount > 0 {
-            items.append(
-                MenuBarItem(
-                    title: protectDetectedSessionsTitle(count: protectableDetectedSessionCount),
-                    detail: protectDetectedSessionsDetail(count: protectableDetectedSessionCount),
-                    isEnabled: true,
-                    kind: .protectDetectedSessions
-                )
+        _ = protectableDetectedSessionCount
+
+        items.append(
+            MenuBarItem(
+                title: isManualKeepMacActive ? "Stop Keeping Mac Active" : "Keep Mac Active",
+                detail: isManualKeepMacActive ? manualKeepMacActiveDetail : "Keeps this Mac awake for a chosen duration.",
+                isEnabled: true,
+                kind: isManualKeepMacActive ? .stopKeepingMacActive : .keepMacActive
             )
-        }
+        )
 
         items.append(
             MenuBarItem(
@@ -246,7 +254,15 @@ public enum MenuBarModel {
         }
     }
 
-    private static func statusTitle(currentState: AgentWakeState, sessionSummary: String?) -> String {
+    private static func statusTitle(
+        currentState: AgentWakeState,
+        sessionSummary: String?,
+        isManualKeepMacActive: Bool
+    ) -> String {
+        if currentState == .active, isManualKeepMacActive {
+            return "Keeping Mac active"
+        }
+
         if currentState == .active,
            let sessionSummary,
            statusIncludesSessionSummary(currentState: currentState, sessionSummary: sessionSummary) {
@@ -254,14 +270,6 @@ public enum MenuBarModel {
         }
 
         return currentState.menuTitle
-    }
-
-    private static func protectDetectedSessionsTitle(count: Int) -> String {
-        return count == 1 ? "Also keep 1 detected session awake" : "Also keep \(count) detected sessions awake"
-    }
-
-    private static func protectDetectedSessionsDetail(count: Int) -> String {
-        return "Keeps detected sessions awake until they exit."
     }
 
     private static func closedLidStatusTitle(_ status: ClosedLidStatus?) -> String {

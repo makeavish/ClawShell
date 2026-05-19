@@ -11,7 +11,7 @@ final class SettingsWindowController: NSWindowController {
         let window = SettingsWindow(contentViewController: contentViewController)
         window.title = "AgentWake Settings"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 760, height: 720))
+        window.setContentSize(NSSize(width: 760, height: 760))
         window.center()
         window.isReleasedWhenClosed = false
         window.tabbingMode = .disallowed
@@ -57,6 +57,7 @@ extension SettingsWindowController: NSWindowDelegate {
 private final class SettingsViewController: NSViewController {
     private static let pauseTomorrowMorningTag = -1
     private static let pauseIndefinitelyTag = -2
+    private static let keepMacActiveIndefinitelyTag = -2
     private static let pauseOptions: [(title: String, tag: Int)] = [
         ("30 minutes", 30 * 60),
         ("1 hour", 60 * 60),
@@ -64,9 +65,16 @@ private final class SettingsViewController: NSViewController {
         ("Until tomorrow morning", pauseTomorrowMorningTag),
         ("Indefinitely", pauseIndefinitelyTag)
     ]
+    private static let keepMacActiveOptions: [(title: String, tag: Int)] = [
+        ("30 minutes", 30 * 60),
+        ("1 hour", 60 * 60),
+        ("4 hours", 4 * 60 * 60),
+        ("Indefinitely", keepMacActiveIndefinitelyTag)
+    ]
 
     private let services: AgentWakeServices
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
+    private let macActiveStatusLabel = NSTextField(wrappingLabelWithString: "")
     private let sessionListLabel = NSTextField(wrappingLabelWithString: "")
     private let launchAtLoginCheckbox = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
     private let launchAtLoginStatusLabel = NSTextField(labelWithString: "")
@@ -89,7 +97,8 @@ private final class SettingsViewController: NSViewController {
     private let codexDetailsLabel = NSTextField(wrappingLabelWithString: "")
     private let claudeRemoveButton = NSButton(title: "Remove", target: nil, action: nil)
     private let codexRemoveButton = NSButton(title: "Remove", target: nil, action: nil)
-    private let protectButton = NSButton(title: "Keep sessions awake", target: nil, action: nil)
+    private let keepMacActiveButton = NSButton(title: "Keep Mac Active...", target: nil, action: nil)
+    private let stopKeepingMacActiveButton = NSButton(title: "Stop", target: nil, action: nil)
     private let pauseButton = NSButton(title: "Resume Sleep Protection", target: nil, action: nil)
     private let pauseOptionsButton = NSButton(title: "Pause Sleep Protection...", target: nil, action: nil)
     private let enableClosedLidButton = NSButton(title: "Turn On", target: nil, action: nil)
@@ -129,6 +138,8 @@ private final class SettingsViewController: NSViewController {
 
         statusLabel.font = .preferredFont(forTextStyle: .title3)
         statusLabel.setAccessibilityLabel("AgentWake runtime status")
+        macActiveStatusLabel.textColor = .secondaryLabelColor
+        macActiveStatusLabel.setAccessibilityLabel("Manual Mac Active status")
         sessionListLabel.textColor = .secondaryLabelColor
         sessionListLabel.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         sessionListLabel.maximumNumberOfLines = 12
@@ -218,10 +229,15 @@ private final class SettingsViewController: NSViewController {
         integrationStack.alignment = .leading
         integrationStack.spacing = 6
 
-        protectButton.target = self
-        protectButton.action = #selector(protectDetectedSessions)
-        protectButton.bezelStyle = .rounded
-        protectButton.setAccessibilityLabel("Keep detected sessions awake")
+        keepMacActiveButton.target = self
+        keepMacActiveButton.action = #selector(showKeepMacActiveOptions)
+        keepMacActiveButton.bezelStyle = .rounded
+        keepMacActiveButton.setAccessibilityLabel("Keep Mac active")
+
+        stopKeepingMacActiveButton.target = self
+        stopKeepingMacActiveButton.action = #selector(stopKeepingMacActive)
+        stopKeepingMacActiveButton.bezelStyle = .rounded
+        stopKeepingMacActiveButton.setAccessibilityLabel("Stop keeping Mac active")
 
         pauseButton.target = self
         pauseButton.action = #selector(toggleSleepProtectionPause)
@@ -275,7 +291,7 @@ private final class SettingsViewController: NSViewController {
         uninstallButton.bezelStyle = .rounded
         uninstallButton.setAccessibilityLabel("Uninstall AgentWake")
 
-        let sessionButtons = rowStack([protectButton, pauseOptionsButton, pauseButton, refreshButton])
+        let sessionButtons = rowStack([keepMacActiveButton, stopKeepingMacActiveButton, pauseOptionsButton, pauseButton, refreshButton])
         let closedLidButtons = rowStack([enableClosedLidButton, disableClosedLidButton])
         let generalStack = rowStack([launchAtLoginCheckbox, launchAtLoginStatusLabel])
         let safetyStack = NSStackView(views: [
@@ -296,6 +312,7 @@ private final class SettingsViewController: NSViewController {
             separator(),
             sectionHeader("Sessions"),
             statusLabel,
+            macActiveStatusLabel,
             sessionListLabel,
             sessionButtons,
             separator(),
@@ -362,11 +379,12 @@ private final class SettingsViewController: NSViewController {
         launchAtLoginStatusLabel.stringValue = LaunchAtLoginController.statusText
         launchAtLoginStatusLabel.isHidden = LaunchAtLoginController.statusText.isEmpty
 
-        let protectableCount = services.agentMonitor.protectableDetectedSessionCount
+        let holdState = services.agentMonitor.aggregateHoldState
         statusLabel.stringValue = services.agentMonitor.sessionSummaryMessage()
+        macActiveStatusLabel.stringValue = macActiveStatusText(for: holdState)
         sessionListLabel.stringValue = services.agentMonitor.sessionDetailMessage()
-        protectButton.title = protectButtonTitle(count: protectableCount)
-        protectButton.isEnabled = protectableCount > 0
+        keepMacActiveButton.title = holdState.isManuallyKeepingAwake ? "Change Duration..." : "Keep Mac Active..."
+        stopKeepingMacActiveButton.isHidden = !holdState.isManuallyKeepingAwake
         pauseButton.isHidden = !isSleepProtectionPaused
         pauseOptionsButton.isHidden = isSleepProtectionPaused
         refreshButton.isHidden = !isStatusStale()
@@ -515,14 +533,6 @@ private final class SettingsViewController: NSViewController {
 
     private func agentEnabledState(agentID: String) -> Bool {
         services.settingsStore.settings.agents.first(where: { $0.id == agentID })?.isEnabled ?? false
-    }
-
-    private func protectButtonTitle(count: Int) -> String {
-        guard count > 0 else {
-            return "Keep sessions awake"
-        }
-
-        return count == 1 ? "Also keep 1 detected session awake" : "Also keep \(count) detected sessions awake"
     }
 
     private func closedLidDisplayText(for status: ClosedLidStatus) -> String {
@@ -692,6 +702,56 @@ private final class SettingsViewController: NSViewController {
         }
     }
 
+    @objc private func showKeepMacActiveOptions() {
+        let alert = NSAlert()
+        alert.messageText = "Keep Mac Active"
+        alert.informativeText = "Choose how long AgentWake should keep this Mac awake, even if no agent session is active."
+        alert.alertStyle = .informational
+        for option in Self.keepMacActiveOptions {
+            alert.addButton(withTitle: option.title)
+        }
+        alert.addButton(withTitle: "Cancel")
+
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else {
+                return
+            }
+            let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            guard Self.keepMacActiveOptions.indices.contains(index) else {
+                return
+            }
+            self.applyKeepMacActiveOption(Self.keepMacActiveOptions[index].tag)
+        }
+
+        if let window = view.window {
+            beginFrontmostSheet(alert, for: window, completionHandler: handleResponse)
+        } else {
+            handleResponse(runFrontmostAlert(alert))
+        }
+    }
+
+    private func applyKeepMacActiveOption(_ tag: Int) {
+        do {
+            try services.settingsStore.keepMacAwake(until: keepMacActiveExpiration(forTag: tag, from: Date()))
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refresh()
+        } catch {
+            presentAlert(title: "Could not keep Mac active", message: error.localizedDescription, style: .warning)
+        }
+    }
+
+    @objc private func stopKeepingMacActive() {
+        do {
+            try services.settingsStore.stopKeepingMacAwake()
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refresh()
+        } catch {
+            presentAlert(title: "Could not stop keeping Mac active", message: error.localizedDescription, style: .warning)
+        }
+    }
+
     private func applyPauseOption(_ tag: Int) {
         do {
             try services.settingsStore.pauseSleepProtection(until: pauseExpiration(forTag: tag, from: Date()))
@@ -718,6 +778,48 @@ private final class SettingsViewController: NSViewController {
             return nil
         }
         return nil
+    }
+
+    private func keepMacActiveExpiration(forTag tag: Int, from now: Date) -> Date? {
+        if tag > 0 {
+            return now.addingTimeInterval(TimeInterval(tag))
+        }
+        if tag == Self.keepMacActiveIndefinitelyTag {
+            return nil
+        }
+        return nil
+    }
+
+    private func macActiveStatusText(for holdState: AgentAggregateHoldState) -> String {
+        guard holdState.isManuallyKeepingAwake else {
+            return "Mac Active: off"
+        }
+
+        guard let expiresAt = holdState.manualKeepAwakeExpiresAt else {
+            return "Mac Active: on indefinitely"
+        }
+
+        return "Mac Active: on for \(relativeDuration(until: expiresAt, from: Date()))"
+    }
+
+    private func relativeDuration(until date: Date, from now: Date) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now)))
+        if seconds < 60 {
+            return "\(seconds) seconds"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+        }
+
+        let hours = minutes / 60
+        if hours < 24 {
+            return hours == 1 ? "1 hour" : "\(hours) hours"
+        }
+
+        let days = hours / 24
+        return days == 1 ? "1 day" : "\(days) days"
     }
 
     @objc private func toggleLaunchAtLogin() {

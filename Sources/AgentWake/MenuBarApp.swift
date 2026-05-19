@@ -5,6 +5,7 @@ import AgentWakeCore
 final class MenuBarApp: NSObject {
     private static let pauseTomorrowMorningTag = -1
     private static let pauseIndefinitelyTag = -2
+    private static let keepMacActiveIndefinitelyTag = -2
 
     private let services: AgentWakeServices
     private let statusItem: NSStatusItem
@@ -70,6 +71,7 @@ final class MenuBarApp: NSObject {
     }
 
     private func renderMenu() {
+        let holdState = services.agentMonitor.aggregateHoldState
         let snapshot = MenuBarModel.snapshot(
             currentState: currentState,
             sessionSummary: services.agentMonitor.sessionSummaryMessage(),
@@ -80,6 +82,8 @@ final class MenuBarApp: NSObject {
             disableClosedLidModeEnabled: canDisableClosedLidMode,
             takeClosedLidOwnershipEnabled: canTakeClosedLidOwnership,
             isSleepProtectionPaused: isSleepProtectionPaused,
+            isManualKeepMacActive: holdState.isManuallyKeepingAwake,
+            manualKeepMacActiveDetail: manualKeepMacActiveDetail(for: holdState),
             integrationStatuses: services.integrationManager.snapshots()
         )
 
@@ -172,6 +176,10 @@ final class MenuBarApp: NSObject {
                 menu.addItem(pauseProtectionMenuItem(for: item))
             case .resumeProtection:
                 menu.addItem(actionMenuItem(for: item, action: #selector(resumeSleepProtection)))
+            case .keepMacActive:
+                menu.addItem(keepMacActiveMenuItem(for: item))
+            case .stopKeepingMacActive:
+                menu.addItem(actionMenuItem(for: item, action: #selector(stopKeepingMacActive)))
             case .protectDetectedSessions:
                 menu.addItem(actionMenuItem(for: item, action: #selector(protectDetectedSessions)))
             case .closedLidEnable:
@@ -253,6 +261,27 @@ final class MenuBarApp: NSObject {
         return menuItem
     }
 
+    private func keepMacActiveMenuItem(for item: MenuBarItem) -> NSMenuItem {
+        let menuItem = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
+        menuItem.isEnabled = item.isEnabled
+        let submenu = NSMenu(title: item.title)
+        submenu.autoenablesItems = false
+        addKeepMacActiveOption("For 30 minutes", tag: 30 * 60, to: submenu)
+        addKeepMacActiveOption("For 1 hour", tag: 60 * 60, to: submenu)
+        addKeepMacActiveOption("For 4 hours", tag: 4 * 60 * 60, to: submenu)
+        addKeepMacActiveOption("Indefinitely", tag: Self.keepMacActiveIndefinitelyTag, to: submenu)
+        menuItem.submenu = submenu
+        return menuItem
+    }
+
+    private func addKeepMacActiveOption(_ title: String, tag: Int, to menu: NSMenu) {
+        let item = NSMenuItem(title: title, action: #selector(keepMacActiveOption(_:)), keyEquivalent: "")
+        item.target = self
+        item.tag = tag
+        item.isEnabled = true
+        menu.addItem(item)
+    }
+
     private func addPauseOption(_ title: String, tag: Int, to menu: NSMenu) {
         let item = NSMenuItem(title: title, action: #selector(pauseSleepProtectionOption(_:)), keyEquivalent: "")
         item.target = self
@@ -263,6 +292,34 @@ final class MenuBarApp: NSObject {
 
     @objc private func pauseSleepProtectionOption(_ sender: NSMenuItem) {
         pauseSleepProtection(until: pauseExpiration(forTag: sender.tag, from: Date()))
+    }
+
+    @objc private func keepMacActiveOption(_ sender: NSMenuItem) {
+        keepMacActive(until: keepMacActiveExpiration(forTag: sender.tag, from: Date()))
+    }
+
+    private func keepMacActive(until expiresAt: Date?) {
+        do {
+            try services.settingsStore.keepMacAwake(until: expiresAt)
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refreshState()
+            settingsWindowController.refresh()
+        } catch {
+            presentMessage(title: "Could not keep Mac active", message: error.localizedDescription, style: .warning)
+        }
+    }
+
+    @objc private func stopKeepingMacActive() {
+        do {
+            try services.settingsStore.stopKeepingMacAwake()
+            services.agentMonitor.poll()
+            services.assertionManager.reconcile()
+            refreshState()
+            settingsWindowController.refresh()
+        } catch {
+            presentMessage(title: "Could not stop keeping Mac active", message: error.localizedDescription, style: .warning)
+        }
     }
 
     private func pauseSleepProtection(until expiresAt: Date?) {
@@ -292,6 +349,48 @@ final class MenuBarApp: NSObject {
             return nil
         }
         return nil
+    }
+
+    private func keepMacActiveExpiration(forTag tag: Int, from now: Date) -> Date? {
+        if tag > 0 {
+            return now.addingTimeInterval(TimeInterval(tag))
+        }
+        if tag == Self.keepMacActiveIndefinitelyTag {
+            return nil
+        }
+        return nil
+    }
+
+    private func manualKeepMacActiveDetail(for holdState: AgentAggregateHoldState) -> String? {
+        guard holdState.isManuallyKeepingAwake else {
+            return nil
+        }
+
+        guard let expiresAt = holdState.manualKeepAwakeExpiresAt else {
+            return "Manual Mac-active hold is on indefinitely."
+        }
+
+        return "Manual Mac-active hold ends in \(relativeDuration(until: expiresAt, from: Date()))."
+    }
+
+    private func relativeDuration(until date: Date, from now: Date) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now)))
+        if seconds < 60 {
+            return "\(seconds) seconds"
+        }
+
+        let minutes = seconds / 60
+        if minutes < 60 {
+            return minutes == 1 ? "1 minute" : "\(minutes) minutes"
+        }
+
+        let hours = minutes / 60
+        if hours < 24 {
+            return hours == 1 ? "1 hour" : "\(hours) hours"
+        }
+
+        let days = hours / 24
+        return days == 1 ? "1 day" : "\(days) days"
     }
 
     @objc private func resumeSleepProtection() {

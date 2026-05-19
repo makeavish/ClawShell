@@ -8,7 +8,7 @@ Codex CLI work:
 - keeps the Mac awake while active agent sessions run
 - shows a glanceable menu bar state
 - releases sleep protection when sessions finish
-- can keep detected already-running sessions awake manually
+- can keep the Mac active manually for a chosen duration or indefinitely
 - supports explicit admin-approved Lid-Closed Awake with release-only battery and
   thermal safety cutoffs
 - lets you pause protection for a chosen duration when you intentionally want
@@ -26,7 +26,7 @@ AgentWake is in early public release, focused on Claude Code and Codex CLI.
 | Idle sleep | Supported | Supported |
 | Lid-closed on AC | Admin-approved | Admin-approved |
 | Lid-closed on battery | Works, release-only safety cutoffs | Works, release-only safety cutoffs |
-| Manual protection | Protect detected sessions | Protect detected sessions |
+| Manual Mac Active | Duration-based | Duration-based |
 | Pause / resume | Supported | Supported |
 | Launch at login | Optional Settings toggle | Optional Settings toggle |
 
@@ -34,7 +34,7 @@ AgentWake is in early public release, focused on Claude Code and Codex CLI.
 
 Long-running coding agents can work for minutes or hours. macOS can interrupt them through idle sleep or clamshell sleep, especially when a MacBook lid is closed on battery.
 
-`caffeinate -i` helps with idle sleep, but it is easy to forget and does not track agent lifecycle. AgentWake aims to make normal sleep prevention automatic, visible, and agent-scoped without becoming a general-purpose "keep my Mac awake forever" tool.
+`caffeinate -i` helps with idle sleep, but it is easy to forget and does not track agent lifecycle. AgentWake aims to make normal sleep prevention automatic, visible, and agent-scoped, while still offering an explicit timed or indefinite manual hold when you need one.
 
 Closed-Lid Mode currently uses macOS administrator approval to toggle the
 `pmset disablesleep` primitive and records the prior value so AgentWake can
@@ -85,6 +85,7 @@ Settings exposes:
 - Per-agent enable/disable toggles for Claude Code and Codex CLI
 - Integration details, including config paths and owned changes
 - Safety thresholds for Lid-Closed Awake
+- Keep Mac Active with duration choices
 - Pause Sleep Protection with duration choices
 - Event log, diagnostic copy, and uninstall actions
 

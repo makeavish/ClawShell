@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.3 - 2026-05-19
+
+- Replaces the visible detected-session manual protection control with a
+  duration-based Keep Mac Active control.
+- Adds manual Mac-active choices for 30 minutes, 1 hour, 4 hours, and
+  indefinitely, plus an explicit stop action.
+- Fixes Lid-Closed Awake status on Macs where `pmset -g live` reports
+  `SleepDisabled=1` but `pmset -g custom` omits `disablesleep`.
+
 ## v0.2.2 - 2026-05-18
 
 Settings and safety polish release:

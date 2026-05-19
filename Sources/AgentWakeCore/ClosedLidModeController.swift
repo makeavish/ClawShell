@@ -71,16 +71,43 @@ public struct PmsetClosedLidModeCommandRunner: ClosedLidModeCommandRunning {
     public init() {}
 
     public func currentDisablesleep() throws -> Int {
-        let output = try runProcess("/usr/bin/pmset", arguments: ["-g", "custom"])
-        let pattern = #"\bdisablesleep\s+([01])\b"#
-        if let regex = try? NSRegularExpression(pattern: pattern),
-           let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
-           let range = Range(match.range(at: 1), in: output) {
-            return Int(output[range]) ?? 0
+        var liveReadError: Error?
+
+        do {
+            let liveOutput = try runProcess("/usr/bin/pmset", arguments: ["-g", "live"])
+            if let value = Self.parseDisablesleepValue(from: liveOutput) {
+                return value
+            }
+        } catch {
+            liveReadError = error
         }
 
-        // macOS omits disablesleep from pmset output until a non-default value is set.
+        do {
+            let customOutput = try runProcess("/usr/bin/pmset", arguments: ["-g", "custom"])
+            if let value = Self.parseDisablesleepValue(from: customOutput) {
+                return value
+            }
+        } catch {
+            if let liveReadError {
+                throw liveReadError
+            }
+            throw error
+        }
+
+        // macOS can omit disablesleep from custom output when the effective
+        // live value is the default/off state.
         return 0
+    }
+
+    public static func parseDisablesleepValue(from output: String) -> Int? {
+        let pattern = #"\b(?:disablesleep|SleepDisabled)\s+([01])\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
+              let range = Range(match.range(at: 1), in: output) else {
+            return nil
+        }
+
+        return Int(output[range])
     }
 
     public func setDisablesleep(_ value: Int) throws {
@@ -229,6 +256,7 @@ public final class ClosedLidModeController: @unchecked Sendable {
         try saveState(ClosedLidModeState(previousDisablesleep: current, enabledAt: enabledAt, phase: .pending))
         do {
             try commandRunner.setDisablesleep(1)
+            try verifyDisablesleep(1)
             try saveState(ClosedLidModeState(previousDisablesleep: current, enabledAt: enabledAt, phase: .active))
         } catch {
             try? removeState()
@@ -263,6 +291,7 @@ public final class ClosedLidModeController: @unchecked Sendable {
             return "Closed-Lid Mode already disabled\nSleepDisabled=\(restoreValue)"
         }
         try commandRunner.setDisablesleep(restoreValue)
+        try verifyDisablesleep(restoreValue)
         try removeState()
         return "Closed-Lid Mode disabled\nSleepDisabled=\(restoreValue)"
     }
@@ -333,6 +362,13 @@ public final class ClosedLidModeController: @unchecked Sendable {
     private func saveState(_ state: ClosedLidModeState) throws {
         let data = try encoder.encode(state)
         try AtomicFileWriter.write(data, to: paths.closedLidModeStateURL, fileManager: fileManager)
+    }
+
+    private func verifyDisablesleep(_ expected: Int) throws {
+        let actual = try commandRunner.currentDisablesleep()
+        guard actual == expected else {
+            throw ClosedLidModeError.pmsetFailed("Expected SleepDisabled=\(expected), got \(actual)")
+        }
     }
 
     private func removeState() throws {
