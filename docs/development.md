@@ -51,9 +51,8 @@ AgentWake stores local state under `~/Library/Application Support/AgentWake/`:
 User-facing Settings currently manage launch-at-login preference, per-agent
 enablement, manual Mac Active duration, pause duration, and Lid-Closed Awake
 safety thresholds. The safety settings are persisted in `settings.json`; battery
-floor, direct IOReport temperature cutoff for usable samples, provider
-fail-closed states, and macOS critical thermal pressure are enforced by the
-runtime release-only safety monitor.
+floor, direct IOReport temperature cutoff, and provider fail-closed states are
+enforced by the runtime release-only safety monitor.
 
 Removing an agent hook records an auto-install suppression in `settings.json` so
 AgentWake does not silently reinstall a hook the user removed. The app uninstall
@@ -61,9 +60,9 @@ sheet has an optional fresh-install cleanup checkbox, and the CLI has
 `agentwake uninstall --remove-integrations --remove-settings`, to clear that
 saved suppression before reinstall testing.
 
-Pre-release ClawShell state under `~/Library/Application Support/ClawShell/` is
+Pre-release AgentWake state under `~/Library/Application Support/AgentWake/` is
 not migrated. The integration patchers still recognize and remove legacy
-ClawShell-owned Claude Code and Codex CLI hooks so early dogfood installs do not
+AgentWake-owned Claude Code and Codex CLI hooks so early dogfood installs do not
 keep duplicate product-owned hooks after the rename.
 
 Config exports exclude logs, runtime tokens, helper ownership state, integration status paths, cwd hashes, and hook payloads. Custom executable paths can still reveal local machine details, so exported config should be shared carefully.

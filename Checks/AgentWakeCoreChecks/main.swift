@@ -1045,20 +1045,19 @@ struct AgentWakeCoreChecks {
         try check(warning.action == .warn, "Expected warning temperature to warn without cutting off")
         try check(warning.canArmBagMode, "Expected warning state to remain armable below cutoff")
 
-        let supplementalWarning = policy.evaluate(
+        let supplementalPressure = policy.evaluate(
             input: safetyInput(temperature: 60, pressure: .serious, battery: 80, now: now),
             isBagModeArmed: false
         )
-        try check(supplementalWarning.state.mode == .warning, "Expected app thermal pressure to be supplemental warning")
-        try check(supplementalWarning.action == .warn, "Expected app thermal pressure not to be sole cutoff source")
-        try check(supplementalWarning.canArmBagMode, "Expected app thermal pressure warning not to veto arming by itself")
+        try check(supplementalPressure.state.mode == .normal, "Expected app thermal pressure not to affect temperature/battery safety")
+        try check(supplementalPressure.action == .allow, "Expected app thermal pressure not to block arming")
 
-        let thermalPressureCutoff = policy.evaluate(
+        let thermalPressureIgnored = policy.evaluate(
             input: safetyInput(temperature: 60, pressure: .critical, battery: 80, now: now),
             isBagModeArmed: true
         )
-        try check(thermalPressureCutoff.state.cutoffReason == .temperature, "Expected critical app thermal pressure to cut off")
-        try check(thermalPressureCutoff.action == .releaseIfArmed, "Expected critical app thermal pressure to release")
+        try check(thermalPressureIgnored.state.mode == .normal, "Expected critical app thermal pressure not to affect temperature/battery safety")
+        try check(thermalPressureIgnored.action == .allow, "Expected critical app thermal pressure not to release without temperature cutoff")
 
         let temperatureCutoff = policy.evaluate(
             input: safetyInput(temperature: 96, battery: 80, now: now),
@@ -1126,7 +1125,7 @@ struct AgentWakeCoreChecks {
             try check(decision.action == .releaseIfArmed, "Expected \(reason.rawValue) to release armed Closed-Lid Mode")
         }
 
-        let coverage = policy.evaluate(
+        let coverageMetadataIgnored = policy.evaluate(
             input: BagModeSafetyInput(
                 temperature: .sample(
                     BagModeTemperatureSample(
@@ -1140,7 +1139,8 @@ struct AgentWakeCoreChecks {
             ),
             isBagModeArmed: true
         )
-        try check(coverage.state.cutoffReason == .coverageInsufficient, "Expected unsupported thermal coverage to fail closed")
+        try check(coverageMetadataIgnored.state.mode == .normal, "Expected coverage metadata not to affect temperature/battery safety")
+        try check(coverageMetadataIgnored.action == .allow, "Expected coverage metadata not to release without temperature cutoff")
 
         let missingBattery = policy.evaluate(
             input: BagModeSafetyInput(
@@ -1325,11 +1325,7 @@ struct AgentWakeCoreChecks {
             try check(sample.celsius.isFinite, "Expected direct temperature sample to be finite")
             try check((-40...125).contains(sample.celsius), "Expected direct temperature sample to be bounded")
             try check(status.sampleCount > 0, "Expected direct temperature sample metadata to include samples")
-            if sample.coversClosedBagRisk {
-                try check(status.scaleVerified, "Expected closed-bag usable samples to have verified scale metadata")
-            } else {
-                try check(!status.scaleVerified, "Expected unverified scale metadata to be marked coverage-insufficient")
-            }
+            try check(sample.coversClosedBagRisk, "Expected bounded direct temperature samples to be usable without scale metadata")
         case .unavailable, .permissionDenied, .parseFailed, .helperCrashed, .unsupportedHardware, .timedOut:
             try check(status.sampleCount >= 0, "Expected fail-closed provider status to preserve metadata shape")
         }
@@ -1426,17 +1422,13 @@ struct AgentWakeCoreChecks {
         try check(warningDiagnostic.title.contains("warning"), "Expected warning diagnostic title")
         try check(warningDiagnostic.recoveryAction != nil, "Expected warning diagnostic recovery action")
 
-        let supplementalWarning = policy.evaluate(
+        let supplementalPressure = policy.evaluate(
             input: safetyInput(temperature: 60, pressure: .serious, battery: 80, now: now),
             isBagModeArmed: false
         )
-        let supplementalWarningDiagnostic = try checkNotNil(
-            BagModeSafetyDiagnostic.userFacing(for: supplementalWarning),
-            "Expected supplemental thermal pressure warning to have a diagnostic"
-        )
         try check(
-            !supplementalWarningDiagnostic.title.localizedCaseInsensitiveContains("temperature is elevated"),
-            "Expected supplemental warning copy not to claim numeric temperature is elevated"
+            BagModeSafetyDiagnostic.userFacing(for: supplementalPressure) == nil,
+            "Expected app thermal pressure alone not to create a diagnostic"
         )
 
         let failureCases: [(String, BagModeSafetyInput, BagModeSafetyAction, String)] = [
@@ -1497,16 +1489,6 @@ struct AgentWakeCoreChecks {
                 BagModeSafetyInput(temperature: .timedOut, batteryPercent: 80, now: now),
                 .releaseIfArmed,
                 "timed out"
-            ),
-            (
-                "coverage",
-                BagModeSafetyInput(
-                    temperature: .sample(BagModeTemperatureSample(celsius: 70, capturedAt: now, coversClosedBagRisk: false)),
-                    batteryPercent: 80,
-                    now: now
-                ),
-                .failClosedBeforeArming,
-                "coverage"
             ),
             (
                 "battery unavailable",

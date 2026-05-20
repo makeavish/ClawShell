@@ -24,16 +24,16 @@ They feed final app E2E validation in #120.
 The app exposes an explicit local/admin-approved Closed-Lid Mode toggle using
 the `pmset disablesleep` primitive. It now has release-only runtime safety for
 the configured battery floor, direct IOReport temperature cutoff for usable
-samples, provider fail-closed states, and macOS critical thermal pressure. Final
-E2E still needs scale/coverage evidence before broad hardware claims, but the
-following support slices are now covered on `main`:
+samples, and provider fail-closed states. Final E2E still needs scale/coverage
+evidence before broad hardware claims, but those fields are no longer an arm-time
+gate. The following support slices are now covered on `main`:
 
 | Area | Current support evidence | Still open in #120 |
 |---|---|---|
 | App launch and UI | Staged app launch, clean-install copy launch, Accessibility-visible menu bar ownership, Settings window opening, lifecycle relaunch after quit/SIGTERM/SIGKILL, Settings safety controls, duration-based pause sheet, launch-at-login copy, and product copy showing `Closed-Lid Mode` controls are covered by local smoke plus the local admin-approved controller slice. | Human visual confirmation on target display configurations, reboot behavior for the full app, and final release package behavior. |
 | Integrations and helper CLI surface | Codex CLI owned-block recovery, helper command routing, uninstall routing, helper dry-run auth failure probes, and helper/app disagreement gating are covered by PRs #123, #124, #136, and #137. | Installed-helper enable/disable/repair/uninstall behavior, production repair conflicts, helper-owned Closed-Lid Mode cleanup, and final verifier-complete helper package. |
 | Primitive lifecycle | Battery/internal closed-lid reopen recovery passed in final E2E artifacts. AC/internal remains structurally complete but operator-inconclusive for lid-close sleep blocking. Reboot-held, app-quit while held, and app-crash while held passed for Apple Silicon battery/internal open-lid lifecycle artifacts. | External-display/no-external-display rows where physically available, broader hardware coverage, and any final manual release sign-off rows. |
-| Provider and safety gate | Safety policy fail-closed behavior is covered. Runtime release is wired for configured battery floor, direct IOReport temperature cutoff when samples are usable, provider failure states, and macOS critical thermal pressure. | Live provider scale, freshness, cadence, closed-bag coverage, timeout behavior, and final provider verifier success before broad direct-temperature hardware claims. |
+| Provider and safety gate | Safety policy fail-closed behavior is covered. Runtime release is wired for configured battery floor, direct IOReport temperature cutoff when samples are usable, and provider failure states. | Live provider scale, freshness, cadence, closed-bag coverage, timeout behavior, and final provider verifier success before broad direct-temperature hardware claims. |
 | Packaging consent | Static staged-app/repo audit proves no detected silent privileged-helper activation path in the current sources and staged bundle. | Real Homebrew cask/package install, upgrade, uninstall, Gatekeeper/quarantine, and helper-consent lifecycle evidence. |
 
 ## Primitive Validation
@@ -234,7 +234,7 @@ The provider proof must choose a fresh, permission-compatible temperature source
 
 Current artifact: [Temperature Provider Check](temperature-provider-check.md).
 
-The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine. The tested `powermetrics`, bounded `ioreg-smc`, explicit `ioreg-pmu`, `thermal-levels`, `ioreg-smc-dispatcher`, HID, native IOHID, NVMe, and SMC-dispatcher paths did not produce an accepted non-battery numeric cutoff source. The May 14 `ioreport-ans2` SMAppService run did produce helper-owned non-battery numeric ANS2/MSP samples under the 1 second deadline, so it became the runtime source candidate. Runtime now calls the provider directly, but fail-closes when scale or closed-bag coverage is not usable. IOReport scale, freshness, cadence, timeout behavior, and closed-bag coverage still need final E2E evidence in [#120](https://github.com/makeavish/AgentWake/issues/120).
+The May 12, 2026 non-root source check did not select a production provider. `ProcessInfo.thermalState` remains a supplemental coarse signal, `pmset -g therm` did not provide current numeric temperature evidence, and AppleSmartBattery temperature did not prove closed-bag coverage or freshness. Later no-membership `SMAppService` provider runs proved that an ad-hoc helper can launch as root on this machine. The tested `powermetrics`, bounded `ioreg-smc`, explicit `ioreg-pmu`, `thermal-levels`, `ioreg-smc-dispatcher`, HID, native IOHID, NVMe, and SMC-dispatcher paths did not produce an accepted non-battery numeric cutoff source. The May 14 `ioreport-ans2` SMAppService run did produce helper-owned non-battery numeric ANS2/MSP samples under the 1 second deadline, so it became the runtime source candidate. Runtime now calls the provider directly and uses valid fresh temperature plus battery state as the arm/release gate. IOReport scale, freshness, cadence, timeout behavior, and closed-bag coverage still need final E2E evidence in [#120](https://github.com/makeavish/AgentWake/issues/120).
 
 Before attempting helper/root sampling, run the non-mutating preflight:
 

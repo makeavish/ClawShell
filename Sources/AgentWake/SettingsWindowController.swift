@@ -208,7 +208,7 @@ private final class SettingsViewController: NSViewController {
             max: 105,
             increment: 1
         )
-        safetyDetailLabel.stringValue = "Battery floor, direct sensor temperature cutoff, and macOS critical thermal pressure are enforced now."
+        safetyDetailLabel.stringValue = "Battery floor and direct sensor temperature cutoff are enforced now."
         safetyDetailLabel.textColor = .secondaryLabelColor
         safetyDetailLabel.setAccessibilityLabel("Safety settings detail")
 

@@ -74,11 +74,11 @@ struct AgentWakeSafetyPolicyProof {
             ),
             ProofCase(
                 id: "supplemental-thermal-pressure",
-                category: .warningOnly,
+                category: .allowed,
                 input: safetyInput(temperature: 60, pressure: .serious, battery: 80, now: now),
                 isBagModeArmed: false,
-                expectedMode: .warning,
-                expectedAction: .warn,
+                expectedMode: .normal,
+                expectedAction: .allow,
                 expectedReason: nil,
                 expectedCanArm: true
             ),
@@ -339,8 +339,8 @@ struct AgentWakeSafetyPolicyProof {
                 expectedCanArm: false
             ),
             ProofCase(
-                id: "closed-bag-coverage-insufficient-pre-arm",
-                category: .failClosed,
+                id: "closed-bag-coverage-metadata-ignored-pre-arm",
+                category: .allowed,
                 input: BagModeSafetyInput(
                     temperature: .sample(
                         BagModeTemperatureSample(celsius: 70, capturedAt: now, coversClosedBagRisk: false)
@@ -349,14 +349,14 @@ struct AgentWakeSafetyPolicyProof {
                     now: now
                 ),
                 isBagModeArmed: false,
-                expectedMode: .cutoffLockedOut,
-                expectedAction: .failClosedBeforeArming,
-                expectedReason: .coverageInsufficient,
-                expectedCanArm: false
+                expectedMode: .normal,
+                expectedAction: .allow,
+                expectedReason: nil,
+                expectedCanArm: true
             ),
             ProofCase(
-                id: "closed-bag-coverage-insufficient-armed",
-                category: .failClosed,
+                id: "closed-bag-coverage-metadata-ignored-armed",
+                category: .allowed,
                 input: BagModeSafetyInput(
                     temperature: .sample(
                         BagModeTemperatureSample(celsius: 70, capturedAt: now, coversClosedBagRisk: false)
@@ -365,10 +365,10 @@ struct AgentWakeSafetyPolicyProof {
                     now: now
                 ),
                 isBagModeArmed: true,
-                expectedMode: .cutoffLockedOut,
-                expectedAction: .releaseIfArmed,
-                expectedReason: .coverageInsufficient,
-                expectedCanArm: false
+                expectedMode: .normal,
+                expectedAction: .allow,
+                expectedReason: nil,
+                expectedCanArm: true
             ),
             ProofCase(
                 id: "missing-battery-pre-arm",
@@ -521,7 +521,7 @@ struct AgentWakeSafetyPolicyProof {
 
         ## Boundary
 
-        This proves the policy contract for unsupported, stale, malformed, timed-out, insufficient-coverage, and missing battery states. It is not helper-owned provider freshness, cadence, closed-bag hardware coverage, or numeric scale proof.
+        This proves the policy contract for unsupported, stale, malformed, timed-out, and missing battery states. Coverage metadata and app thermal pressure are non-blocking; numeric temperature and battery remain the enforced safety inputs.
         """
         try write(summary, to: outputDirectory.appendingPathComponent("summary.md"))
     }
@@ -563,6 +563,7 @@ private struct ProofOptions {
 }
 
 private enum ProofCategory: String {
+    case allowed
     case warningOnly = "warning-only"
     case failClosed = "fail-closed"
 }

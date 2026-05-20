@@ -65,13 +65,15 @@ public struct DirectTemperatureProvider: Sendable {
         var reading = AgentWakeIOReportTemperatureReading()
         let status = AgentWakeIOReportReadTemperature(&reading)
         let celsius = reading.celsius.isFinite ? reading.celsius : nil
-        let scaleVerified = reading.sampleCount > 0 && reading.sampleCount == reading.scaleVerifiedCount
+        let hasUsableSample = status == AgentWakeIOReportTemperatureStatusOK &&
+            reading.sampleCount > 0 &&
+            reading.invalidSampleCount == 0
         let providerStatus = DirectTemperatureProviderStatus(
             reading: providerReading(
                 status: Int(status),
                 celsius: celsius,
                 capturedAt: capturedAt,
-                coversClosedBagRisk: scaleVerified
+                coversClosedBagRisk: hasUsableSample
             ),
             celsius: celsius,
             sampleCount: Int(reading.sampleCount),

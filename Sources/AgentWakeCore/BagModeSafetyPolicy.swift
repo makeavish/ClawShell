@@ -155,10 +155,6 @@ public struct BagModeSafetyPolicy: Equatable, Sendable {
             return locked(reason: .temperature, at: input.now, isBagModeArmed: isBagModeArmed)
         }
 
-        if input.appThermalPressure == .critical {
-            return locked(reason: .temperature, at: input.now, isBagModeArmed: isBagModeArmed)
-        }
-
         if state.mode == .cutoffLockedOut {
             guard let temperatureCelsius,
                   temperatureCelsius <= Double(settings.temperatureCutoffCelsius) - temperatureHysteresisCelsius,
@@ -190,7 +186,7 @@ public struct BagModeSafetyPolicy: Equatable, Sendable {
             )
         }
 
-        if shouldWarn(temperatureCelsius: temperatureCelsius, thermalPressure: input.appThermalPressure) {
+        if shouldWarn(temperatureCelsius: temperatureCelsius) {
             return BagModeSafetyDecision(state: BagModeSafetyState(mode: .warning), action: .warn)
         }
 
@@ -215,9 +211,6 @@ public struct BagModeSafetyPolicy: Equatable, Sendable {
             if sampleAge > maxReadingAgeSeconds {
                 return .staleSensor
             }
-            if !sample.coversClosedBagRisk {
-                return .coverageInsufficient
-            }
             return nil
         case .unavailable:
             return .unavailableSensor
@@ -241,21 +234,12 @@ public struct BagModeSafetyPolicy: Equatable, Sendable {
         return sample.celsius
     }
 
-    private func shouldWarn(
-        temperatureCelsius: Double?,
-        thermalPressure: BagModeAppThermalPressure?
-    ) -> Bool {
+    private func shouldWarn(temperatureCelsius: Double?) -> Bool {
         if let temperatureCelsius,
            temperatureCelsius >= Double(settings.temperatureWarningCelsius) {
             return true
         }
-
-        switch thermalPressure {
-        case .serious, .critical:
-            return true
-        case .nominal, .fair, .none:
-            return false
-        }
+        return false
     }
 
     private func locked(

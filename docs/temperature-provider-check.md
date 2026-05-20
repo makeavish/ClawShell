@@ -120,10 +120,10 @@ The harness records these as evidence fields but does not enable production beha
 The fail-closed contract is executable in `BagModeSafetyPolicy` and covered by
 the portable `AgentWakeCoreChecks` gate. Those checks cover warning, cutoff,
 stale, unavailable, permission-denied, parse-failed, helper-crashed,
-unsupported-hardware, timeout, coverage-insufficient, missing/invalid battery,
-battery floor, and hysteresis behavior. Runtime release is wired for the
+unsupported-hardware, timeout, missing/invalid battery, battery floor, and
+hysteresis behavior. Runtime release is wired for the
 configured battery floor, direct IOReport temperature cutoff for usable samples,
-provider failure states, and macOS critical thermal pressure. Final E2E still
+provider failure states, and battery fail-closed behavior. Final E2E still
 needs helper-side and hardware coverage proof.
 
 ## Helper-Equivalent Readiness

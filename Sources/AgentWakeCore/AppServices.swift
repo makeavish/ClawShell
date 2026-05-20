@@ -679,8 +679,8 @@ public final class AgentWakeServices: @unchecked Sendable {
         let sampleDetail = "source=\(status.source) samples=\(status.sampleCount) scaleVerified=\(status.scaleVerifiedCount)/\(status.sampleCount)"
         switch status.reading {
         case .sample(let sample):
-            let coverage = sample.coversClosedBagRisk ? "closedBagCoverage=usable" : "closedBagCoverage=unproven"
-            return "\(Int(sample.celsius.rounded())) C \(sampleDetail) \(coverage)"
+            let signal = sample.coversClosedBagRisk ? "temperatureSignal=usable" : "temperatureSignal=sample-only"
+            return "\(Int(sample.celsius.rounded())) C \(sampleDetail) \(signal)"
         case .unavailable:
             return "temperature provider unavailable \(sampleDetail) apiFailures=\(status.apiFailureCount)"
         case .permissionDenied:
